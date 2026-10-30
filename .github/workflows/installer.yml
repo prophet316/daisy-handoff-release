@@ -23,10 +23,17 @@ jobs:
       - name: Verify the install
         shell: bash
         run: node test/verify-dry-run.mjs "$RUNNER_TEMP/home" daisy-handoff "$(node -p process.platform)"
-      - name: Gate, host lane, power switch and who-sent-it tests
+      - name: Gate, host lane, power switch, who-sent-it, time zone, redaction and bell tests
         if: runner.os == 'macOS'
         shell: bash
         run: cd "$RUNNER_TEMP/home/Projects/daisy-handoff" && ./test.sh gate
+      - name: Schedule math in several time zones, redaction and bell startup prompts (every OS)
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/home/Projects/daisy-handoff"
+          node test/time-unit.mjs
+          node worker/redact.mjs --selftest
+          node worker/bell-prompts.mjs --selftest
       - name: Refuses to overwrite an install
         shell: bash
         run: "! node install.mjs --dry-run --yes --home \"$RUNNER_TEMP/home\""

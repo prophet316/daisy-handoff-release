@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.9.1 (unreleased)
+## 0.9.1
+- Security: a second hold from a run you already approved shows the "what approving unlocks" card again, and a charge is unlocked only by a purchase card the worker recorded outside the job folder; an approved run moves `purchase.json` aside, so an old one can't turn a charge back on or build a card that says nothing was charged. Tests in `test/run-state.mjs`.
+- Security: the files and result stored when a job ends, and the phone notification, go through the same redactor as live reads.
+- Security: the bell answers its startup prompts only until Remote Control is up or for 90 seconds, then stops reading the session's screen. The MCP answer needs that prompt's options on screen. New `worker/bell-prompts.mjs --selftest`.
+- Phone notifications are off unless you say yes. The installer's question says the bell uses a research-preview development channel and that Nuff Said answers Claude Code's "I am using this for local development" warning each time the bell starts. Enter, `--yes`, and an update from an install with no answer on record leave it off. With no terminal and no `--yes`, the installer stops at the first question instead of answering it, and `--yes` prints each answer it took.
+- `./test.sh gate` and CI now run the time zone, shell lane, redaction, bell and bell prompt self-tests; the time zone, redaction and bell prompt tests also run on Windows.
+- Doctor: says "worker isn't running" when it isn't, and uses your assistant's name for the bell.
+- Docs: the connector steps match Claude's current dialog (Continue, No sign in, Add); phone pushes can be skipped while you're active; "no open ports" says the URL is the way in.
 - Security: the desktop gate's record of what it held, the job's lane and hook settings, and its steering inbox now live in `~/.NAME/runs/<job>`, outside the job folder, so a computer job can't widen what your yes unlocks or add a message in your voice. An approved run unlocks only what the gate held on the run before, the settings are rewritten before every run and recovery, and the approval card lists what the gate held. A job with a command line can still write anywhere you can; the docs say so. New test: `test/run-state.mjs`, in `./test.sh gate`.
 - Security: a run an agent started, retried, replied to or approved doesn't publish or share by itself. The work finishes, and the publish waits for your own "publish it".
 - Security: `--rotate-keys` changes the connector key first, so a leaked URL is locked out at once, and the worker key last, right before the restart, so the worker isn't cut off while you read the list and a job finishing then isn't run twice.

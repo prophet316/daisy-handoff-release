@@ -107,7 +107,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
-- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + > Add custom connector**.
+- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + Add > Add custom connector**, click **Continue**, choose **No sign in** under **Authentication**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
 - **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.
 - **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account. Close and reopen the app.
@@ -134,7 +134,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 Jobs run, but your phone never buzzes when one finishes.
 
-How it works: the installer starts an always-on Claude Code session on your Mac with **Remote Control** turned on. Remote Control is Claude Code's own way to link a session on your computer to the Claude app. When a job finishes, the worker tells that session, and the session sends your phone a push notification through the Claude app. So notifications need all of this:
+How it works: if you said yes to phone notifications, the installer starts an always-on Claude Code session on your Mac with **Remote Control** turned on. Remote Control is Claude Code's own way to link a session on your computer to the Claude app. When a job finishes, the worker tells that session, and the session sends your phone a push notification through the Claude app. Claude Code decides when to push, and it can skip one while you're active in Claude: Anthropic says "the server can still suppress the mobile push when it detects that you are active" ([Environment variables](https://code.claude.com/docs/en/env-vars)). So a missing push while you're using Claude isn't a fault. Notifications need all of this:
 
 1. **The Claude app on your phone**, signed in to the same account as Claude Code on your Mac. Open it once after installing.
 2. **Notifications allowed** for the Claude app on your phone. On iPhone: Settings > Notifications > Claude. Focus modes can hold them back.
@@ -146,7 +146,7 @@ Test it: in your install folder run `./bell-ping.sh`. Your phone should show a n
 
 You may also see a session named "Daisy bell" (or your assistant's name) in the Claude app. That's the bell. Leave it running.
 
-If you turned the bell off (`--no-bell`), there are no phone notifications and the doctor says so. `node install.mjs --update --bell` turns it back on.
+If the bell is off (you answered no, used `--yes` or `--no-bell`), there are no phone notifications and the doctor says so. `node install.mjs --update --bell` turns it on.
 
 ---
 

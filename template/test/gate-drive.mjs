@@ -59,7 +59,7 @@ writeFileSync(join(tmp, "key"), "test");
 writeFileSync(join(tmp, "config.json"), JSON.stringify({ base: "http://127.0.0.1:9", keyFile: relative(ROOT, join(tmp, "key")), claudeBin: "/usr/bin/false" }));
 process.env.DAISY_NO_MAIN = "1";
 process.argv.push("--config", join(tmp, "config.json"));
-const { purchaseLine, cuaAllow } = await import(join(ROOT, "worker", "worker.mjs"));
+const { purchaseLine, cuaAllow, holdCard } = await import(join(ROOT, "worker", "worker.mjs"));
 const line = purchaseLine(d1) || "";
 check("approve card names item, total and address", /toilet paper/.test(line) && /\$12\.97/.test(line) && /12 Oak Lane/.test(line) && /Nothing has been charged/.test(line), line);
 check("no card line without a held charge", purchaseLine(tmp) === null);
@@ -72,6 +72,8 @@ writeFileSync(join(d5, "purchase.json"), JSON.stringify({ site: "Test Shop (http
   delivery_address: { name: "Sam Rivera", street: "12 Oak Lane", city: "Springfield" } }));
 const line5 = purchaseLine(d5) || "";
 check("card line from the agent's own purchase.json shape", /1 x Soft Toilet Paper, 12 rolls \(\$12\.97\)/.test(line5) && /Total \$14\.02/.test(line5) && /12 Oak Lane, Springfield/.test(line5) && !/object Object/.test(line5), line5);
+check("purchase.json alone, before the worker showed its card, allows no charge", !cuaAllow({ allow: "[]" }, d5, true).allow.includes("charge"));
+holdCard("Stopped at the order page.", { mode: "fresh", lane: { allow: [] } }, d5, d5); // the worker builds the card and records it
 check("approving that card allows the one charge", cuaAllow({ allow: "[]" }, d5, true).allow.includes("charge"));
 
 // 3. The approved run: the charge is pressed once; a second one is held again.

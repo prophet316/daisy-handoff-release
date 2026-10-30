@@ -21,8 +21,8 @@
 //                --no-power-lanes (turn off the command line and desktop control, which are on by default)
 //                --lead-agent NAME (let one named agent approve held actions for you; off by default, see the README)
 //                --no-lead-agent (with --update: turn the lead agent off again; your connector URL stays the same)
-//                --no-bell (no phone notifications: the bell session, and its answer to Claude Code's development-channel
-//                warning, aren't set up; --bell turns it back on)
+//                --bell (phone notifications on; they're off unless you say yes, because the bell answers Claude Code's
+//                development-channel warning for you each time it starts)  --no-bell (turn them off again)
 //
 // Needs Node 22.13+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
 // It never prints your connector URL or keys. The URL works like a password: it goes to your clipboard
@@ -68,8 +68,11 @@ const BELL_NOTE = [
   "developer flag for channels (--dangerously-load-development-channels). That flag shows a warning Anthropic meant for people",
   "testing their own channels, answered \"I am using this for local development\", every time the bell starts. Nobody is at",
   "that terminal, so the bell picks that answer for you each time, and says yes to its own MCP server. Without the bell,",
-  "jobs work the same; you just get no phone notifications. Turn it off later with --update --no-bell.",
+  "jobs work the same; you just get no phone notifications. It stays off unless you say yes. Turn it off later with --update --no-bell.",
 ];
+// The bell question itself carries the one sentence that matters, so nobody turns it on without reading it.
+const BELL_QUESTION = "Turn on phone notifications? The bell uses a Claude Code development channel (a research preview), and Nuff Said " +
+  "answers Claude Code's \"I am using this for local development\" warning for you each time the bell starts. Type yes to turn it on";
 const HOST = process.platform; // the OS we are really running on
 // While an update runs: what is still on your old settings if it stops now (set by main as it goes).
 let stillOld = null;
@@ -157,7 +160,7 @@ function uninstall() {
       ok(`${DRY ? "would stop" : "stopped"} ${title}`); n++;
     }
   }
-  if (!n) say("  no Nuff Said worker found for this user");
+  if (!n) say(DRY && !val("home") ? "  no Nuff Said worker in this dry run's practice folder (a dry run doesn't look at your real install; add --home to point it at one)" : "  no Nuff Said worker found for this user");
   else if (!DRY) say(`\nStartup entries moved to ${bak} (not deleted).`);
   // The database name, when there's exactly one install to name it from.
   const projects = path.join(HOME, "Projects");
@@ -223,11 +226,14 @@ async function main() {
   if (!has("no-power-lanes") && keepPower !== false) for (const l of POWER_WARNING) say(`  ${l}`);
   const power = keepPower ?? (!has("no-power-lanes") && (has("power-lanes") ||
     !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes"))));
-  // The phone bell: asked once on a new install, after saying what it answers for you. An update keeps last time's answer.
+  // The phone bell: off unless the person says yes (--bell, or yes to the question), after reading what it answers for them.
+  // --yes takes the default, which is off. An update keeps last time's answer; an install from before the question
+  // (no answer on record) gets the question once, so an update never turns it on, or keeps it on, without a yes.
   if (has("bell") && has("no-bell")) die("use --bell or --no-bell, not both.");
-  let bell = MAC && (has("no-bell") ? false : has("bell") ? true : prev ? prev.receipt.bell !== false : null);
-  if (bell !== false && MAC && (!prev || has("bell") || prev.receipt.bell === undefined)) for (const l of BELL_NOTE) say(`  ${l}`);
-  if (bell === null) bell = !/^n(o)?$/i.test(await ask("Turn on phone notifications?", "yes"));
+  const prevBell = prev && typeof prev.receipt.bell === "boolean" ? prev.receipt.bell : null;
+  let bell = MAC && (has("no-bell") ? false : has("bell") ? true : prevBell);
+  if (MAC && (bell === null || (has("bell") && prevBell !== true))) for (const l of BELL_NOTE) say(`  ${l}`);
+  if (bell === null) bell = /^y(es)?$/i.test(await ask(BELL_QUESTION, "no"));
   ask.close();
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
   const prevLead = prev ? ("leadAgent" in prev.receipt ? prev.receipt.leadAgent : /^LEAD_AGENT = "([^"]*)"$/m.exec(prev.toml)?.[1]) : null;
@@ -284,7 +290,7 @@ async function main() {
   fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION, timeZone }, null, 2) + "\n");
   fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
   // This run's answers, before anything can stop it partway, so a second try keeps them. The full receipt replaces it at the end.
-  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
+  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), ...(MANUAL ? { manual: true } : {}), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
     ...(UPDATE ? { updatedFrom: prev.receipt.updatedFrom || prev.receipt.installer || prev.site.installer || null } : {}) }, null, 2) + "\n");
   ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
   if (UPDATE && !DRY) stillOld = "Nothing changed on Cloudflare or in the running worker: they still use your old settings, including the command line switch, until the update finishes. Run node install.mjs --update again.";
@@ -326,7 +332,7 @@ async function main() {
   // 6. background worker
   step("Starting the worker at login", TOTAL);
   if (MAC && bell) { ok("phone bell on: it answers Claude Code's development-channel warning for you each time it starts (turn off: --update --no-bell)"); trustBellFolder(dir); }
-  else if (MAC) ok("phone notifications off (--no-bell): no bell session; turn on with --update --bell");
+  else if (MAC) ok("phone notifications off: no bell session (turn on: --update --bell)");
   if (MAC) installMac(dir, bell); else installWin(dir, assistant);
   stillOld = null;
   if (!DRY) {
@@ -344,7 +350,7 @@ async function main() {
   } else await handOff(dir, urlFile, assistant, bell);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
-    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
+    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, ...(MANUAL ? { manual: true } : {}), at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
     ...(UPDATE ? { updatedFrom: (prev.receipt.unfinished ? prev.receipt.updatedFrom : prev.receipt.installer) || prev.site.installer || null } : {}), steps,
   }, null, 2) + "\n");
   say(`\n${DRY ? "DRY RUN COMPLETE" : UPDATE ? "UPDATE COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
@@ -357,8 +363,9 @@ async function handOff(dir, urlFile, assistant, bell) {
     const c = HOST === "darwin" ? run("pbcopy", [], { input: fs.readFileSync(urlFile, "utf8"), shell: false }) : run("clip", [], { input: fs.readFileSync(urlFile, "utf8") });
     copied = c.status === 0;
   }
-  say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > Add custom connector.`);
-  say(`  2. Name it "Nuff Said" and paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}).`);
+  say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > + Add > Add custom connector.`);
+  say(`  2. Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue.`);
+  say(`     Under Authentication choose "No sign in", leave Request headers empty, and click Add.`);
   say(`  3. On your phone, open the Claude app, start voice, and say: "Check updates with ${assistant}."`);
   if (MAC && bell) {
     say(`  For a phone notification when a job finishes (once, about a minute):`);
@@ -446,7 +453,7 @@ async function rotateKeys() {
     step("New connector key", STEPS);
     newKeys([["CONNECTOR_KEY", ".connector-key"]], true);
     writeSecret(path.join(dir, ".connector-url"), `${base}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
-    ok("new private URL saved in .connector-url; the old URL is locked out");
+    ok(`new private URL saved in .connector-url; the old URL ${DRY ? "would be locked out (dry run: nothing sent to Cloudflare)" : "is locked out"}`);
   }
 
   step("What could still run later", STEPS);
@@ -540,8 +547,15 @@ function findClaude() {
   return which("claude");
 }
 
+// --yes takes every default and prints it, so the log shows what was decided. With no terminal and no --yes, nothing is
+// answered silently: it stops at the first question instead.
 async function asker() {
-  if (has("yes") || !process.stdin.isTTY) { const f = async (_q, d) => d; f.close = () => {}; return f; }
+  if (has("yes")) { const f = async (q, d) => { say(`  ${q} [${d}]: ${d} (--yes)`); return d; }; f.close = () => {}; return f; }
+  if (!process.stdin.isTTY) {
+    const f = async (q) => die(`no terminal to ask in ("${q.split("?")[0]}?"). Run it in Terminal, or add --yes to take the defaults ` +
+      "(command line and desktop control on, phone notifications off). Nothing was changed.");
+    f.close = () => {}; return f;
+  }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const f = async (q, d) => (await rl.question(`  ${q} [${d}]: `)).trim() || d;
   f.close = () => rl.close();
@@ -554,7 +568,7 @@ function clean(s) {
   return s;
 }
 
-function workerConfig(home, claudeBin, slug, power, bell = true) {
+function workerConfig(home, claudeBin, slug, power, bell = false) {
   const cfg = {
     base: "set-after-deploy",
     workerTag: slug, // unique per install, so one install's cleanup can never end another install's jobs
@@ -681,7 +695,7 @@ function trustBellFolder(dir) {
   }
 }
 
-function installMac(dir, bell = true) {
+function installMac(dir, bell = false) {
   const agents = path.join(HOME, "Library", "LaunchAgents");
   fs.mkdirSync(agents, { recursive: true });
   const BELL_PLIST = "com.daisy.jarvis-bell.plist";
@@ -692,7 +706,7 @@ function installMac(dir, bell = true) {
     const aside = path.join(HOME, ".handoff-uninstalled", stamp());
     fs.mkdirSync(aside, { recursive: true });
     fs.renameSync(path.join(agents, BELL_PLIST), path.join(aside, BELL_PLIST));
-    ok(`phone bell stopped; its startup entry moved to ${aside}`);
+    ok(`${DRY ? "phone bell would stop (dry run)" : "phone bell stopped"}; its startup entry moved to ${aside}`);
   }
   if (!plists.length) die("no launch agents in the template (a bug)");
   for (const f of plists) {

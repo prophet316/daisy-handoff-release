@@ -30,7 +30,7 @@ Setup takes a Terminal installer and a free Cloudflare account. After that, day 
 - "Every weekday at 7, send me a news brief."
 - "Stop everything."
 
-Everything you'd want from one conversation: jobs, threads, routines, schedules, approvals, a daily digest, a health check and an emergency stop, plus the command line and desktop control if you turn them on.
+From one conversation: jobs, threads, routines, schedules, approvals, a daily digest, a health check and an emergency stop, plus the command line and desktop control if you turn them on.
 
 <!-- TODO(SCREENSHOTS_PLAN S6): readme/06-whats-running.png, the "What's running" answer in the Claude app. -->
 
@@ -42,7 +42,7 @@ Everything here is listed before you start, with what it costs.
 
 | What | Cost | Notes |
 | ---- | ---- | ----- |
-| A Mac on macOS 13 (Ventura) or newer | |
+| A Mac on macOS 13 (Ventura) or newer | | |
 | A paid Claude plan: Pro or Max (see the note on Team and Enterprise in [Install](#install-mac)) | Pro is $20 a month ($17 a month billed yearly); Max starts at $100 a month ([Claude pricing](https://claude.com/pricing)) |
 | Claude Code, installed and signed in on the Mac | Included with the plan. Jobs use your plan's normal Claude Code usage limits. Up to 3 jobs run at once and schedules add more, so on Pro, start fewer at once. | Install it with the command on [Anthropic's setup page](https://code.claude.com/docs/en/setup) (`curl -fsSL https://claude.ai/install.sh \| bash`), open a new Terminal window, run `claude`, and type `/login`. Sign in with your Claude plan, not an API key. If `claude` says command not found, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md#claude-command-not-found). |
 | The Claude app on your phone | Free |
@@ -77,7 +77,7 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 | What's new | Ask "what's new?" and Claude tells you what finished or needs you since you last heard. It's set up to check at the start of a chat, but Claude decides when to call it. |
 | What's running | Ask from any Claude chat and hear every job and its status. |
 | Read what a job made | Claude reads the files a job made, or a live view of one still running. |
-| Phone notification when a job is done | Your phone gets a Claude app notification with the result. See [Phone notifications and Remote Control](#phone-notifications-and-remote-control). |
+| Phone notification when a job is done | If you turn it on, your phone gets a Claude app notification with the result. Claude Code can skip a push when it sees you're already active. See [Phone notifications and Remote Control](#phone-notifications-and-remote-control). |
 | Daily digest | One short summary of the day, at a time you pick. |
 | Health check | One question tells you whether the worker, phone bell, sign-ins and disk space are fine. |
 
@@ -111,12 +111,12 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 
 <!-- TODO(SCREENSHOTS_PLAN S5): readme/05-glow.png, blue glow and Daisy cursor mid-run. Caption: "Mac only." -->
 
-### Private by design
+### Where your data lives
 
 | Feature | What it does for you |
 |---|---|
 | Your own connector | The installer puts your connector and its database on your own free Cloudflare account. No shared server: your jobs are stored on your own Cloudflare account, not on a server the author runs, so the author can't see them. Your Claude chats and the bell's Remote Control session are stored by Anthropic like any other Claude conversation. |
-| No open ports | Your computer reaches out; nothing reaches in. |
+| No open ports | Your computer reaches out; nothing reaches in. That isn't the same as safe: your connector URL is the way in, so treat it like a password. |
 | Keys made on your computer | Three random keys (four with a lead agent), readable only by you, never printed or logged. |
 | Change a leaked key | If your connector URL or a key leaks, `node install.mjs --rotate-keys` changes the keys and lists every schedule, routine, running job and job waiting to run, so you can clear anything you didn't set up. |
 
@@ -164,11 +164,11 @@ Jobs run while your Mac is on and you're logged in. One install per Mac user acc
 
 **Remote Control** is a Claude Code feature from Anthropic. It links a Claude Code session running on your computer to the Claude app on your phone, so that session can talk to you there. Anthropic explains it on the [Remote Control page](https://code.claude.com/docs/en/remote-control).
 
-Nuff Said uses it for one thing: notifications. The installer starts one Claude Code session on your Mac with Remote Control on, and keeps it running. You may see it in the Claude app as "Daisy bell" (or your assistant's name). Leave it running. When a job finishes, the worker tells that session, and the session sends your phone a notification through the Claude app.
+Nuff Said uses it for one thing: notifications, and only if you turn them on. Then the installer starts one Claude Code session on your Mac with Remote Control on, and keeps it running. You may see it in the Claude app as "Daisy bell" (or your assistant's name). Leave it running. When a job finishes, the worker tells that session, and the session sends your phone a notification through the Claude app. Claude Code decides when to push, and it can skip one while you're active in Claude: Anthropic says "the server can still suppress the mobile push when it detects that you are active" ([Environment variables](https://code.claude.com/docs/en/env-vars)).
 
-The bell also uses Claude Code channels, a research preview from Anthropic ([Channels](https://code.claude.com/docs/en/channels)), so the worker can hand the session each finished job. The bell's channel isn't on Anthropic's approved list, so the bell starts Claude Code with its developer flag for channels, `--dangerously-load-development-channels server:daisy-bell`. That flag shows a warning that Anthropic meant for people testing their own channels, and its answer is "I am using this for local development." That warning comes back every time the bell starts, and nobody is at that terminal to answer it, so **if you turn on phone notifications, the bell picks that answer for you each time it starts**. It also says yes to Claude Code's question about the bell's own MCP server. The installer says this and asks before it turns the bell on. The session loads only Daisy's channel, none of your other connectors.
+The bell also uses Claude Code channels, a research preview from Anthropic ([Channels](https://code.claude.com/docs/en/channels)), so the worker can hand the session each finished job. The bell's channel isn't on Anthropic's approved list, so the bell starts Claude Code with its developer flag for channels, `--dangerously-load-development-channels server:daisy-bell`. That flag shows a warning that Anthropic meant for people testing their own channels, and its answer is "I am using this for local development." That warning comes back every time the bell starts, and nobody is at that terminal to answer it, so **if you turn on phone notifications, the bell picks that answer for you each time it starts**. It also says yes to Claude Code's question about the bell's own MCP server. The installer says this in the question itself, and the bell stays off unless you say yes: pressing Enter, `--yes`, and an update from a version before the question all leave it off. The session loads only Daisy's channel, none of your other connectors.
 
-If you'd rather not, answer no to the installer's phone notification question, or turn the bell off later: run `node install.mjs --update --no-bell` from the release folder. That stops the bell and moves its startup entry aside, and later updates keep it off. Jobs work the same; you just don't get phone notifications. `--update --bell` turns it back on. `--no-bell` on a first install skips the question and leaves it off.
+If you'd rather not, press Enter at the installer's phone notification question (the answer is no unless you type yes), or turn the bell off later: run `node install.mjs --update --no-bell` from the release folder. That stops the bell and moves its startup entry aside, and later updates keep it off. Jobs work the same; you just don't get phone notifications. `--update --bell` turns it on. `--no-bell` or `--bell` on a first install answers the question for you.
 
 Anthropic says channels may change, so a Claude Code update could stop notifications until Nuff Said is updated. Jobs keep running either way.
 
@@ -207,11 +207,11 @@ Read [SECURITY.md](SECURITY.md) for the details.
    node install.mjs
    ```
    It checks Node and Claude Code first and tells you exactly what's missing.
-3. Answer five questions (your name, what you call your assistant, what you call this computer, whether jobs may use the command line and control your desktop, and whether to turn on phone notifications; the answer to the last two is yes unless you type no). Before the last question it says what the phone bell answers for you; see [Phone notifications and Remote Control](#phone-notifications-and-remote-control).
+3. Answer five questions (your name, what you call your assistant, what you call this computer, whether jobs may use the command line and control your desktop, and whether to turn on phone notifications; the command line question is yes unless you type no, and phone notifications stay off unless you type yes). Before the last question it says what the phone bell answers for you; see [Phone notifications and Remote Control](#phone-notifications-and-remote-control).
 4. Sign in to Cloudflare when your browser opens.
-5. In Claude, go to **Customize > Connectors**, click **+**, choose **Add custom connector**, name it **Nuff Said**, and paste the URL the installer copied for you. Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
+5. In Claude, go to **Customize > Connectors**, click **+ Add**, choose **Add custom connector**, name it **Nuff Said**, paste the URL the installer copied for you, and click **Continue**. Claude then shows the authentication settings it detected: under **Authentication**, choose **No sign in**, leave **Request headers** empty, and click **Add**. Your key is already in the URL. (Anthropic's steps: [Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).) Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
 6. Open the Claude app, start voice, and say: **"Check updates with Daisy."** (or whatever you named your assistant). You're still talking to Claude; the name tells Claude to use your connector.
-7. For a notification on your phone when a job finishes: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
+7. If you turned on phone notifications: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
 
 **Pro and Max only for now.** On Team and Enterprise, an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
 
@@ -251,7 +251,7 @@ To see which version you have, look at `installer` in `install-receipt.json` in 
 1. Download the new **nuff-said.zip** and unzip it.
 2. In Terminal, in the new folder: `node install.mjs --update`
 
-That's it. The update keeps your keys, so your connector URL stays the same and there's nothing to redo in Claude. It also keeps your connector and database on Cloudflare, your answers from last time (name, time zone, the command line switch, the lead agent), your job and thread folders, your logs and your worker settings. It keeps the phone bell on or off as you left it. To change one answer while you update, add its flag, for example `--no-power-lanes`, `--no-lead-agent`, `--no-bell` or `--time-zone Europe/London`. Jobs that are running when the worker restarts start again.
+That's it. The update keeps your keys, so your connector URL stays the same and there's nothing to redo in Claude. It also keeps your connector and database on Cloudflare, your answers from last time (name, time zone, the command line switch, the lead agent), your job and thread folders, your logs and your worker settings. It keeps the phone bell on or off as you left it. An install from before 0.9.1 has no answer on record, so the update asks; pressing Enter or `--yes` turns the bell off. To change one answer while you update, add its flag, for example `--no-power-lanes`, `--no-lead-agent`, `--no-bell` or `--time-zone Europe/London`. Jobs that are running when the worker restarts start again.
 
 Your job history stays in your Cloudflare database. The old install folder is kept next to the new one as `~/Projects/daisy-handoff.bak-DATE`. Delete it once you're happy.
 
@@ -329,12 +329,15 @@ node install.mjs --dry-run --yes --home /tmp/nuff-test
 node test/verify-dry-run.mjs /tmp/nuff-test daisy-handoff darwin
 node test/doctor-no-leak.mjs
 node test/update-resume.mjs
-# in that install (or yours): the desktop gate, the host lane, the command line switch and who-sent-it
+# in that install (or yours): the desktop gate, the host lane, the command line switch, who-sent-it,
+# the schedule math in several time zones, redaction, the bell and its startup prompts
 cd /tmp/nuff-test/Projects/daisy-handoff && ./test.sh gate
+# or one at a time
+node test/time-unit.mjs
 node worker/shell-lane.mjs --shell-selftest
 ```
 
-GitHub runs the installer dry run, update and key change on macOS and Windows for every change, and `./test.sh gate` on macOS ([installer.yml](.github/workflows/installer.yml)).
+GitHub runs the installer dry run, update and key change, the time zone, redaction and bell prompt tests on macOS and Windows for every change, and `./test.sh gate` on macOS ([installer.yml](.github/workflows/installer.yml)).
 
 ---
 

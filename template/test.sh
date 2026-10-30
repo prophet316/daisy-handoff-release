@@ -2,7 +2,8 @@
 # Smoke test for the Nuff Said connector ({{ASSISTANT}}).
 # Usage: ./test.sh                 (local dev server)
 #        ./test.sh deployed        (reads the private URL from .connector-url, never prints it)
-#        ./test.sh gate            (the computer-use safety gate, the power-lanes switch and who-sent-it, offline: no desktop, no connector)
+#        ./test.sh gate            (the computer-use safety gate, the power-lanes switch, who-sent-it, time zones, redaction and
+#                                   the bell, offline: no desktop, no connector; the bell self-test uses port 18790)
 cd "$(dirname "$0")"
 if [ "$1" = "gate" ]; then
   NODE="$(command -v node || echo "$HOME/{{DOTDIR}}/node/bin/node")"
@@ -19,6 +20,13 @@ if [ "$1" = "gate" ]; then
   "$NODE" test/sender.mjs | grep -v '^PASS' || rc=1
   echo "6 what a job can't change (hold record, lane and hook configs, steering inbox outside the job folder; agent runs don't publish):"
   "$NODE" test/run-state.mjs | grep -v '^PASS' || rc=1
+  echo "7 schedule math in several time zones:"
+  "$NODE" test/time-unit.mjs | grep -v '^PASS' || rc=1
+  echo "8 command line lane, redaction, bell and bell startup prompt self-tests:"
+  "$NODE" worker/shell-lane.mjs --shell-selftest | grep -v '^PASS' || rc=1
+  "$NODE" worker/redact.mjs --selftest | grep -v '^PASS' || rc=1
+  DAISY_BELL_PORT="${DAISY_BELL_PORT:-18790}" "$NODE" worker/bell.mjs --selftest | grep -v '^PASS' || rc=1
+  "$NODE" worker/bell-prompts.mjs --selftest | grep -v '^PASS' || rc=1
   [ $rc = 0 ] && echo "gate: all passed" || echo "gate: FAILED"
   exit $rc
 fi

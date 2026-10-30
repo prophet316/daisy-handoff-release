@@ -2,7 +2,8 @@
 // daisy-bell channel loaded, so job events become pushes in the Claude app on {{OWNER}}'s phone.
 // Claude Code needs a terminal for this, so it runs inside a pseudo-terminal (worker/pty-run.py), under launchd.
 // It answers the known startup prompts for this one session: the project MCP server
-// and the development-channel warning (daisy-bell is our own local channel, not on Anthropic's allowlist yet).
+// and the development-channel warning (daisy-bell is our own local channel; it isn't on Anthropic's channel allowlist).
+// It reads the session's screen only while it starts (worker/bell-prompts.mjs): until Remote Control is up, or 90 seconds.
 //
 // Usage: node worker/jarvis-bell.mjs   (launchd: com.daisy.jarvis-bell)
 
@@ -11,6 +12,7 @@ import { openSync, readSync, closeSync, statSync, writeFileSync, mkdirSync } fro
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hardKill } from "./kill.mjs";
+import { promptsToAnswer, ANSWER_WINDOW_MS } from "./bell-prompts.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HOME_DIR = join(ROOT, "jarvis-bell");
@@ -20,16 +22,6 @@ const NAME = process.env.DAISY_BELL_NAME || "{{ASSISTANT}} bell";
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const ANSI = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]/g;
-
-// Prompt text (lowercase, ANSI stripped) -> keystrokes to send, 400 ms apart. Each is answered at most once per start.
-const UP = "\x1b[A";
-const PROMPTS = [
-  // Folder trust is pre-set in ~/.claude.json (projects[jarvis-bell].hasTrustDialogAccepted); its default option is "No, exit", so never auto-answer it.
-  // MCP prompt: its options are "Use this MCP server", "Use this and all future...", "Continue without" and the cursor starts on the
-  // last one, so a bare Enter declines daisy-bell and nothing listens on the bell port. Go up twice, then Enter.
-  { name: "project MCP server", match: /new mcp server found/, keys: [UP, UP, "\r"] },
-  { name: "development channel warning", match: /i am using this for local development/, keys: ["\r"] },
-];
 
 // Every process of the bell session carries this tag, so a session left behind by a killed supervisor (still holding the
 // bell port) is ended before a new one starts.
@@ -55,8 +47,8 @@ const child = spawn("/usr/bin/python3", args, { cwd: HOME_DIR, stdio: ["pipe", "
 } });
 log(`bell session starting in ${HOME_DIR}`);
 
-const answered = new Set();
-let seen = 0;
+const prompts = { started: Date.now(), answered: new Set(), done: null };
+let seen = 0, screen = "";
 const watcher = setInterval(() => {
   let size;
   try { size = statSync(SCREEN).size; } catch { return; }
@@ -65,19 +57,19 @@ const watcher = setInterval(() => {
   const fd = openSync(SCREEN, "r");
   try { readSync(fd, buf, 0, buf.length, seen); } finally { closeSync(fd); }
   seen = size;
-  const text = buf.toString("utf8").replace(ANSI, " ").replace(/\s+/g, " ").toLowerCase();
-  for (const p of PROMPTS) {
-    if (!answered.has(p.name) && p.match.test(text)) {
-      answered.add(p.name);
-      log(`answering startup prompt: ${p.name}`);
-      p.keys.forEach((k, i) => setTimeout(() => child.stdin.write(k), 1500 + i * 400));
-    }
+  // A prompt can arrive over two reads, so match against the recent startup screen, not just the newest bytes.
+  screen = (screen + buf.toString("utf8").replace(ANSI, " ").replace(/\s+/g, " ").toLowerCase()).slice(-20_000);
+  for (const p of promptsToAnswer(screen, prompts)) {
+    log(`answering startup prompt: ${p.name}`);
+    p.keys.forEach((k, i) => setTimeout(() => child.stdin.write(k), 1500 + i * 400));
   }
-  if (/remote control (active|connected)|session url|claude\.ai\/code/.test(text) && !answered.has("rc")) {
-    answered.add("rc");
-    log("remote control is up");
+  if (prompts.done) {
+    // Startup is over: stop reading the screen, so job text shown later can never trigger a keystroke.
+    clearInterval(watcher);
+    log(prompts.done === "rc" ? "remote control is up; no longer reading the screen" : "startup window over (90 s); no longer reading the screen");
   }
 }, 1000);
+setTimeout(() => { if (!prompts.done) { prompts.done = "time"; clearInterval(watcher); log("startup window over (90 s); no longer reading the screen"); } }, ANSWER_WINDOW_MS + 1000).unref();
 
 // The session can stay up while its bell port is dead (the daisy-bell server crashed or never bound). After a start-up
 // grace, three failed health checks in a row end the whole session; launchd (KeepAlive) then starts a fresh one.

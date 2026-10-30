@@ -68,6 +68,9 @@ if (platform === "darwin") {
   const plists = fs.existsSync(agents) ? fs.readdirSync(agents).filter((f) => f.endsWith(".plist")) : [];
   check(plists.length >= 2, `launch agents written (${plists.join(", ")})`);
   if (process.platform === "darwin") for (const f of plists) check(spawnSync("plutil", ["-lint", path.join(agents, f)]).status === 0, `${f} passes plutil -lint`);
+  // The phone bell is off unless the person said yes: no bell session and no bell settings without a yes on record.
+  const bellOn = JSON.parse(fs.readFileSync(path.join(dir, "install-receipt.json"), "utf8")).bell === true;
+  check(plists.includes("com.daisy.jarvis-bell.plist") === bellOn && (cfg.bell === null) === !bellOn, `phone bell ${bellOn ? "on, as the install said yes" : "off, as no yes is on record"}`);
   const nodeLink = fs.readdirSync(home, { withFileTypes: true }).filter((e) => e.name.startsWith(".") && fs.existsSync(path.join(home, e.name, "node", "bin", "node")));
   check(nodeLink.length === 1, "worker Node link exists");
 } else {

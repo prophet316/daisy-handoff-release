@@ -8,7 +8,7 @@
 //        add --config <file> to point at another config (used for local tests)
 //        add --no-reset for a one-off worker next to the live one: the startup reset requeues every running job
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, lstatSync, openSync, readSync, closeSync, appendFileSync, existsSync, unlinkSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, lstatSync, openSync, readSync, closeSync, appendFileSync, existsSync, unlinkSync, realpathSync, renameSync } from "node:fs";
 import { spawn, execFileSync } from "node:child_process";
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,6 +68,9 @@ const RUNS = resolve(CFG.runsDir || join(HOME, "{{DOTDIR}}", "runs"));
 export const runDir = (id) => join(RUNS, String(id).replace(/[^\w.-]/g, "_"));
 // The kinds the gate held on the job's last run, from the gate's own record.
 const heldKinds = (state) => { try { return JSON.parse(readFileSync(join(state, ".cua-held.json"), "utf8")).flatMap((h) => h.blocked || []); } catch { return []; } };
+// The worker's own record that the last card was a purchase built from purchase.json (the agent stopped at the order page).
+// Only this record, never purchase.json itself, lets the approved run press the final button.
+const PURCHASE_HELD = ".purchase-held.json";
 
 // Limits for files sent to the connector so read_job_files can show them from any chat.
 const FILES_MAX = 100;            // files per job
@@ -209,8 +212,9 @@ export function cuaAllow(job, jobDir, approved, state = jobDir) {
   if (approved) {
     held = heldKinds(state).filter((k) => [...LANE_KINDS, "charge", "personal"].includes(k)); // charge and personal come only from an approved hold
     // The agent may stop at the order page itself (purchase.json) before the gate sees the final button: the card {{OWNER}}
-    // approved was for exactly that purchase, so it is the one charge, not a second card.
-    if (purchaseOf(jobDir)) held.push("charge");
+    // approved was for exactly that purchase, so it is the one charge, not a second card. The worker recorded that card in
+    // the run folder; a purchase.json on its own (an old one, or one the agent wrote later) unlocks nothing.
+    if (existsSync(join(state, PURCHASE_HELD))) held.push("charge");
   }
   return { allow: [...new Set([...allow, ...held])], held: [...new Set(held)] };
 }
@@ -230,6 +234,32 @@ export function purchaseLine(jobDir, state = jobDir) {
   const to = s(p.deliver_to || p.delivery_address || p.address);
   return `Approve this purchase? ${items || "(items not read)"}. Total ${s(p.total) || "(not read)"}. Delivers to ${to || "(address not read)"}` +
     `${p.site ? `, on ${s(p.site)}` : ""}. Nothing has been charged yet; approving lets {{ASSISTANT}} press the final button once.`;
+}
+
+// What the approve card adds to the agent's summary for a held lane run, on every hold, a second hold from an approved run
+// included: the purchase, and what approving unlocks, from the gate's own record, so the card says it whatever the agent wrote.
+// A purchase card built from purchase.json is recorded in the run folder; that record is what lets the next approved run pay.
+export function holdCard(summary, plan, jobDir, state) {
+  if (!plan.lane) return summary;
+  const buy = purchaseLine(jobDir, state);
+  if (buy) {
+    summary = plan.mode === "approved" ? `${buy} This is a second stop after an earlier approval. ${summary}` : buy;
+    if (purchaseOf(jobDir)) writeFileSync(join(state, PURCHASE_HELD), JSON.stringify({ at: new Date().toISOString(), card: buy }));
+  }
+  const kinds = [...new Set(heldKinds(state))].filter((k) => k !== "charge");
+  if (kinds.length) summary += ` Approving lets the next run do what the desktop gate held: ${kinds.join(", ")}.`;
+  else if (plan.mode === "approved" && !buy) summary += " The desktop gate held nothing on this run, so approving again unlocks nothing it blocks.";
+  return summary;
+}
+
+// After an approved run has read it, purchase.json is moved aside, so an old order page can't build a later card
+// ("Nothing has been charged yet") or count as a purchase again.
+export function retirePurchase(jobDir) {
+  const p = join(jobDir, "purchase.json");
+  if (!existsSync(p)) return null;
+  const used = join(jobDir, `purchase.used-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  renameSync(p, used);
+  return used;
 }
 
 function laneNote(lane) {
@@ -480,8 +510,8 @@ function tailText(file, max) {
 // secret-looking names, no links out), PROGRESS.md and JARVIS.md at the top of its project folder (plain files only),
 // and its log: the worker's lines about this job plus the agent's steps (.activity.log), the last 200. All redacted.
 export function liveFiles(job, dir) {
-  const redact = makeRedactor([KEY, bellKey(), ...installSecrets(ROOT), ...envSecrets()]);
-  const files = collectFiles(dir).map((f) => (f.binary ? f : { ...f, content: redact(f.content) }));
+  const redact = redactor();
+  const files = finalFiles(dir, redact);
   const proj = job.project_dir && !checkProject(job.project_dir) ? realpathSync(job.project_dir) : null;
   if (proj && proj !== HOME) {
     for (const name of LIVE_PROJECT_FILES) {
@@ -504,6 +534,13 @@ export function liveFiles(job, dir) {
   const log = redact(tail.join("\n"), { log: true });
   files.push({ path: "@log/job.log", size: Buffer.byteLength(log), content: log, truncated: lines.length > tail.length, tail: true });
   return files;
+}
+
+// The same redactor as live reads, for everything that leaves the {{MACHINE}} when a job ends: its files, its result and the
+// phone push. A job that wrote a key or the connector URL into a file or its summary doesn't send it out.
+const redactor = () => makeRedactor([KEY, bellKey(), ...installSecrets(ROOT), ...envSecrets()]);
+export function finalFiles(dir, redact = redactor()) {
+  return collectFiles(dir).map((f) => (f.binary ? f : { ...f, content: redact(f.content) }));
 }
 
 // ---- {{ASSISTANT}} bell: a phone push via the always-on Remote Control session. Never blocks a job. ----
@@ -532,6 +569,8 @@ async function ring(ev) {
 
 async function notify(ev) {
   if (!CFG.bell) return;
+  const redact = redactor();
+  ev = { ...ev, title: redact(ev.title), line: redact(ev.line) };
   try { await ring(ev); log(`bell rang for ${ev.id} (${ev.status})`); }
   catch (e) { log(`bell unavailable (${e.message}); kept for later`); mkdirSync(dirname(OUTBOX), { recursive: true }); appendFileSync(OUTBOX, JSON.stringify(ev) + "\n"); }
 }
@@ -577,8 +616,8 @@ async function sendApproved(job, dir) {
   const sentFile = join(dir, ".email-sent.json"), sending = join(dir, ".email-sending");
   const end = async (status, summary, sent) => {
     appendFileSync(join(dir, "RESULT.md"), `\n## Approved email (${new Date().toISOString()})\n${summary}\n`);
-    try { await api("files", { id: job.id, files: collectFiles(dir) }); } catch {}
-    await api("finish", { id: job.id, status, result: summary.slice(0, 2000), sent });
+    try { await api("files", { id: job.id, files: finalFiles(dir) }); } catch {}
+    await api("finish", { id: job.id, status, result: redactor()(summary).slice(0, 2000), sent });
     log(`job ${job.id} ${status}`);
     await notify(bellEvent(job, status, summary));
   };
@@ -668,7 +707,7 @@ let lastHealth = 0;
 export async function healthChecks() {
   const out = {};
   const ck = (k, ok, text) => (out[k] = { ok, text });
-  if (CFG.bell === null) ck("bell", true, "turned off (installed with --no-bell)");
+  if (CFG.bell === null) ck("bell", true, "off (phone notifications stay off unless {{OWNER}} says yes; turn on: node install.mjs --update --bell)");
   else if (CFG.bell) {
     try { const r = await fetch(CFG.bell.url, { method: "GET", signal: AbortSignal.timeout(3000) }); ck("bell", true, `listening (HTTP ${r.status})`); }
     catch (e) { ck("bell", false, `not answering on ${CFG.bell.url} (${String(e.cause?.code || e.message).slice(0, 60)})`); }
@@ -741,7 +780,8 @@ async function handle(job) {
   mkdirSync(state, { recursive: true, mode: 0o700 });
   let plan = planRun(job, dir, state);
   // The hold was read for this run (approved runs only); from here the record holds only what this run's gate holds.
-  try { unlinkSync(join(state, ".cua-held.json")); } catch {}
+  for (const f of [".cua-held.json", PURCHASE_HELD]) try { unlinkSync(join(state, f)); } catch {}
+  if (plan.mode === "approved" && retirePurchase(dir)) log(`job ${job.id} purchase.json moved aside: an approved run used it`);
   mkdirSync(plan.cwd, { recursive: true });
   if (plan.lane) { writeLaneConfig(plan, dir, job); log(`job ${job.id} ${isHost ? "host lane ({{OWNER}}'s Mac)" : "lane"} ready; allowed: ${plan.lane.allow.join(", ") || "nothing gated"}`); }
   for (const f of RUN_FILES) try { unlinkSync(join(dir, f)); } catch {}
@@ -826,12 +866,11 @@ async function handle(job) {
       writeFileSync(join(dir, ".held-email.json"), JSON.stringify(held, null, 1));
       log(`job ${job.id} holds an email from ${held.from || "?"} to ${held.to.join(", ")}${held.problems.length ? ` (${held.problems.length} problem(s))` : ""}`);
     }
-    // A purchase the gate held at the charge step: the one approve card says what, the total, and where it goes.
-    const buy = plan.lane ? purchaseLine(dir, state) : null;
-    if (buy) { summary = buy; log(`job ${job.id} holds a purchase for {{OWNER}}'s approve card`); }
-    // What approving unlocks, from the gate's own record, so the card says it whatever the agent wrote.
-    const kinds = plan.lane ? [...new Set(heldKinds(state))].filter((k) => k !== "charge") : [];
-    if (kinds.length) summary += ` Approving lets the next run do what the desktop gate held: ${kinds.join(", ")}.`;
+  }
+  // A purchase the gate held at the charge step, and what approving unlocks: on every hold, a second one from an approved run too.
+  if (status === "needs_approval" && plan.lane) {
+    summary = holdCard(summary, plan, dir, state);
+    if (existsSync(join(state, PURCHASE_HELD)) || heldKinds(state).includes("charge")) log(`job ${job.id} holds a purchase for {{OWNER}}'s approve card`);
   }
   // Publish and share only what {{OWNER}}'s job fields asked for, only after a clean finish, and only once per job.
   let pubOut = null;
@@ -860,8 +899,10 @@ async function handle(job) {
     pubOut ? `## Published and shared\n${[...pubOut.lines, ...pubOut.problems.map((p) => `Not done: ${p}`)].map((l) => `- ${l}`).join("\n")}\n` : ``,
     run.code !== 0 && run.err ? `## Errors\n${run.err.slice(-2000)}` : ``,
   ].join("\n"));
-  try { log(`job ${job.id} files stored:`, (await api("files", { id: job.id, files: collectFiles(dir) })).stored); }
+  const redact = redactor();
+  try { log(`job ${job.id} files stored:`, (await api("files", { id: job.id, files: finalFiles(dir, redact) })).stored); }
   catch (e) { log(`job ${job.id} files not stored: ${e.message}`); }
+  summary = redact(summary);
   const note = `${summary} Full result: ~/Projects/{{SLUG}}/jobs/${job.id}/RESULT.md`;
   await api("finish", { id: job.id, status, result: note.slice(0, 2000), session_id: data?.session_id || null, published: pubOut?.record || undefined, held: held || undefined });
   log(`job ${job.id} ${status}${bellStatus !== status ? ` (${bellStatus})` : ""}`);
@@ -892,7 +933,7 @@ async function publishOnly(job, dir) {
   if (out.problems.length) out.record = workDone(out.record);
   const summary = [...out.lines, ...out.problems.map((p) => `Not done: ${p}`), ...(out.problems.length ? [RETRY_NOTE] : [])].join(" ") || "Nothing to publish.";
   appendFileSync(join(dir, "RESULT.md"), `\n## Published and shared (${new Date().toISOString()})\n${summary}\n`);
-  await api("finish", { id: job.id, status, result: summary.slice(0, 2000), published: out.record || undefined });
+  await api("finish", { id: job.id, status, result: redactor()(summary).slice(0, 2000), published: out.record || undefined });
   log(`job ${job.id} ${status}`);
   await notify(bellEvent(job, status, summary));
 }

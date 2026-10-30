@@ -24,7 +24,7 @@ Still in the unzipped release folder:
 node install.mjs --manual
 ```
 
-Answer the five questions. This writes your install folder `~/Projects/daisy-handoff`, makes your three private keys, and writes the background services to `~/Library/LaunchAgents`. It deploys nothing and doesn't start them now, but macOS loads them at your next login. If you stop partway through this guide, run `node install.mjs --uninstall` in the release folder so they don't start at the next login with an unfinished install; it moves them to `~/.handoff-uninstalled`. The time zone line shows the zone your schedules will use; to pick another, add `--time-zone America/New_York` (or your zone) to the command.
+Answer the five questions. Phone notifications stay off unless you type yes; the question says why. This writes your install folder `~/Projects/daisy-handoff`, makes your three private keys, and writes the background services to `~/Library/LaunchAgents`. It deploys nothing and doesn't start them now, but macOS loads them at your next login. If you stop partway through this guide, run `node install.mjs --uninstall` in the release folder so they don't start at the next login with an unfinished install; it moves them to `~/.handoff-uninstalled`. The time zone line shows the zone your schedules will use; to pick another, add `--time-zone America/New_York` (or your zone) to the command.
 
 It ends with "DRY RUN COMPLETE" and a "Last step is yours" list. Leave that list for step 9: the URL it mentions is only a placeholder until step 5.
 
@@ -90,6 +90,8 @@ chmod 600 .connector-url
 
 ## 6. Let Claude Code trust the bell folder
 
+Skip this step if you left phone notifications off.
+
 The phone bell ("Daisy bell") is a Claude Code session that runs in the bell folder. The folder is named `jarvis-bell`, an older internal name that is kept so updates don't leave a second bell behind. Claude Code asks once whether to trust a new folder:
 
 ```bash
@@ -117,9 +119,9 @@ Everything should say ok, apart from the phone notification lines until you fini
 ## 9. Connect Claude and your phone
 
 1. Copy your URL: `pbcopy < .connector-url`
-2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+**, then **Add custom connector**. This is for personal Pro and Max accounts: on Team and Enterprise an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds one for the organization, and people across it can then connect to it, so don't add yours there. Name it "Nuff Said" and paste.
-3. On your phone, sign in to the Claude app with the same account and allow notifications.
-4. In Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`.
+2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+ Add**, then **Add custom connector**. This is for personal Pro and Max accounts: on Team and Enterprise an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds one for the organization, and people across it can then connect to it, so don't add yours there. Name it "Nuff Said", paste, and click **Continue**. Under **Authentication** choose **No sign in**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
+3. If you turned on phone notifications: on your phone, sign in to the Claude app with the same account and allow notifications.
+4. If you turned them on: in Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`.
 5. Open the Claude app, start voice, and say: **"Check updates with Daisy."** You're still talking to Claude; the name tells Claude to use your connector.
 
 To remove a manual install, follow the README's **Uninstall** steps. They're the same.

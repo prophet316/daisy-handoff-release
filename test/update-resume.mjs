@@ -56,18 +56,62 @@ check(fs.readFileSync(path.join(dir, ".connector-url"), "utf8") === url, "the co
 r = install(["--dry-run", "--update"]);
 check(r.status === 0 && json("install-receipt.json").leadAgent === null, "the next update keeps it off");
 
-// The phone bell can be turned off and on again on an update (Mac only), and stays as you left it.
+// The phone bell is off unless you say yes (Mac only): --yes leaves it off, an update never turns it on by itself, and it can
+// be turned on and off again and stays as you left it.
 if (process.platform === "darwin") {
   const plist = path.join(home, "Library", "LaunchAgents", "com.daisy.jarvis-bell.plist");
-  check(fs.existsSync(plist), "the bell's launch agent is there by default");
+  check(json("install-receipt.json").bell === false && json(path.join("worker", "config.json")).bell === null && !fs.existsSync(plist), "an install with --yes leaves the bell off");
+  r = install(["--dry-run", "--update"]);
+  check(r.status === 0 && json("install-receipt.json").bell === false && !fs.existsSync(plist), "an update keeps it off");
+  r = install(["--dry-run", "--update", "--bell"]);
+  check(r.status === 0 && json("install-receipt.json").bell === true && json(path.join("worker", "config.json")).bell?.url && fs.existsSync(plist), "--update --bell turns it on");
+  check(/I am using this for local development/.test(r.stdout) && /--no-bell/.test(r.stdout), "the installer says what the bell answers for you, and how to turn it off");
+  r = install(["--dry-run", "--update"]);
+  check(r.status === 0 && json("install-receipt.json").bell === true && fs.existsSync(plist), "the next update keeps it on, as you chose");
   r = install(["--dry-run", "--update", "--no-bell"]);
   check(r.status === 0 && json("install-receipt.json").bell === false && json(path.join("worker", "config.json")).bell === null && !fs.existsSync(plist), "--update --no-bell turns the bell off and moves its launch agent aside", r.stderr.slice(-200));
   check(!/local development/.test(r.stdout), "with the bell off, the installer has no development-channel note to show");
-  r = install(["--dry-run", "--update"]);
-  check(r.status === 0 && json("install-receipt.json").bell === false && !fs.existsSync(plist), "the next update keeps the bell off");
+  // An install from before the question (no answer on record, bell running): the update asks instead of keeping it on.
   r = install(["--dry-run", "--update", "--bell"]);
-  check(r.status === 0 && json("install-receipt.json").bell === true && json(path.join("worker", "config.json")).bell?.url && fs.existsSync(plist), "--update --bell turns it back on");
-  check(/I am using this for local development/.test(r.stdout) && /--no-bell/.test(r.stdout), "the installer says what the bell answers for you, and how to turn it off");
+  const rec = json("install-receipt.json"); delete rec.bell; fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify(rec));
+  r = install(["--dry-run", "--update"]);
+  check(r.status !== 0 && /no terminal to ask in \("Turn on phone notifications\?"\)/.test(r.stderr) && fs.existsSync(plist), "with no answer on record and no terminal, the update stops at the question and changes nothing", r.stderr.slice(-300));
+  r = install(["--dry-run", "--update", "--yes"]);
+  check(r.status === 0 && json("install-receipt.json").bell === false && !fs.existsSync(plist), "with --yes it takes the default, off, and stops the old bell");
+  check(/research preview/.test(r.stdout) && /I am using this for local development/.test(r.stdout) && /\[no\]: no \(--yes\)/.test(r.stdout), "the question says what the bell answers for you, and shows the answer --yes took");
+  // A new install: no terminal and no --yes stops at the first question; in a terminal a bare Enter means no, yes means yes.
+  const nh = path.join(home, "new-bell");
+  const fresh = (args, o = {}) => spawnSync(o.cmd || process.execPath, [...(o.pre || []), path.join(REPO, "install.mjs"), "--dry-run", "--name", "Tester", "--assistant", "Daisy", "--home", nh, ...args], { encoding: "utf8", input: o.input });
+  r = fresh([]);
+  check(r.status !== 0 && /no terminal to ask in/.test(r.stderr) && !fs.existsSync(path.join(nh, "Projects")), "no terminal and no --yes: it stops before answering anything");
+  // A real terminal (Python's pty module), answering each question as it shows: Enter, or `bell` at the bell question.
+  const PTY = `import os, pty, sys, select
+pid, fd = pty.fork()
+if pid == 0: os.execv(sys.argv[1], sys.argv[1:])
+out, asked = b"", 0
+while True:
+    r, _, _ = select.select([fd], [], [], 60)
+    if not r: break
+    try: d = os.read(fd, 4096)
+    except OSError: break
+    if not d: break
+    out += d
+    while out.count(b"]: ") > asked:
+        asked += 1
+        bell = b"turn it on [no" in out[:[i for i in range(len(out)) if out.startswith(b"]: ", i)][asked - 1]][-20:]
+        os.write(fd, (os.environ["BELL_ANSWER"] if bell else "").encode() + b"\\r")
+sys.stdout.write(out.decode("utf8", "replace"))
+sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
+  const tty = async (bell) => {
+    fs.rmSync(nh, { recursive: true, force: true });
+    return spawnSync("python3", ["-c", PTY, process.execPath, path.join(REPO, "install.mjs"), "--dry-run", "--name", "Tester", "--assistant", "Daisy", "--machine", "Mac", "--home", nh],
+      { encoding: "utf8", env: { ...process.env, BELL_ANSWER: bell }, timeout: 120_000 });
+  };
+  const nrec = () => { try { return JSON.parse(fs.readFileSync(path.join(nh, "Projects", "daisy-handoff", "install-receipt.json"), "utf8")); } catch { return {}; } };
+  r = await tty("");
+  check(r.status === 0 && nrec().bell === false && /Type yes to turn it on \[no\]/.test(r.stdout), "in a terminal, Enter at the bell question leaves it off", r.stdout.slice(-300));
+  r = await tty("yes");
+  check(r.status === 0 && nrec().bell === true, "in a terminal, yes turns it on", r.stdout.slice(-300));
 }
 
 // A real update that stops at the Cloudflare sign-in says the old settings are still live (fake claude and npx; not on Windows).
@@ -94,6 +138,10 @@ const mhome = path.join(home, "manual-home");
 fs.mkdirSync(mhome);
 const man = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--manual", "--yes", "--name", "Tester", "--assistant", "Daisy"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
 check(man.status === 0 && fs.existsSync(path.join(mhome, "Projects", "daisy-handoff", "site.json")) && JSON.parse(fs.readFileSync(path.join(mhome, "Projects", "daisy-handoff", "install-receipt.json"), "utf8")).dryRun === true, "--manual builds the install in your home folder and deploys nothing", man.stderr.slice(-300));
+const mdir = path.join(mhome, "Projects", "daisy-handoff");
+check(JSON.parse(fs.readFileSync(path.join(mdir, "install-receipt.json"), "utf8")).manual === true, "the receipt records a manual install");
+const mdoc = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+check(/MANUAL-INSTALL\.md, steps 2 to 7/.test(mdoc.stdout) && !/without --dry-run|install\.mjs --force/.test(mdoc.stdout), "the doctor sends a manual install on to MANUAL-INSTALL.md, never to --force", mdoc.stdout.slice(-400));
 const plain = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--home", mhome], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
 check(plain.status !== 0 && /--manual/.test(plain.stderr), "a plain dry run in your home folder is still refused, and points to --manual");
 check(install(["--manual", "--update"]).status !== 0, "--manual with --update is refused");
