@@ -5,7 +5,7 @@
 
 import APP_SDK from "./vendor/ext-apps-app.js";
 
-const SERVER_INFO = { name: "{{SLUG}}", version: "0.10.0" };
+const SERVER_INFO = { name: "{{SLUG}}", version: "0.9.1" };
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const STATUSES = ["queued", "running", "done", "failed", "needs_approval", "cancelled"];
 const FINISHED = ["done", "failed", "needs_approval", "cancelled"];

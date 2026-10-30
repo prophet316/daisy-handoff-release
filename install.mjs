@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Nuff Said installer: one file for macOS and Windows.
+// Nuff Said installer for macOS. (The Windows code paths are here for testing and aren't in this release.)
 //
-//   node install.mjs                install for real (4 questions, one Cloudflare sign-in in your browser)
+//   node install.mjs                install for real (5 questions, one Cloudflare sign-in in your browser)
 //   node install.mjs --dry-run      build a full install in a throwaway folder; deploys nothing, starts nothing
+//   node install.mjs --manual       step 1 of MANUAL-INSTALL.md: the same, but in your real home folder
 //   node install.mjs --uninstall    stop the background worker and remove its startup entry (your files stay)
 //   node install.mjs --doctor       check this computer and your install, and save a report with secrets removed
 //   node install.mjs --update       update an install in place: same keys, same connector URL, same Worker and database,
@@ -19,6 +20,9 @@
 //                --no-start (deploy for real, write the startup files, but don't start the worker)
 //                --no-power-lanes (turn off the command line and desktop control, which are on by default)
 //                --lead-agent NAME (let one named agent approve held actions for you; off by default, see the README)
+//                --no-lead-agent (with --update: turn the lead agent off again; your connector URL stays the same)
+//                --no-bell (no phone notifications: the bell session, and its answer to Claude Code's development-channel
+//                warning, aren't set up; --bell turns it back on)
 //
 // Needs Node 22.13+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
 // It never prints your connector URL or keys. The URL works like a password: it goes to your clipboard
@@ -57,7 +61,18 @@ const POWER_WARNING = [
   "asked for them. That lowers the risk but doesn't remove it. To turn it off, answer no here or rerun the installer",
   "with --no-power-lanes. Install it only on a computer you trust it with. Desktop control is Mac only for now.",
 ];
+// Shown at install, Mac only: what the phone bell answers for you. Same substance as README, SECURITY.md and RELEASE_NOTES.md.
+const BELL_NOTE = [
+  "Phone notifications: the bell is a Claude Code session with Remote Control on that gets each finished job through Claude",
+  "Code channels, a research preview. The bell's channel isn't on Anthropic's approved list, so it uses Claude Code's",
+  "developer flag for channels (--dangerously-load-development-channels). That flag shows a warning Anthropic meant for people",
+  "testing their own channels, answered \"I am using this for local development\", every time the bell starts. Nobody is at",
+  "that terminal, so the bell picks that answer for you each time, and says yes to its own MCP server. Without the bell,",
+  "jobs work the same; you just get no phone notifications. Turn it off later with --update --no-bell.",
+];
 const HOST = process.platform; // the OS we are really running on
+// While an update runs: what is still on your old settings if it stops now (set by main as it goes).
+let stillOld = null;
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -67,7 +82,7 @@ if (has("doctor")) { // the doctor lives in its own file, so the installer copie
   const d = spawnSync(process.execPath, [path.join(HERE, "doctor.mjs"), ...argv.filter((a) => a !== "--doctor")], { stdio: "inherit" });
   process.exit(d.status ?? 1);
 }
-const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "time-zone",
+const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "no-lead-agent", "bell", "no-bell", "manual", "time-zone",
   "update", "rotate-keys", "clear-schedules"]);
 for (const a of argv) if (a.startsWith("--") && !KNOWN.has(a.slice(2))) die(`unknown option ${a} (try --help)`);
 if (has("help")) {
@@ -76,15 +91,20 @@ if (has("help")) {
   console.log(head.map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(0);
 }
-const DRY = has("dry-run");
+// --manual: step 1 of MANUAL-INSTALL.md. Builds your install in your real home folder like a dry run: nothing deployed or started.
+const MANUAL = has("manual");
+const DRY = has("dry-run") || MANUAL;
+if (MANUAL && ["update", "rotate-keys", "clear-schedules", "uninstall", "platform"].some(has)) die("--manual is only for step 1 of MANUAL-INSTALL.md, on its own.");
 const PLATFORM = val("platform") || HOST;
 if (val("platform") && !DRY) die("--platform only works together with --dry-run");
 const MAC = PLATFORM === "darwin";
 const WIN = PLATFORM === "win32";
 if (!MAC && !WIN) die(`this installer supports macOS and Windows; this computer reports "${PLATFORM}"`);
 const SIM = PLATFORM !== HOST; // writing another OS's files: nothing gets run
+// The Windows worker is still in testing: a real install there is refused, a practice one (--dry-run) is fine.
+if (WIN && !SIM && !DRY && !has("uninstall")) die("Windows isn't in this release. The Windows worker is still in testing. You can try a practice install with --dry-run.");
 // A dry run never touches your real home folder unless you point it somewhere with --home.
-const HOME = path.resolve(val("home") || (DRY ? fs.mkdtempSync(path.join(os.tmpdir(), "handoff-dry-")) : os.homedir()));
+const HOME = path.resolve(val("home") || (DRY && !MANUAL ? fs.mkdtempSync(path.join(os.tmpdir(), "handoff-dry-")) : os.homedir()));
 
 // ---------- output ----------
 const steps = [];
@@ -92,7 +112,7 @@ const say = (s = "") => console.log(s);
 const ok = (s) => { say(`  ok    ${s}`); steps.push(["ok", s]); };
 const note = (s) => { say(`  note  ${s}`); steps.push(["note", s]); };
 const skip = (s) => { say(`  skip  ${s}`); steps.push(["skip", s]); };
-function die(s) { console.error(`\nSTOPPED: ${s}`); process.exit(1); }
+function die(s) { console.error(`\nSTOPPED: ${s}${stillOld ? `\n${stillOld}` : ""}`); process.exit(1); }
 let stepNo = 0;
 const step = (t, total) => { stepNo++; say(`\n[${stepNo}/${total}] ${t}`); };
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -111,7 +131,7 @@ function writeSecret(p, s) {
 // ---------- uninstall, key change ----------
 if (has("uninstall")) { uninstall(); process.exit(0); }
 // A dry run moves folders and writes key files in its home folder like a real run, so never in your real one.
-if (DRY && path.resolve(HOME) === path.resolve(os.homedir())) die("a dry run can't use your real home folder, so your install is left alone. Leave out --home, or point it at a test folder like /tmp/daisy-test.");
+if (DRY && !MANUAL && path.resolve(HOME) === path.resolve(os.homedir())) die("a dry run can't use your real home folder, so your install is left alone. Leave out --home, or point it at a test folder like /tmp/nuff-test. (For MANUAL-INSTALL.md step 1, use --manual.)");
 if (has("rotate-keys") || has("clear-schedules")) { await rotateKeys(); process.exit(0); }
 
 function uninstall() {
@@ -123,9 +143,9 @@ function uninstall() {
     const plists = fs.existsSync(agents) ? fs.readdirSync(agents).filter((f) => /^com\.daisy\..*\.plist$/.test(f)) : [];
     for (const f of plists) {
       const p = path.join(agents, f);
-      if (!DRY && !SIM) run("launchctl", ["bootout", `gui/${process.getuid()}`, p]);
+      const was = !DRY && !SIM && run("launchctl", ["bootout", `gui/${process.getuid()}`, p]).status === 0;
       if (!DRY) { fs.mkdirSync(bak, { recursive: true }); fs.renameSync(p, path.join(bak, f)); }
-      ok(`${DRY ? "would stop" : "stopped"} ${f.replace(/\.plist$/, "")}`); n++;
+      ok(`${DRY ? "would stop" : was ? "stopped" : "removed (it wasn't running)"} ${f.replace(/\.plist$/, "")}`); n++;
     }
   } else {
     const startup = path.join(HOME, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
@@ -156,10 +176,10 @@ async function main() {
   const UPDATE = has("update");
   if (UPDATE && has("force")) die("use --update or --force, not both. --update keeps your keys and connector URL; --force makes new ones.");
   say(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
-  if (!UPDATE) say("Nuff Said is made for Claude. It's an independent project, not made by or affiliated with Anthropic.");
+  if (!UPDATE) say("Nuff Said is made for Claude. It's an independent project, not made by, affiliated with or endorsed by Anthropic.");
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
   if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
-    "  node install.mjs --dry-run --yes --home /tmp/daisy-test\n  node install.mjs --update --dry-run --home /tmp/daisy-test\nA dry run never touches your real install.");
+    "  node install.mjs --dry-run --yes --home /tmp/nuff-test\n  node install.mjs --update --dry-run --home /tmp/nuff-test\nA dry run never touches your real install.");
   if (!fs.existsSync(TEMPLATE)) die(`no template folder next to install.mjs (looked for ${TEMPLATE}). Unzip the whole release and run it from that folder.`);
   // An update keeps last time's answers (site.json and install-receipt.json in the install folder) unless a flag changes one.
   const prev = UPDATE ? findInstall() : null;
@@ -203,11 +223,18 @@ async function main() {
   if (!has("no-power-lanes") && keepPower !== false) for (const l of POWER_WARNING) say(`  ${l}`);
   const power = keepPower ?? (!has("no-power-lanes") && (has("power-lanes") ||
     !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes"))));
+  // The phone bell: asked once on a new install, after saying what it answers for you. An update keeps last time's answer.
+  if (has("bell") && has("no-bell")) die("use --bell or --no-bell, not both.");
+  let bell = MAC && (has("no-bell") ? false : has("bell") ? true : prev ? prev.receipt.bell !== false : null);
+  if (bell !== false && MAC && (!prev || has("bell") || prev.receipt.bell === undefined)) for (const l of BELL_NOTE) say(`  ${l}`);
+  if (bell === null) bell = !/^n(o)?$/i.test(await ask("Turn on phone notifications?", "yes"));
   ask.close();
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
   const prevLead = prev ? ("leadAgent" in prev.receipt ? prev.receipt.leadAgent : /^LEAD_AGENT = "([^"]*)"$/m.exec(prev.toml)?.[1]) : null;
-  const lead = (val("lead-agent") || (has("lead-agent") ? "" : prevLead) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
+  if (has("lead-agent") && has("no-lead-agent")) die("use --lead-agent NAME or --no-lead-agent, not both.");
+  const lead = has("no-lead-agent") ? "" : (val("lead-agent") || (has("lead-agent") ? "" : prevLead) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
   if (has("lead-agent") && !lead) die("--lead-agent needs a name, e.g. --lead-agent captain");
+  const dropLead = !!(prevLead && !lead); // turned off on this update: its key comes off Cloudflare too
   const { base, slug } = slugOf(assistant);
   const dotdir = `.${base}`;
   const dir = path.join(HOME, "Projects", slug);
@@ -216,7 +243,7 @@ async function main() {
   ok(`install folder ${dir}`);
   ok(`schedules use your time zone, ${timeZone} (another one: --time-zone)`);
   if (lead) for (const l of LEAD_WARNING(lead)) note(l);
-  else ok("only you can approve held actions, from your own Claude chat; other agents can't (to change that: --lead-agent NAME)");
+  else ok(`approvals are refused for agents that call your URL directly; your own Claude chat counts as you (see SECURITY.md)${dropLead ? `. Lead agent "${prevLead}" turned off` : ""}`);
   (power ? note : ok)(`command line and desktop control ${power ? "on: jobs can run shell commands and use this computer's desktop (turn off: rerun the installer with --no-power-lanes)" : "off (turn on: rerun the installer with --power-lanes, or answer yes)"}`);
 
   const agents = path.join(HOME, "Library", "LaunchAgents");
@@ -239,7 +266,7 @@ async function main() {
   // 3. render
   step("Building your copy", TOTAL);
   const home = fwd(HOME);
-  const worker = workerConfig(home, claudeBin, slug, power);
+  const worker = workerConfig(home, claudeBin, slug, power, bell);
   const tokens = {
     HOME: home, USER: os.userInfo().username, SLUG: slug, DOTDIR: dotdir, MACHINE: machine, ASSISTANT: assistant,
     OWNER: owner, OWNER_UPPER: owner.toUpperCase(),
@@ -252,14 +279,15 @@ async function main() {
     WORKER_CONFIG_JSON: JSON.stringify(worker, null, 2),
   };
   const n = render(TEMPLATE, dir, tokens);
-  if (UPDATE) carryOver(bak, dir);
+  if (UPDATE) carryOver(bak, dir, bell);
   fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
   fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION, timeZone }, null, 2) + "\n");
   fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
   // This run's answers, before anything can stop it partway, so a second try keeps them. The full receipt replaces it at the end.
-  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone,
+  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
     ...(UPDATE ? { updatedFrom: prev.receipt.updatedFrom || prev.receipt.installer || prev.site.installer || null } : {}) }, null, 2) + "\n");
   ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
+  if (UPDATE && !DRY) stillOld = "Nothing changed on Cloudflare or in the running worker: they still use your old settings, including the command line switch, until the update finishes. Run node install.mjs --update again.";
   if (MAC) {
     const nodeBin = (!SIM && which("node")) || process.execPath;
     const nb = path.join(HOME, dotdir, "node", "bin");
@@ -288,7 +316,7 @@ async function main() {
   if (DRY) {
     url = `https://${slug}.your-subdomain.workers.dev`;
     skip(`deploy (dry run). For real: wrangler login, d1 create ${slug}-jobs, d1 execute schema.sql, deploy, 2 secrets`);
-  } else url = deploy(dir, slug, lead);
+  } else url = deploy(dir, slug, lead, UPDATE && dropLead);
   setWorkerBase(dir, url);
   writeSecret(path.join(dir, ".connector-url"), `${url}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
   ok("worker pointed at the connector; private URL saved in .connector-url");
@@ -297,8 +325,10 @@ async function main() {
 
   // 6. background worker
   step("Starting the worker at login", TOTAL);
-  if (MAC) trustBellFolder(dir);
-  if (MAC) installMac(dir); else installWin(dir, assistant);
+  if (MAC && bell) { ok("phone bell on: it answers Claude Code's development-channel warning for you each time it starts (turn off: --update --no-bell)"); trustBellFolder(dir); }
+  else if (MAC) ok("phone notifications off (--no-bell): no bell session; turn on with --update --bell");
+  if (MAC) installMac(dir, bell); else installWin(dir, assistant);
+  stillOld = null;
   if (!DRY) {
     const s = await smokeCheck(fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim());
     if (s.ok) ok(`live check passed: your connector answers your key with ${s.tools} tools and turns away a wrong key (HTTP ${s.badStatus})`);
@@ -311,16 +341,16 @@ async function main() {
     step("Nothing to do in Claude", TOTAL);
     say("  Your connector URL didn't change, so the connector you already added in Claude keeps working.");
     say("  Jobs that were running when the worker restarted go back in the queue and start again.");
-  } else await handOff(dir, urlFile, assistant);
+  } else await handOff(dir, urlFile, assistant, bell);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
-    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone,
+    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
     ...(UPDATE ? { updatedFrom: (prev.receipt.unfinished ? prev.receipt.updatedFrom : prev.receipt.installer) || prev.site.installer || null } : {}), steps,
   }, null, 2) + "\n");
   say(`\n${DRY ? "DRY RUN COMPLETE" : UPDATE ? "UPDATE COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
 }
 
-async function handOff(dir, urlFile, assistant) {
+async function handOff(dir, urlFile, assistant, bell) {
   step("Last step is yours (about a minute)", 7);
   let copied = false;
   if (!DRY && !SIM) {
@@ -329,8 +359,8 @@ async function handOff(dir, urlFile, assistant) {
   }
   say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > Add custom connector.`);
   say(`  2. Name it "Nuff Said" and paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}).`);
-  say(`  3. On your phone, open the Claude app, start voice, and say: "${assistant}, check updates."`);
-  if (MAC) {
+  say(`  3. On your phone, open the Claude app, start voice, and say: "Check updates with ${assistant}."`);
+  if (MAC && bell) {
     say(`  For a phone notification when a job finishes (once, about a minute):`);
     say(`  4. On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`);
     say(`  5. In Terminal run claude, type /config, turn on "Push when Claude decides", then type /exit.`);
@@ -361,7 +391,7 @@ function findInstall() {
 }
 
 // An update keeps what the old install made while it ran: job and thread folders, logs, and settings in worker/config.json.
-function carryOver(bak, dir) {
+function carryOver(bak, dir, bell) {
   let moved = 0;
   for (const d of ["jobs", "threads", "logs"]) {
     const from = path.join(bak, d);
@@ -375,8 +405,9 @@ function carryOver(bak, dir) {
     const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
     let old = {};
     try { old = JSON.parse(fs.readFileSync(oldPath, "utf8")); } catch { note("couldn't read the old worker/config.json; using the new defaults"); }
-    // Your settings win, except the ones this run decides: the command line switch, and where the connector is (set after deploy).
-    fs.writeFileSync(cfgPath, JSON.stringify({ ...fresh, ...old, powerLanes: fresh.powerLanes, base: fresh.base }, null, 2) + "\n");
+    // Your settings win, except the ones this run decides: the command line switch, the bell when it's off, and where the
+    // connector is (set after deploy). A bell turned back on gets its setting from your old config if it had one.
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...fresh, ...old, powerLanes: fresh.powerLanes, base: fresh.base, bell: bell ? old.bell || fresh.bell : null }, null, 2) + "\n");
   }
   ok(`kept your job and thread folders, logs (${moved} folder(s) moved from the old install) and your worker settings`);
 }
@@ -391,7 +422,6 @@ async function rotateKeys() {
   const ROTATE = has("rotate-keys");
   say(`Nuff Said ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
   const W = wranglerIn(dir);
-  if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   const db = `${site.slug || path.basename(dir)}-jobs`;
   const STEPS = ROTATE ? 4 : 2;
   const base = JSON.parse(fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8")).base;
@@ -399,20 +429,24 @@ async function rotateKeys() {
     die(`${dir} is from an install or update that stopped partway. In the release folder run node install.mjs --update first, then try this again. Nothing was changed.`);
   }
   const oldUrl = fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim();
+  if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   if (!DRY) cloudflareSignIn(W, "no keys were changed");
-  if (ROTATE) {
-    step("New keys", STEPS);
-    const keys = [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"], ...(fs.existsSync(path.join(dir, ".lead-agent-key")) ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])];
+  // The connector key first, so a leaked URL is locked out at once. The worker key last, right before the restart, so the
+  // running worker isn't cut off while you read the list below (a job finishing then couldn't report and would run again).
+  const newKeys = (keys, first) => {
     for (const [i, [name, file]] of keys.entries()) {
       const key = randomBytes(32).toString("hex");
       // Cloudflare first, then the file: if a step fails, every key file still matches what Cloudflare has.
-      if (!DRY) { const r = W(["secret", "put", name], { input: key }); if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}. ${i ? "Keys changed before it are saved" : "No keys were changed"}; run --rotate-keys again.`); }
+      if (!DRY) { const r = W(["secret", "put", name], { input: key }); if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}. ${i || !first ? "Keys changed before it are saved" : "No keys were changed"}; run --rotate-keys again.`); }
       writeSecret(path.join(dir, file), key);
       ok(`${name} changed${DRY ? " (dry run: only the file)" : ", on Cloudflare and in " + file}`);
     }
+  };
+  if (ROTATE) {
+    step("New connector key", STEPS);
+    newKeys([["CONNECTOR_KEY", ".connector-key"]], true);
     writeSecret(path.join(dir, ".connector-url"), `${base}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
-    ok("new private URL saved in .connector-url");
-    note("the bell key (.bell-key) only works from this computer, so it stays");
+    ok("new private URL saved in .connector-url; the old URL is locked out");
   }
 
   step("What could still run later", STEPS);
@@ -461,7 +495,9 @@ async function rotateKeys() {
 
   // The restart comes after clearing, so a running job you chose to stop is cancelled by it, not put back in the queue.
   if (ROTATE) {
-    step("Restart on the new keys", STEPS);
+    step("New worker key and restart", STEPS);
+    newKeys([["WORKER_KEY", ".worker-key"], ...(fs.existsSync(path.join(dir, ".lead-agent-key")) ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])], false);
+    note("the bell key (.bell-key) only works from this computer, so it stays");
     if (MAC && !DRY && !SIM && !has("no-start")) {
       for (const label of ["com.daisy.handoff-worker", "com.daisy.supervisor"]) {
         const r = run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${label}`]);
@@ -518,7 +554,7 @@ function clean(s) {
   return s;
 }
 
-function workerConfig(home, claudeBin, slug, power) {
+function workerConfig(home, claudeBin, slug, power, bell = true) {
   const cfg = {
     base: "set-after-deploy",
     workerTag: slug, // unique per install, so one install's cleanup can never end another install's jobs
@@ -527,7 +563,7 @@ function workerConfig(home, claudeBin, slug, power) {
     claudeBin: fwd(claudeBin || `${home}/.local/bin/claude${WIN ? ".exe" : ""}`),
     pollSeconds: 20,
     runawayHours: 24,
-    bell: { url: "http://127.0.0.1:8790/notify", keyFile: ".bell-key" },
+    bell: bell ? { url: "http://127.0.0.1:8790/notify", keyFile: ".bell-key" } : null, // null: --no-bell
     addDirs: [home],
     maxParallel: 3,
     powerLanes: power, // shell commands and desktop control; the connector's POWER_LANES var matches it
@@ -578,12 +614,13 @@ function cloudflareSignIn(W, stopped) {
   const who = W(["whoami"]);
   if (who.status !== 0 || /not authenticated|not logged in/i.test(`${who.stdout}${who.stderr}`)) {
     say("  Your browser will open. Sign in to Cloudflare (a free account works) and click Allow.");
-    if (W(["login"], { stdio: "inherit" }).status !== 0) die(`Cloudflare sign-in didn't finish. Run this again when you're ready; ${stopped}.`);
+    const again = W(["login"], { stdio: "inherit" }).status === 0 && W(["whoami"]);
+    if (!again || again.status !== 0 || /not authenticated|not logged in/i.test(`${again.stdout}${again.stderr}`)) die(`Cloudflare sign-in didn't finish. Run this again when you're ready; ${stopped}.`);
   }
   ok("signed in to Cloudflare");
 }
 
-function deploy(dir, slug, lead) {
+function deploy(dir, slug, lead, dropLead) {
   const npx = HOST === "win32" ? "npx.cmd" : "npx";
   const W = (args, o = {}) => run(npx, ["-y", WRANGLER, ...args], { cwd: dir, ...o });
   say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
@@ -612,11 +649,16 @@ function deploy(dir, slug, lead) {
     die(`deploy failed: ${tail(dep)}`);
   }
   ok("connector deployed");
+  if (stillOld) stillOld = "Your connector on Cloudflare has the new settings, but the running worker still uses the old ones, including the command line switch, until the update finishes. Run node install.mjs --update again.";
   for (const [name, file] of [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"], ...(lead ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])]) {
     const r = W(["secret", "put", name], { input: fs.readFileSync(path.join(dir, file), "utf8") });
     if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}`);
   }
   ok("keys stored on Cloudflare");
+  if (dropLead) {
+    const r = W(["secret", "delete", "LEAD_AGENT_KEY"], { input: "y\n" });
+    (r.status === 0 ? ok : note)(r.status === 0 ? "lead agent key removed from Cloudflare" : `lead agent is off (LEAD_AGENT is empty), but its key couldn't be removed from Cloudflare (${tail(r)})`);
+  }
   return url;
 }
 
@@ -639,10 +681,19 @@ function trustBellFolder(dir) {
   }
 }
 
-function installMac(dir) {
+function installMac(dir, bell = true) {
   const agents = path.join(HOME, "Library", "LaunchAgents");
   fs.mkdirSync(agents, { recursive: true });
-  const plists = fs.readdirSync(path.join(dir, "worker")).filter((f) => /^com\.daisy\..*\.plist$/.test(f));
+  const BELL_PLIST = "com.daisy.jarvis-bell.plist";
+  const plists = fs.readdirSync(path.join(dir, "worker")).filter((f) => /^com\.daisy\..*\.plist$/.test(f) && (bell || f !== BELL_PLIST));
+  // Bell turned off: stop it and move its startup entry aside, the way --uninstall does.
+  if (!bell && fs.existsSync(path.join(agents, BELL_PLIST))) {
+    if (!DRY && !SIM) run("launchctl", ["bootout", `gui/${process.getuid()}`, path.join(agents, BELL_PLIST)]);
+    const aside = path.join(HOME, ".handoff-uninstalled", stamp());
+    fs.mkdirSync(aside, { recursive: true });
+    fs.renameSync(path.join(agents, BELL_PLIST), path.join(aside, BELL_PLIST));
+    ok(`phone bell stopped; its startup entry moved to ${aside}`);
+  }
   if (!plists.length) die("no launch agents in the template (a bug)");
   for (const f of plists) {
     const dst = path.join(agents, f);

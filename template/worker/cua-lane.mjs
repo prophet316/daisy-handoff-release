@@ -3,7 +3,7 @@
 // Every click, keystroke, app launch and URL goes through the safety gate below: anything that would send, post, buy,
 // delete, enter credentials or change access is refused unless {{OWNER}}'s job allowed that kind of action.
 //
-// Env (set by the worker): CUA_BIN, CUA_SANDBOX, CUA_ALLOW (comma list), CUA_JOB_DIR.
+// Env (set by the worker): CUA_BIN, CUA_SANDBOX, CUA_ALLOW (comma list), CUA_JOB_DIR, CUA_STATE_DIR.
 // Usage: node worker/cua-lane.mjs            MCP server on stdio
 //        node worker/cua-lane.mjs --selftest gate checks, no VM needed
 
@@ -15,6 +15,8 @@ import { homedir } from "node:os";
 const CUA = process.env.CUA_BIN || join(homedir(), ".local", "bin", "cua");
 const SANDBOX = process.env.CUA_SANDBOX || "claude-mac";
 const JOB_DIR = process.env.CUA_JOB_DIR || process.cwd();
+// The hold record goes where the job can't write it (the worker's run folder); the job folder only in tests.
+const STATE_DIR = process.env.CUA_STATE_DIR || JOB_DIR;
 const ALLOW = new Set((process.env.CUA_ALLOW || "").split(",").map((s) => s.trim()).filter(Boolean));
 
 // ---- Safety gate ----
@@ -137,7 +139,7 @@ export function blockMessage(blocked) {
 }
 
 function hold(blocked, action, args) {
-  const file = join(JOB_DIR, ".cua-held.json");
+  const file = join(STATE_DIR, ".cua-held.json");
   let held = [];
   try { held = JSON.parse(readFileSync(file, "utf8")); } catch {}
   held.push({ at: new Date().toISOString(), blocked, action, intent: String(args.intent || "").slice(0, 300) });

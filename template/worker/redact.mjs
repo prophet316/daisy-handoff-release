@@ -1,7 +1,12 @@
 // Redaction for what leaves the Mac in a live read: job files, PROGRESS.md/JARVIS.md and log lines.
-// Known secret values (the worker and bell keys, secret-looking env vars) are always replaced, and so are common token shapes.
+// Known secret values (the worker, bell, connector and lead agent keys, the connector URL, secret-looking env vars) are always
+// replaced, and so are common token shapes.
 // Logs also lose any long random-looking string, since a log line has no reason to carry one.
 // Usage: node worker/redact.mjs --selftest
+
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const MARK = "[redacted]";
 
@@ -39,11 +44,24 @@ export function envSecrets(env = process.env) {
   return Object.entries(env).filter(([k, v]) => /KEY|TOKEN|SECRET|PASSWORD|PASSWD|COOKIE/i.test(k) && v && v.length >= 8).map(([, v]) => v);
 }
 
+// The install's own key files: the connector key and URL, and the lead agent key (the worker and bell keys are passed in already).
+export function installSecrets(root) {
+  const out = [];
+  for (const f of [".connector-key", ".connector-url", ".lead-agent-key", ".worker-key", ".bell-key"]) {
+    try { const v = readFileSync(join(root, f), "utf8").trim(); if (v) out.push(v); } catch {}
+  }
+  return out;
+}
+
 // File names that are never sent, whatever folder they are in.
-export const SECRET_NAME = /^\.env(\..*)?$|\.(pem|key|p12|pfx|keychain(-db)?)$|^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|(^|[._-])(secrets?|credentials?)([._-]|$)|^\.?(worker|bell|connector)-key/i;
+export const SECRET_NAME = /^\.env(\..*)?$|\.(pem|key|p12|pfx|keychain(-db)?)$|^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|(^|[._-])(secrets?|credentials?)([._-]|$)|^\.?(worker|bell|connector|lead-agent)-key|^\.?connector-url/i;
 
 if (process.argv.includes("--selftest")) {
-  const r = makeRedactor(["local-worker-key-1234567890"]);
+  const tmp = mkdtempSync(join(tmpdir(), "redact-"));
+  const ck = "c0ffee".repeat(10) + "abcd", url = `https://nuff-test.example.invalid/${ck}/mcp`, lk = "1eadbeef".repeat(8);
+  writeFileSync(join(tmp, ".connector-key"), ck); writeFileSync(join(tmp, ".connector-url"), url); writeFileSync(join(tmp, ".lead-agent-key"), lk);
+  const r = makeRedactor(["local-worker-key-1234567890", ...installSecrets(tmp)]);
+  rmSync(tmp, { recursive: true, force: true });
   const cases = [
     ["the worker key", "auth local-worker-key-1234567890 ok", (o) => !o.includes("local-worker-key")],
     ["Anthropic key", "key sk-ant-api03-abcdefghijklmnopqrstuvwx", (o) => !o.includes("abcdefghijklmnop")],
@@ -60,9 +78,12 @@ if (process.argv.includes("--selftest")) {
     ["paths and log names untouched", "in {{HOME}}/Projects/demo-testproj logs/demo-test-final2-20261022-120610.log", (o) => !o.includes(MARK), { log: true }],
     ["40 hex digits in a log", "commit 3e172b5c0f9e8d7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c done", (o) => o === "commit [redacted] done", { log: true }],
     ["timestamps untouched", "2026-10-22T17:28:58.280Z job 283942b7 done", (o) => o === "2026-10-22T17:28:58.280Z job 283942b7 done", { log: true }],
+    ["connector URL in command output", `curl ${url}`, (o) => !o.includes(ck) && !o.includes("example.invalid/")],
+    ["connector key alone", `key ${ck} here`, (o) => !o.includes(ck)],
+    ["lead agent key", `lead ${lk}`, (o) => !o.includes(lk)],
     ["file names untouched in notes", "D1 bookmark 00000004-0000002f-0000510c-5619230e51157c31d9a94fc7aa34241b", (o) => o.includes("00000004-0000002f")],
   ];
-  const names = [[".env", true], [".env.local", true], ["server.pem", true], ["id_ed25519", true], ["aws-credentials.json", true], ["secrets.txt", true], [".worker-key", true],
+  const names = [[".env", true], [".env.local", true], ["server.pem", true], ["id_ed25519", true], ["aws-credentials.json", true], ["secrets.txt", true], [".worker-key", true], [".lead-agent-key", true], [".connector-url", true],
     ["RESULT.md", false], ["PROGRESS.md", false], ["keynote-notes.md", false], ["monkey.txt", false]];
   let fail = 0;
   for (const [name, input, ok, opt] of cases) { const out = r(input, opt); const good = ok(out); if (!good) fail++; console.log(`${good ? "PASS" : "FAIL"}  ${name}${good ? "" : ` -> ${out}`}`); }

@@ -18,7 +18,7 @@ You need all of these. The installer checks Node and Claude Code itself and stop
 
 - A Mac on macOS 13 (Ventura) or newer. Check: Apple menu > About This Mac.
 - An administrator password for the Mac, or someone who has it. The Node and Command Line Tools installers ask for it.
-- A Claude Pro or Max plan. On Team and Enterprise, only an Owner can add a custom connector, and people across the organization can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
+- A Claude Pro or Max plan. On Team and Enterprise, an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
 - A free Cloudflare account with a verified email address.
 - The Claude app on your phone, signed in to the same Claude account.
 
@@ -108,7 +108,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
 - **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + > Add custom connector**.
-- **Team or Enterprise plan:** only an Owner can add a custom connector there, and the whole organization can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
+- **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.
 - **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account. Close and reopen the app.
 - Run `node doctor.mjs`. It tests your connector from your Mac without showing the URL.
@@ -145,6 +145,8 @@ How it works: the installer starts an always-on Claude Code session on your Mac 
 Test it: in your install folder run `./bell-ping.sh`. Your phone should show a notification within about 30 seconds.
 
 You may also see a session named "Daisy bell" (or your assistant's name) in the Claude app. That's the bell. Leave it running.
+
+If you turned the bell off (`--no-bell`), there are no phone notifications and the doctor says so. `node install.mjs --update --bell` turns it back on.
 
 ---
 

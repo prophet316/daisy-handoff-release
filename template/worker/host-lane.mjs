@@ -5,7 +5,7 @@
 // request names it, and the same safety gate as the VM lane (send, post, buy, delete, credentials, access) must pass.
 // Screenshots stay in the job folder (shots/host-NNN.jpg).
 //
-// Env (set by the worker): CUA_DRIVER_BIN, CUA_ALLOW, CUA_JOB_DIR, HOST_REQUEST, HOST_IDLE_SECONDS.
+// Env (set by the worker): CUA_DRIVER_BIN, CUA_ALLOW, CUA_JOB_DIR, CUA_STATE_DIR, HOST_REQUEST, HOST_IDLE_SECONDS.
 //   Tests only: HOST_IDLE_CMD (prints idle seconds), HOST_IDLE_MAX_WAIT (seconds), HOST_APP_NAME (the app every pid is).
 // Usage: node worker/host-lane.mjs            MCP server on stdio
 //        node worker/host-lane.mjs --selftest off-limits and idle checks, no desktop needed
@@ -20,6 +20,8 @@ const { gate, blockMessage } = await import("./cua-lane.mjs");
 
 const DRIVER = process.env.CUA_DRIVER_BIN || join(homedir(), ".local", "bin", "cua-driver");
 const JOB_DIR = process.env.CUA_JOB_DIR || process.cwd();
+// The hold record goes where the job can't write it (the worker's run folder); the job folder only in tests.
+const STATE_DIR = process.env.CUA_STATE_DIR || JOB_DIR;
 const REQUEST = process.env.HOST_REQUEST || "";
 const IDLE_NEEDED = Number(process.env.HOST_IDLE_SECONDS ?? 10);
 const IDLE_MAX_WAIT = Number(process.env.HOST_IDLE_MAX_WAIT || 600);
@@ -359,7 +361,7 @@ const launched = new Set();
 const labels = new Map(); // element_token -> label, from the last looks
 
 function hold(blocked, action, args) {
-  const file = join(JOB_DIR, ".cua-held.json");
+  const file = join(STATE_DIR, ".cua-held.json");
   let held = [];
   try { held = JSON.parse(readFileSync(file, "utf8")); } catch {}
   held.push({ at: new Date().toISOString(), blocked, action, intent: String(args.intent || "").slice(0, 300), lane: "host" });

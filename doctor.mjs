@@ -149,7 +149,7 @@ if (!DIR || !site) {
     const deployed = isDeployed(cfg.base);
     check(deployed ? "ok" : "fail", deployed ? "worker knows its connector" : "the connector was never deployed (this is a dry run, or the install stopped before Cloudflare)",
       receiptJson?.dryRun ? "A dry run never deploys. Run node install.mjs without --dry-run." : `${FINISH} Finish the Cloudflare sign-in when your browser opens.`, "Cloudflare sign-in or deploy failed");
-    say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}`);
+    say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}${receiptJson?.unfinished ? " in the new files, but Cloudflare and the running worker may still use your old setting until the update finishes" : ""}`);
   }
 
   // An install made with --home (a test copy) has its services and Claude settings under that folder, not this account's.
@@ -182,7 +182,8 @@ if (!DIR || !site) {
   } else if (live) check("fail", "the worker has never run", "Look at logs/worker.log in your install folder.", "The worker isn't running");
 
   // phone bell (Remote Control session)
-  if (MAC && live) {
+  if (MAC && live && cfg?.bell === null) say("  info  phone notifications: off (installed with --no-bell; turn on with node install.mjs --update --bell)");
+  else if (MAC && live) {
     const bellUrl = new URL(cfg?.bell?.url || "http://127.0.0.1:8790/notify");
     let bellUp = false;
     try { bellUp = (await fetch(`${bellUrl.origin}/health`, { signal: AbortSignal.timeout(3000) })).ok; } catch {}

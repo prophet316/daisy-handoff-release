@@ -17,6 +17,8 @@ if [ "$1" = "gate" ]; then
   "$NODE" test/power-lanes.mjs | grep -v '^PASS' || rc=1
   echo "5 who sent it (agents can't approve, publish, run commands or pass as you; schedules and routines keep their sender):"
   "$NODE" test/sender.mjs | grep -v '^PASS' || rc=1
+  echo "6 what a job can't change (hold record, lane and hook configs, steering inbox outside the job folder; agent runs don't publish):"
+  "$NODE" test/run-state.mjs | grep -v '^PASS' || rc=1
   [ $rc = 0 ] && echo "gate: all passed" || echo "gate: FAILED"
   exit $rc
 fi

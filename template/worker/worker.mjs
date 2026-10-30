@@ -16,7 +16,7 @@ import { hostname, homedir, tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { makePublisher, publishJob } from "./publish.mjs";
 import { readDraft, checkDraft, draftHash, sendHeldEmail } from "./email.mjs";
-import { makeRedactor, envSecrets, SECRET_NAME } from "./redact.mjs";
+import { makeRedactor, envSecrets, installSecrets, SECRET_NAME } from "./redact.mjs";
 import { staleLaunchd, reloadLaunchd } from "./launchd-reload.mjs";
 import { hardKill } from "./kill.mjs";
 import { powerRefusal, powerOn } from "./power.mjs";
@@ -61,6 +61,13 @@ const HOOK = join(ROOT, "worker", "job-hook.mjs");
 // .heartbeat, .steps.log: written by the hook for the supervisor's watch; .watch.json, .recover.json: the supervisor's.
 const RUN_FILES = [".progress.json", ".stop", ".run.json", ".heartbeat", ".watch.json", ".recover.json"];
 const OUTBOX = join(ROOT, CFG.bell?.outbox || "logs/bell-outbox.jsonl");
+// What a job must not be able to change: the desktop gate's record of what it held, the lane and hook configs, and the
+// steering inbox. They live outside the job folder, in ~/{{DOTDIR}}/runs/<job>, which no computer job can write to
+// (computer jobs can only write in their job folder). A job with a command line can still write anywhere you can.
+const RUNS = resolve(CFG.runsDir || join(HOME, "{{DOTDIR}}", "runs"));
+export const runDir = (id) => join(RUNS, String(id).replace(/[^\w.-]/g, "_"));
+// The kinds the gate held on the job's last run, from the gate's own record.
+const heldKinds = (state) => { try { return JSON.parse(readFileSync(join(state, ".cua-held.json"), "utf8")).flatMap((h) => h.blocked || []); } catch { return []; } };
 
 // Limits for files sent to the connector so read_job_files can show them from any chat.
 const FILES_MAX = 100;            // files per job
@@ -120,7 +127,7 @@ async function api(route, body = {}) {
 }
 
 // What to tell Claude for this run, and whether to continue the last session.
-export function planRun(job, jobDir = join(ROOT, "jobs", job.id)) {
+export function planRun(job, jobDir = join(ROOT, "jobs", job.id), state = runDir(job.id)) {
   const mode = job.run_mode || "fresh";
   const resume = (mode === "approved" || mode === "reply") && job.session_id ? job.session_id
     : mode === "thread" && job.thread?.session_id ? job.thread.session_id : null;
@@ -164,15 +171,15 @@ export function planRun(job, jobDir = join(ROOT, "jobs", job.id)) {
       : job.origin ? `This job comes from ${job.origin}. That saved request is {{OWNER}}'s approval for exactly what it says, each time it runs, and nothing beyond it: anything else that would send, post, publish, spend, delete, or change passwords or access still stops for {{HIS}} yes (STATUS: NEEDS_APPROVAL).` : "",
   ].filter(Boolean).join("\n");
   const tools = profile.allowedTools || m.tools || TOOLS;
-  const lane = m.cua ? { ...cuaAllow(job, jobDir, approved), host } : null;
+  const lane = m.cua ? { ...cuaAllow(job, jobDir, approved, state), host } : null;
   const server = host ? "host-lane" : "cua-lane";
   return {
     mode, resume, prompt, kind, cwd, lane, first: resume ? `${original}${earlier}` : prompt,
     rules: `${approved ? (from ? APPROVED_RULES.replace("{{OWNER}} has now said yes to that held action.", `{{OWNER}}'s ${from} has now said yes to that held action, using the setting {{OWNER}} turned on that lets a lead agent approve for {{HIM}}. It was not {{OWNER}} directly.`) : APPROVED_RULES) : RULES}\n\n${context}${lane ? `\n${laneNote(lane)}` : ""}`,
-    mcpConfig: lane ? join(jobDir, ".cua-mcp.json") : profile.mcpConfig ? join(ROOT, profile.mcpConfig) : EMPTY_MCP,
+    mcpConfig: lane ? join(state, ".cua-mcp.json") : profile.mcpConfig ? join(ROOT, profile.mcpConfig) : EMPTY_MCP,
     tools,
     allowedTools: lane ? [...tools, `mcp__${server}`] : tools,
-    settings: join(jobDir, ".hooks.json"),
+    settings: join(state, ".hooks.json"), state,
     addDirs: [...new Set([...(m.addHome === false ? [] : CFG.addDirs || []), ...(cwd !== jobDir ? [jobDir] : []),
       ...(job.earlier || []).map((x) => join(ROOT, "jobs", x))])], // a routine step may read the steps before it
   };
@@ -193,15 +200,14 @@ function publishNote(job) {
 const LANE_KINDS = ["send", "post", "buy", "delete", "credentials", "access"];
 
 // What the gate lets this run do: the kinds {{OWNER}} allowed in {{HIS}} request, plus, on an approved run,
-// exactly the kinds that were blocked and held for {{HIS}} yes (read from the gate's own record).
-export function cuaAllow(job, jobDir, approved) {
+// exactly the kinds that were blocked and held for {{HIS}} yes on the run before (the gate's own record, outside the job folder).
+export function cuaAllow(job, jobDir, approved, state = jobDir) {
   let allow = [];
   try { allow = JSON.parse(job.allow || "[]"); } catch {}
   allow = allow.filter((k) => LANE_KINDS.includes(k));
   let held = [];
   if (approved) {
-    try { held = JSON.parse(readFileSync(join(jobDir, ".cua-held.json"), "utf8")).flatMap((h) => h.blocked || []); } catch {}
-    held = held.filter((k) => [...LANE_KINDS, "charge", "personal"].includes(k)); // charge and personal come only from an approved hold
+    held = heldKinds(state).filter((k) => [...LANE_KINDS, "charge", "personal"].includes(k)); // charge and personal come only from an approved hold
     // The agent may stop at the order page itself (purchase.json) before the gate sees the final button: the card {{OWNER}}
     // approved was for exactly that purchase, so it is the one charge, not a second card.
     if (purchaseOf(jobDir)) held.push("charge");
@@ -209,12 +215,11 @@ export function cuaAllow(job, jobDir, approved) {
   return { allow: [...new Set([...allow, ...held])], held: [...new Set(held)] };
 }
 
-// The approve-card line for a purchase held at the charge step, or null. Only when the gate itself held a charge
-// (its record in .cua-held.json), from the purchase.json the agent wrote off the order page.
+// The approve-card line for a purchase held at the charge step, or null. When the gate itself held a charge (its record
+// in the run folder), or the agent stopped at the order page, from the purchase.json the agent wrote off that page.
 const purchaseOf = (jobDir) => { try { const p = JSON.parse(readFileSync(join(jobDir, "purchase.json"), "utf8")); return p && typeof p === "object" ? p : null; } catch { return null; } };
-export function purchaseLine(jobDir) {
-  let held = [];
-  try { held = JSON.parse(readFileSync(join(jobDir, ".cua-held.json"), "utf8")).flatMap((h) => h.blocked || []); } catch {}
+export function purchaseLine(jobDir, state = jobDir) {
+  const held = heldKinds(state);
   const p = purchaseOf(jobDir);
   if (!held.includes("charge") && !p) return null;
   // Plain words from whatever shape the agent wrote: strings, or objects like {name, quantity, price} / {street, city}.
@@ -276,11 +281,11 @@ export async function ensureLane() {
 function writeLaneConfig(plan, jobDir, job) {
   const server = plan.lane.host
     ? { "host-lane": { command: process.execPath, args: [join(ROOT, "worker", "host-lane.mjs")],
-        env: { CUA_DRIVER_BIN: CFG.host?.driverBin || join(HOME, ".local", "bin", "cua-driver"), CUA_ALLOW: plan.lane.allow.join(","), CUA_JOB_DIR: jobDir,
+        env: { CUA_DRIVER_BIN: CFG.host?.driverBin || join(HOME, ".local", "bin", "cua-driver"), CUA_ALLOW: plan.lane.allow.join(","), CUA_JOB_DIR: jobDir, CUA_STATE_DIR: plan.state,
           HOST_REQUEST: String(job.details || "").slice(0, 4000), HOST_IDLE_SECONDS: String(CFG.host?.idleSeconds ?? 10),
           HOST_OVERLAY_BIN: overlayBin(), HOST_OVERLAY: CFG.host?.overlay === false ? "0" : "1", ...(CFG.host?.overlayMotion ? { HOST_OVERLAY_MOTION: CFG.host.overlayMotion } : {}), ...(CFG.host?.env || {}) } } }
     : { "cua-lane": { command: process.execPath, args: [join(ROOT, "worker", "cua-lane.mjs")],
-        env: { CUA_BIN: CFG.cua?.bin || join(HOME, ".local", "bin", "cua"), CUA_SANDBOX: CFG.cua?.sandbox || "claude-mac", CUA_ALLOW: plan.lane.allow.join(","), CUA_JOB_DIR: jobDir } } };
+        env: { CUA_BIN: CFG.cua?.bin || join(HOME, ".local", "bin", "cua"), CUA_SANDBOX: CFG.cua?.sandbox || "claude-mac", CUA_ALLOW: plan.lane.allow.join(","), CUA_JOB_DIR: jobDir, CUA_STATE_DIR: plan.state } } };
   writeFileSync(plan.mcpConfig, JSON.stringify({ mcpServers: server }, null, 1));
 }
 
@@ -374,7 +379,7 @@ function runClaude(plan, dir, onSpawn, meta = {}) {
     const child = spawn(CFG.claudeBin, args, { cwd: plan.cwd || dir, stdio: ["ignore", "pipe", "pipe"], detached: true,
       // ENABLE_CLAUDEAI_MCP_SERVERS=false: a Claude session the job starts itself doesn't load the connectors in {{OWNER}}'s Claude
       // account, so it can't reach this connector through Anthropic and count as {{OWNER}}. A job can unset it: a speed bump, not a boundary.
-      env: { ...process.env, DAISY_JOB_DIR: dir, DAISY_WORKER_TAG: WORKER_TAG, ENABLE_CLAUDEAI_MCP_SERVERS: "false" } });
+      env: { ...process.env, DAISY_JOB_DIR: dir, DAISY_RUN_DIR: plan.state, DAISY_WORKER_TAG: WORKER_TAG, ENABLE_CLAUDEAI_MCP_SERVERS: "false" } });
     // watch: the supervisor watches this run's heartbeat (job_started is the first run of this pickup; recoveries keep it).
     if (child.pid) writeFileSync(join(dir, ".run.json"), JSON.stringify({ pid: child.pid, pgid: child.pid, sid: child.pid, worker_pid: process.pid, worker_tag: WORKER_TAG, at: new Date().toISOString(),
       watch: true, job_id: meta.id, title: meta.title, run_mode: plan.mode, cwd: plan.cwd || dir, job_started: meta.started, run_n: meta.n || 1 }));
@@ -475,7 +480,7 @@ function tailText(file, max) {
 // secret-looking names, no links out), PROGRESS.md and JARVIS.md at the top of its project folder (plain files only),
 // and its log: the worker's lines about this job plus the agent's steps (.activity.log), the last 200. All redacted.
 export function liveFiles(job, dir) {
-  const redact = makeRedactor([KEY, bellKey(), ...envSecrets()]);
+  const redact = makeRedactor([KEY, bellKey(), ...installSecrets(ROOT), ...envSecrets()]);
   const files = collectFiles(dir).map((f) => (f.binary ? f : { ...f, content: redact(f.content) }));
   const proj = job.project_dir && !checkProject(job.project_dir) ? realpathSync(job.project_dir) : null;
   if (proj && proj !== HOME) {
@@ -663,7 +668,8 @@ let lastHealth = 0;
 export async function healthChecks() {
   const out = {};
   const ck = (k, ok, text) => (out[k] = { ok, text });
-  if (CFG.bell) {
+  if (CFG.bell === null) ck("bell", true, "turned off (installed with --no-bell)");
+  else if (CFG.bell) {
     try { const r = await fetch(CFG.bell.url, { method: "GET", signal: AbortSignal.timeout(3000) }); ck("bell", true, `listening (HTTP ${r.status})`); }
     catch (e) { ck("bell", false, `not answering on ${CFG.bell.url} (${String(e.cause?.code || e.message).slice(0, 60)})`); }
   }
@@ -731,7 +737,11 @@ async function handle(job) {
     log(`job ${job.id} captured ${cap.shots.length} display(s)`);
     job = { ...job, shots: cap.shots };
   }
-  let plan = planRun(job, dir);
+  const state = runDir(job.id);
+  mkdirSync(state, { recursive: true, mode: 0o700 });
+  let plan = planRun(job, dir, state);
+  // The hold was read for this run (approved runs only); from here the record holds only what this run's gate holds.
+  try { unlinkSync(join(state, ".cua-held.json")); } catch {}
   mkdirSync(plan.cwd, { recursive: true });
   if (plan.lane) { writeLaneConfig(plan, dir, job); log(`job ${job.id} ${isHost ? "host lane ({{OWNER}}'s Mac)" : "lane"} ready; allowed: ${plan.lane.allow.join(", ") || "nothing gated"}`); }
   for (const f of RUN_FILES) try { unlinkSync(join(dir, f)); } catch {}
@@ -746,7 +756,7 @@ async function handle(job) {
       let progress;
       try { const p = JSON.parse(readFileSync(join(dir, ".progress.json"), "utf8")); if (p.at !== sentAt) { progress = p; sentAt = p.at; } } catch {}
       const s = await api("status", { id: job.id, progress });
-      for (const m of s.messages || []) { appendFileSync(join(dir, ".steer-inbox.jsonl"), JSON.stringify(m) + "\n"); log(`job ${job.id} message from ${m.from || "{{OWNER}}"} queued for the agent`); }
+      for (const m of s.messages || []) { appendFileSync(join(state, ".steer-inbox.jsonl"), JSON.stringify(m) + "\n"); log(`job ${job.id} message from ${m.from || "{{OWNER}}"} queued for the agent`); }
       if (s.live) log(`job ${job.id} live read: ${(await api("files", { id: job.id, live: true, files: liveFiles(job, dir) })).stored} files sent`);
       if (s.cancel && child && !stopped) {
         stopped = true;
@@ -765,6 +775,9 @@ async function handle(job) {
   const recovered = [];
   for (;;) {
     const t0 = Date.now();
+    // Written fresh before every run, recoveries included, so nothing a run changed carries into the next one.
+    if (plan.lane) writeLaneConfig(plan, dir, job);
+    writeHooks(plan);
     run = await runClaude(plan, dir, (c) => (child = c), { id: job.id, title: job.title, started, deadline, n });
     if (!stopped && existsSync(join(dir, ".stop"))) { stopped = true; log(`job ${job.id} was stopped from outside the worker (supervisor)`); }
     const rec = await takeRecovery(dir);
@@ -800,7 +813,7 @@ async function handle(job) {
   if (outcome?.decision === "blocked" || run.timedOut) bellStatus = "blocked";
   const fixes = recovered.filter((r) => r.decision === "resume").length;
   if (fixes && !outcome && !stopped) summary += ` {{ASSISTANT}} unstuck it without help ${fixes === 1 ? "once" : `${fixes} times`} (RECOVERIES.md).`;
-  const late = unseenMessages(dir);
+  const late = unseenMessages(state);
   if (late.length) summary += ` {{OWNER}}'s message arrived after it had finished, so it was not used: ${late.map((m) => m.message).join(" / ")}`;
   // An email the agent drafted is held: checked against {{OWNER}}'s words, shown to {{HIM}}, sent only after {{HIS}} yes.
   let held = null;
@@ -814,12 +827,21 @@ async function handle(job) {
       log(`job ${job.id} holds an email from ${held.from || "?"} to ${held.to.join(", ")}${held.problems.length ? ` (${held.problems.length} problem(s))` : ""}`);
     }
     // A purchase the gate held at the charge step: the one approve card says what, the total, and where it goes.
-    const buy = purchaseLine(dir);
+    const buy = plan.lane ? purchaseLine(dir, state) : null;
     if (buy) { summary = buy; log(`job ${job.id} holds a purchase for {{OWNER}}'s approve card`); }
+    // What approving unlocks, from the gate's own record, so the card says it whatever the agent wrote.
+    const kinds = plan.lane ? [...new Set(heldKinds(state))].filter((k) => k !== "charge") : [];
+    if (kinds.length) summary += ` Approving lets the next run do what the desktop gate held: ${kinds.join(", ")}.`;
   }
   // Publish and share only what {{OWNER}}'s job fields asked for, only after a clean finish, and only once per job.
   let pubOut = null;
-  if (status === "done" && (job.publish || job.share_with) && !job.published) {
+  // A run an agent started, retried, replied to or approved never publishes by itself: the work is done, and the publish
+  // waits for {{OWNER}}'s own publish_job, so an agent can't steer what {{OWNER}}'s publish sends out.
+  const agentRun = !!(job.created_by || job.followup_from);
+  if (status === "done" && (job.publish || job.share_with) && !job.published && agentRun) {
+    summary += ` Work done; publishing and sharing wait for {{OWNER}}, because ${job.created_by || job.followup_from} (not {{OWNER}}) had a hand in this run. {{OWNER}} can say "publish it" (publish_job).`;
+    log(`job ${job.id} publish held for {{OWNER}}: run involved ${job.created_by || job.followup_from}`);
+  } else if (status === "done" && (job.publish || job.share_with) && !job.published) {
     pubOut = PUBLISHER ? await publishJob(PUBLISHER, job, dir, null) : { record: null, lines: [], problems: ["Publishing is turned off in the worker config."] };
     // The work itself is done; mark it so publish_job can retry the publish later instead of the job being stuck as failed.
     if (pubOut.problems.length) { status = "failed"; pubOut.record = workDone(pubOut.record); }

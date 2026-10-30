@@ -1,18 +1,20 @@
 // Claude Code hook for a running job (PreToolUse, PostToolUse, Stop), set up by the worker with --settings.
 // - PreToolUse: records the current step in .progress.json for live status (and appends it to .activity.log), and refuses every action once {{OWNER}}
 //   stopped the job (.stop), so even a computer job halts at its next action.
-// - PostToolUse and Stop: hands {{OWNER}}'s mid-run messages (.steer-inbox.jsonl, written by the worker) to the agent, once each.
+// - PostToolUse and Stop: hands {{OWNER}}'s mid-run messages (.steer-inbox.jsonl in DAISY_RUN_DIR, written by the worker) to the agent, once each.
 // - Every event: the heartbeat the supervisor watches (.heartbeat), and one line in .steps.log (time, pre/post, tool, a hash
 //   of what the step touched) so it can tell new work from an agent repeating itself. Never blocks or asks anything.
-// Env: DAISY_JOB_DIR (the job folder). Reads the hook event JSON on stdin; prints hook JSON or nothing.
+// Env: DAISY_JOB_DIR (the job folder), DAISY_RUN_DIR (the worker's run folder for this job). Reads the hook event JSON on stdin; prints hook JSON or nothing.
 
 import { readFileSync, writeFileSync, existsSync, appendFileSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 
 const DIR = process.env.DAISY_JOB_DIR;
-const inbox = () => join(DIR, ".steer-inbox.jsonl");
-const seenFile = () => join(DIR, ".steer-seen");
+// The inbox lives in the job's run folder (~/{{DOTDIR}}/runs/<job>), outside the job folder, so a computer job can't add to it.
+const RUN = process.env.DAISY_RUN_DIR || DIR;
+const inbox = () => join(RUN, ".steer-inbox.jsonl");
+const seenFile = () => join(RUN, ".steer-seen");
 
 function readStdin() {
   try { return JSON.parse(readFileSync(0, "utf8")); } catch { return {}; }

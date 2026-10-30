@@ -184,7 +184,7 @@ export function makeWatcher(ctx) {
     const action = decision === "resume" ? `Killing the stuck processes and resuming with a different approach (attempt ${n} of ${cfg.maxRecoveries}).`
       : decision === "needs_owner" ? `It was waiting for ${owner}, which only {{OWNER}} can give: stopping it and asking {{HIM}} once.`
       : `Already recovered ${n - 1} time(s) without it sticking: stopping it and marking it blocked.`;
-    appendFileSync(join(dir, "RECOVERIES.md"), `\n## ${decision === "resume" ? `Recovery ${n}` : decision === "needs_owner" ? "Needs {{OWNER}}" : "Blocked"} — ${rec.at}\n` +
+    appendFileSync(join(dir, "RECOVERIES.md"), `\n## ${decision === "resume" ? `Recovery ${n}` : decision === "needs_owner" ? "Needs {{OWNER}}" : "Blocked"}, ${rec.at}\n` +
       `- Why: ${why}\n- Step: ${rec.step || "none reported"}\n${procText.length ? `- Processes: ${procText.slice(0, 8).join("; ")}\n` : ""}` +
       `${rec.recent.length ? `- Last steps: ${rec.recent.slice(-5).map((a) => clip(a, 80)).join(" | ")}\n` : ""}- Action: ${action}\n`);
     log(`job ${id} STALL (${cause}): ${why} -> ${decision}${owner ? ` (${owner})` : ""}; ${procs.length} process(es)`);

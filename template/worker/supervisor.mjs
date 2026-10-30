@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { hardKill, processTable, jobsRunning } from "./kill.mjs";
 import { runShell } from "./shell-lane.mjs";
 import { powerRefusal } from "./power.mjs";
-import { envSecrets } from "./redact.mjs";
+import { envSecrets, installSecrets } from "./redact.mjs";
 import { makeWatcher, WATCH_DEFAULTS } from "./watch.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -175,7 +175,7 @@ async function execute(c) {
     if (c.kind === "status") return await status();
     const off = powerRefusal(CFG, { kind: c.kind });
     if (off) return { error: "power lanes off", text: off };
-    if (c.kind === "shell") return await runShell(c.arg || {}, { secrets: [KEY, bellKey(), ...envSecrets()], log, ...(SHELL_LOG ? { logFile: SHELL_LOG } : {}) });
+    if (c.kind === "shell") return await runShell(c.arg || {}, { secrets: [KEY, bellKey(), ...installSecrets(ROOT), ...envSecrets()], log, ...(SHELL_LOG ? { logFile: SHELL_LOG } : {}) });
     return { error: `unknown command ${c.kind}` };
   } catch (e) { return { error: String(e.message || e).slice(0, 300), text: `The emergency lane hit an error: ${String(e.message || e).slice(0, 200)}` }; }
 }
