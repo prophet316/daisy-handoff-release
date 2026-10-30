@@ -43,6 +43,8 @@ const say = (s = "") => { console.log(s); out.push(s); };
 const fold = (s, indent = 8) => { const out = [""]; for (const w of String(s).split(" ")) { const l = out.length - 1; if (out[l] && out[l].length + w.length >= 80 - indent) out.push(w); else out[l] += (out[l] ? " " : "") + w; }
   return out.join(`\n${" ".repeat(indent)}`); };
 const COMMANDS = /node (?:install|doctor)\.mjs(?: --[\w-]+(?: ~\/\S+)?)*|xcode-select --install|bash "[^"]*"|chmod 600 [^.(]*[^.( ]|launchctl \w+ \S+/g;
+const foldCmds = (s, indent) => fold(String(s).replace(COMMANDS, (c) => c.replace(/ /g, "\u0000")), indent).replace(/\u0000/g, " ");
+const info = (s) => say(`  info  ${foldCmds(s)}`);
 // level: ok, warn (works, but worth fixing), fail (this stops it working). fix: what to do, in plain words.
 function check(level, what, fix, section) {
   results.push({ level, what });
@@ -105,7 +107,8 @@ function redact(text) {
 
 // ---------- 1. this computer ----------
 const VERSION = (read(path.join(HERE, "install.mjs")) || "").match(/const VERSION = "([^"]+)"/)?.[1] || site?.installer || "?";
-say(`Nuff Said doctor (release ${VERSION}) | ${new Date().toString()}`);
+say(`Nuff Said doctor (release ${VERSION})`);
+say(new Date().toString());
 say(`\n1. This computer`);
 if (MAC) {
   const v = run("sw_vers", ["-productVersion"]).stdout?.trim() || "?";
@@ -126,7 +129,7 @@ if (MAC) {
     "In Terminal run: xcode-select --install   and click Install. It's free and takes a few minutes.", "Command Line Tools");
 }
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-say(`  info  this computer's time zone: ${tz}`);
+info(`this computer's time zone: ${tz}`);
 
 // ---------- 2. Claude Code ----------
 say(`\n2. Claude Code`);
@@ -174,12 +177,12 @@ if (!DIR || !site) {
     const deployed = isDeployed(cfg.base);
     check(deployed ? "ok" : "fail", deployed ? "worker knows its connector" : "the connector was never deployed (this is a dry run, or the install stopped before Cloudflare)",
       receiptJson?.manual && receiptJson?.dryRun ? FINISH : receiptJson?.dryRun ? "A dry run never deploys. Run node install.mjs without --dry-run." : UNINSTALLED ? FINISH : `${FINISH} Finish the Cloudflare sign-in when your browser opens.`, "Cloudflare sign-in or deploy failed");
-    say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}${receiptJson?.unfinished && receiptJson?.updatedFrom ? " in the new files, but Cloudflare and the running worker may still use your old setting until the update finishes" : ""}`);
+    info(`command line and desktop control: ${cfg.powerLanes ? "on" : "off"}${receiptJson?.unfinished && receiptJson?.updatedFrom ? " in the new files, but Cloudflare and the running worker may still use your old setting until the update finishes" : ""}`);
   }
 
   // An install made with --home (a test copy) has its services and Claude settings under that folder, not this account's.
   const live = path.resolve(site.home || HOME) === path.resolve(HOME);
-  if (!live) say(`  info  this install was made for another home folder (--home), so the live service checks are skipped`);
+  if (!live) info("this install was made for another home folder (--home), so the live service checks are skipped");
 
   // background services
   if (MAC && live) {
@@ -208,7 +211,7 @@ if (!DIR || !site) {
   } else if (live) check("fail", "the worker has never run", NO_LOGOUT ? FINISH : "Look at logs/worker.log in your install folder.", "The worker isn't running");
 
   // phone bell (Remote Control session)
-  if (MAC && live && cfg?.bell === null) say("  info  phone notifications: off (they stay off unless you say yes; turn on with node install.mjs --update --bell)");
+  if (MAC && live && cfg?.bell === null) info("phone notifications: off (they stay off unless you say yes; turn on with node install.mjs --update --bell)");
   else if (MAC && live) {
     const bellUrl = new URL(cfg?.bell?.url || "http://127.0.0.1:8790/notify");
     let bellUp = false;
@@ -288,12 +291,13 @@ function isDeployed(base) {
 // ---------- summary and report ----------
 const fails = results.filter((r) => r.level === "fail").length;
 const warns = results.filter((r) => r.level === "warn").length;
-say(`\n${fails ? `${fails} problem(s) found` : "No problems found"}${warns ? `, ${warns} warning(s)` : ""}. Each one above says what to do; ${HELP} explains more.`);
+say(`\n${fold(`${fails ? `${fails} problem(s) found` : "No problems found"}${warns ? `, ${warns} warning(s)` : ""}. Each one above says what to do; ${HELP} explains more.`, 0)}`);
 const reportDir = DIR && fs.existsSync(path.join(DIR, "logs")) ? path.join(DIR, "logs") : process.cwd();
 const report = path.join(reportDir, `doctor-report-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.txt`);
 try {
   fs.writeFileSync(report, redact(out.join("\n")) + "\n", { mode: 0o600 });
-  console.log(`Report saved with keys, URLs, emails and your user name removed: ${report}`);
+  // The path goes on its own line, whole, so it copies as one.
+  console.log(`Report saved with keys, URLs, emails and your user name removed:\n  ${report}`);
   console.log("Read it before you share it, and never paste your connector URL anywhere.");
 } catch (e) { console.log(`Couldn't save the report (${e.message}).`); }
 process.exit(fails ? 1 : 0);

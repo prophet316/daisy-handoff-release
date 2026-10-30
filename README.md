@@ -17,12 +17,12 @@ Setup takes a Terminal installer and a free Cloudflare account. After that, day 
 > - **Who can start one:** anyone with your connector URL, through their own Claude or the Claude API, and anyone who can change your connector on your Cloudflare account. A prompt injection in a web page or email can steer a job too.
 > - **Who counts as you:** your own Claude chats, Claude Code on this Mac, and Claude's cloud agents (scheduled tasks, Projects threads, Duet). They all get its tools, and their calls count as yours (untested for Claude Code, so assume it). [How to keep it out of each](#before-you-install-what-youre-giving-it).
 > - **What waits for your yes:** sends, posts, spending, deletes and access changes, unless you asked for them. The built-in desktop, email and publishing tools hold them in code. Everything else is an instruction to Claude, and so is the "untrusted" label on job output read back into your chat. That lowers the risk but doesn't remove it.
-> - **How the desktop check decides:** by the name of what's clicked, the keys pressed and what the job says it's doing. In a browser or chat app, Return, Space, typed Tabs and text with a space typed after a Tab key can send, so they're held except in a search box or address bar, and typing more than one line into a web page waits for your yes too. A job with a command line can reach those apps another way. [SECURITY.md](SECURITY.md#know-before-you-turn-it-on) has the details.
+> - **How the desktop check decides:** by the name of what's clicked, the keys pressed and what the job says it's doing. In a browser, mail or chat app, keys and typing that could send a message (like Return, Space, or a Tab that may reach a Send button) are held unless you asked to send, except Return in a search box or address bar. Typing more than one line into a web page waits for your yes too. A job with a command line can reach those apps another way. [SECURITY.md](SECURITY.md#know-before-you-turn-it-on) has the details.
 > - **The off switch:** answer no to the installer's question, or use `--no-power-lanes`. It's not a sandbox: code and design jobs still run Claude Code with its own command line and can read and change any file in your home folder.
 >
 > Install it only on a computer you trust it with. Desktop control is Mac only for now. Details: [SECURITY.md](SECURITY.md).
 
-<!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request on my Mac." Claim the whole loop only after the end-to-end run is recorded. -->
+<!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request on my Mac." Waiting on the end-to-end run, like S4. -->
 
 ---
 
