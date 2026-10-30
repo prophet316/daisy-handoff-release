@@ -107,7 +107,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
-- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > Add custom connector**.
+- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + > Add custom connector** (on Team and Enterprise, an Owner adds it under **Organization settings > Connectors**).
 - **Team or Enterprise plan:** an Owner has to allow custom connectors first.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.
 - **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account. Close and reopen the app.

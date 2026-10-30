@@ -10,6 +10,10 @@ Use **Security > Report a vulnerability** on this repo (private to the maintaine
 | ------- | -------------- |
 | 0.9.x   | yes            |
 
+## Hearing about security fixes
+
+Daisy Handoff doesn't check for updates by itself. On this repo's GitHub page, click **Watch > Custom**, tick **Releases** and click **Apply**, and GitHub tells you about every new release. When a release fixes a security problem, its release notes and CHANGELOG.md say so at the top, and the fix is described in a security advisory under this repo's **Security** tab. To update, follow [Updates and security fixes in the README](README.md#updates-and-security-fixes).
+
 ## What's yours alone
 
 - **Your own connector.** The installer deploys a Cloudflare Worker and D1 database to *your* Cloudflare account. No shared server. The maintainer can't see your jobs.
@@ -48,7 +52,7 @@ printf '%s/%s/mcp' "$(node -p "require('./worker/config.json').base")" "$(cat .c
 pbcopy < .connector-url
 ```
 
-Then in Claude, remove the old connector (Customize > Connectors) and add it again with the new URL, which is now on your clipboard. The old URL stops working within a few seconds of the new secret being saved. The worker on your computer uses its own key, so it keeps running and your jobs and history stay.
+Then in Claude, remove the old connector (Customize > Connectors; on Team and Enterprise, an Owner uses Organization settings > Connectors) and add it again with the new URL, which is now on your clipboard. The old URL stops working within a few seconds of the new secret being saved. The worker on your computer uses its own key, so it keeps running and your jobs and history stay.
 
 ## Removing it
 

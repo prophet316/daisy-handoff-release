@@ -11,6 +11,8 @@
 - The installer now marks the phone bell's folder as trusted in Claude Code, so the bell can start on a new Mac, and lists the phone notification setup at the end.
 - The installer needs Node 22 (the Cloudflare tool it uses needs 22), and says so before it starts.
 - README: the full list of what you need (Command Line Tools, an administrator password, optional CuaDriver), how phone notifications use Remote Control, and how to open Terminal in the right folder.
+- README rewritten to open with what it is inside Claude: features in plain words, each marked Mac and Windows, Mac only or Windows gap; a "Works everywhere Claude does" section citing Anthropic's help page; costs with sources; Remote Control and phone notifications in plain words; how to hear about updates and security fixes and how to update; the connector menu path for Team and Enterprise; Composio only for Google Docs, Drive and email.
+- SECURITY.md: how to hear about security fixes. Release notes rewritten for 0.9.1.
 
 ## 0.9.0 (2026-10-29)
 - One installer for macOS and Windows: `node install.mjs`, with `--dry-run` and `--uninstall`.

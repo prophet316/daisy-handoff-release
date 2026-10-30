@@ -21,6 +21,7 @@ body:
         - Adding the connector in Claude
         - Voice works, but jobs don't run
         - Jobs run, but no phone notification
+        - Updating to a new release
         - Something else
     validations:
       required: true
