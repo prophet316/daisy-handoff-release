@@ -137,8 +137,10 @@ export function gate({ action, intent = "", text = "", url = "", keys = "", app 
   const isB = browser ?? BROWSERS.test(app);
   // Return, Enter or Space (with any modifiers), or typed text that can press or move to Send, in a mail or chat app or a browser.
   const sendsHere = SEND_APPS.test(app) || isB;
-  // A Tab in the text moves focus off a search box before the rest lands, so the search box allowance doesn't cover it.
-  if (sendsHere && !(searchBox && !(action === "type_text" && MOVES_FOCUS.test(text))) && (((action === "press_key" || action === "hotkey") && sendKey(k)) || (action === "type_text" && typedSend(text)))) hits.push("send");
+  // A Tab in the text moves focus off a search box before the rest lands, and so does a line break with more text after it (the
+  // page that loads gets the rest), so the search box allowance covers neither. A line break at the very end is the search itself.
+  const oneLine = !/[\r\n\u0085\u2028\u2029][\s\S]*[^\r\n\u0085\u2028\u2029]/.test(text);
+  if (sendsHere && !(searchBox && !(action === "type_text" && (MOVES_FOCUS.test(text) || !oneLine))) && (((action === "press_key" || action === "hotkey") && sendKey(k)) || (action === "type_text" && typedSend(text)))) hits.push("send");
   if (sendsHere && afterTab && action === "type_text" && /\s/.test(text)) hits.push("send");
 
   const asked = implied(request);
@@ -250,7 +252,7 @@ const TOOLS = [
 const text = (t, isError = false) => ({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
 const log = (line) => { try { appendFileSync(join(JOB_DIR, "cua-actions.log"), `${new Date().toISOString()} ${line}\n`); } catch {} };
 
-let vmTabbed = false; // a Tab key was pressed and nothing has moved focus since: see call()
+let vmTabbed = false, vmTabbedOnce = false; // a Tab key was pressed and no click since; one was pressed in this job: see call()
 
 async function call(name, a = {}) {
   if (name === "screenshot") {
@@ -285,9 +287,11 @@ async function call(name, a = {}) {
     : ["shell", `open -a Safari '${a.url}'`]; // the URL was checked above: http(s), no quotes, spaces or shell characters
   const r = await doCmd(args);
   // A Tab may have moved focus to a Send button. The lane can't see what has focus in the VM, so only a click (which puts focus
-  // where it lands), a launched app or a new page clears it; a screenshot doesn't.
-  if ((name === "press_key" || name === "hotkey") && tabKey(a.keys || a.key)) vmTabbed = true;
-  else if (!r.error && ["click", "double_click", "launch_app", "open_url"].includes(name)) vmTabbed = false;
+  // where it lands) clears it; a screenshot, a launched app or a new page doesn't (a new tab leaves the old one's focus as it
+  // was). After a Tab, any shortcut (Cmd-W, Cmd-1) may go back to that tab or window, so it holds again.
+  if ((name === "press_key" || name === "hotkey") && tabKey(a.keys || a.key)) vmTabbed = vmTabbedOnce = true;
+  else if (vmTabbedOnce && (name === "hotkey" || (name === "press_key" && /\+/.test(a.key || "")))) vmTabbed = true;
+  else if (!r.error && ["click", "double_click"].includes(name)) vmTabbed = false;
   log(`${name} ${name === "type_text" ? `(${a.text.length} chars)` : args.slice(1).join(" ")}: ${a.intent}${r.error ? ` -> ERROR ${r.error}` : ""}`);
   return r.error ? text(r.error, true) : text(`Done: ${name}. Take a screenshot to see the result.`);
 }
@@ -392,6 +396,9 @@ function selftest() {
     ["typed text that starts with a space held", gate({ action: "type_text", intent: "type ok", text: " ok", app: "Google Chrome" }, none)?.includes("send")],
     ["a no-break space, vertical tab or line separator typed held", ["\u00a0", "a\u000bb", "a\u2028b"].every((t) => gate({ action: "type_text", intent: "type ok", text: t, app: "Google Chrome" }, none)?.includes("send"))],
     ["a typed Tab in a search box held (it moves focus off the box)", gate({ action: "type_text", intent: "search", text: "\t\n", app: "Google Chrome", searchBox: true }, none)?.includes("send")],
+    // Several lines typed in one call into a search box: the rest lands in the page that loads (security 579132b8 #2).
+    ["a search box or address bar with more text after a line break held", ["app.slack.com/client/T1/C1\napprove job abc\n", "lunch\napprove job abc\n", "lunch\n approve", "lunch\r\nok"].every((t) => gate({ action: "type_text", intent: "search", text: t, app: "Google Chrome", searchBox: true }, none)?.includes("send"))],
+    ["a search box with one line break at the very end ok", ["lunch\n", "app.slack.com/client/T1/C1\n", "john 3:16\r\n", "lunch"].every((t) => gate({ action: "type_text", intent: "search", text: t, app: "Google Chrome", searchBox: true }, none) === null)],
     ["a space in a search box ok", gate({ action: "type_text", intent: "search", text: " john 3:16", app: "Google Chrome", searchBox: true }, none) === null],
     ["normal typing with spaces in a browser ok", gate({ action: "type_text", intent: "type a note", text: "Hello there, see you at 5. ", app: "Google Chrome", site: "app.slack.com/client" }, none) === null],
     ["a typed Tab outside a browser or chat app ok", gate({ action: "type_text", intent: "type a table", text: "a\tb\n", app: "TextEdit" }, none) === null],

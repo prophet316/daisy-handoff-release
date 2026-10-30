@@ -491,6 +491,41 @@ await L.tool("activate_app", { pid: P, intent: "bring Chrome forward" });
 await L.tool("get_window_state", look);
 r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
 check("Gmail: bringing the app forward doesn't move focus, so text after a Tab is still held", r.err && /BLOCKED/.test(r.text), r.text);
+await L.tool("get_window_state", look);
+await L.tool("click", { pid: P, element_token: "t:7", intent: "click in the message body" });
+await L.tool("get_window_state", look);
+await L.tool("hotkey", { pid: P, keys: ["cmd", "1"], intent: "go to the first tab" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("Gmail: after a Tab, a click in the body then Cmd-1 needs a fresh proof of focus again, so text is held", r.err && /BLOCKED/.test(r.text) && !calls(d25).some((c) => c.tool === "type_text" && c.args.text === "ok thanks" && !c.args.element_token), r.text);
+L.end();
+// The Tab mark is never cleared; each typing needs fresh proof that focus is in a text field in that window (security 579132b8 #1).
+// B: Tab, open_url (a new tab), Cmd-W back to the Gmail tab, type. C: Tab in window 7, click a field in window 9, type in window 7.
+const d25o = mkdtempSync(join(tmpdir(), "gate-drive-"));
+const fakeOpen25 = join(d25o, "open.sh");
+writeFileSync(fakeOpen25, "#!/bin/sh\nexit 0\n"); chmodSync(fakeOpen25, 0o755);
+L = lane(d25o, { ...GMAIL, HOST_OPEN_BIN: fakeOpen25 });
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+const ob = await L.tool("open_url", { url: "https://www.example.com/", intent: "open a reference page" });
+await L.tool("get_window_state", look);
+const wb = await L.tool("hotkey", { pid: P, keys: ["cmd", "w"], intent: "close the tab" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("Gmail B: Tab, open_url, Cmd-W, look, \"ok thanks\" is held and nothing reaches the driver", !ob.err && !wb.err && r.err && /BLOCKED/.test(r.text) && !calls(d25o).some((c) => c.tool === "type_text"), [ob.text, wb.text, r.text].map((x) => x.slice(0, 40)).join(" | "));
+L.end();
+const d25w = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d25w, { ...GMAIL, FAKE_PAGE_URL_9: "www.google.com" });
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+await L.tool("get_window_state", { pid: P, window_id: 9 });
+const cw = await L.tool("click", { pid: P, element_token: "w9:t:5", intent: "click the search box" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("Gmail C: Tab in window 7, click a field in window 9, look at 7, \"ok thanks\" is held and nothing reaches the driver", !cw.err && r.err && /BLOCKED/.test(r.text) && !calls(d25w).some((c) => c.tool === "type_text"), [cw.text, r.text].map((x) => x.slice(0, 40)).join(" | "));
+await L.tool("get_window_state", { pid: P, window_id: 9 });
+r = await L.tool("type_text", { pid: P, text: "lunch places", intent: "type the search" });
+check("Gmail C: typing in window 9, right after the click on its field, goes through", !r.err && calls(d25w).some((c) => c.tool === "type_text" && c.args.text === "lunch places"), r.text);
 L.end();
 // A look that shows a text field has focus clears it; one that doesn't, doesn't.
 const d25f = mkdtempSync(join(tmpdir(), "gate-drive-"));
@@ -623,6 +658,16 @@ check("search: the searches themselves (ending in a line break) go through", bef
 check("search: after a typed line break submits the box, or launch_app by name, Return, Space and a typed line break are held",
   sl.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24c).some((c) => c.tool === "press_key" || (c.tool === "type_text" && /approve job/.test(c.args.text))), sl.map((x) => x.text.slice(0, 40)).join(" | "));
 L.end();
+// Several lines in one call into the address bar or search box: the rest would land in the page that loads (security 579132b8 #2).
+const d24m = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d24m, SLACK);
+const ml = [];
+for (const [tok, t] of [["t:1", "app.slack.com/client/T1/C1\napprove job abc\n"], ["t:5", "lunch\napprove job abc\n"]]) {
+  await L.tool("get_window_state", look);
+  ml.push(await L.tool("type_text", { pid: P, element_token: tok, text: t, intent: "search" }));
+}
+check("search: more text after a line break, in one call into the address bar or search box, is held", ml.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24m).some((c) => c.tool === "type_text"), ml.map((x) => x.text.slice(0, 40)).join(" | "));
+L.end();
 
 // 17. open_url and launch_app take an app by name, never by path: a path to an off-limits app is refused before anything opens.
 const d27 = mkdtempSync(join(tmpdir(), "gate-drive-"));
@@ -656,7 +701,8 @@ check("a click with neither an element nor both x and y is refused", r.err && /e
 L.end();
 
 // 19. The VM lane (cua-lane.mjs, the claude-mac VM) against a stand-in cua: after a Tab key, typed text with a space is held
-// until a click, a launched app or a new page; a screenshot doesn't clear it (security 79d8e997 #2, developer 5e53cf05 #1).
+// until a click; a screenshot, a launched app or a new page doesn't clear it, and a shortcut after that holds again
+// (security 79d8e997 #2, developer 5e53cf05 #1, security 579132b8 #1).
 const d29 = mkdtempSync(join(tmpdir(), "gate-drive-"));
 const fakeCua = join(d29, "cua.sh");
 writeFileSync(fakeCua, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(d29, "cua.log")}'\ncase "$*" in *lsappinfo*) echo '"LSDisplayName"="Google Chrome"';; esac\nexit 0\n`); chmodSync(fakeCua, 0o755);
@@ -681,9 +727,19 @@ await vm.tool("click", { x: 300, y: 400, intent: "click in the message body" });
 vt.push(await vm.tool("type_text", { text: "see you at 5", intent: "type a note" }));
 await vm.tool("hotkey", { keys: "shift+tab", intent: "move back one control" });
 vt.push(await vm.tool("type_text", { text: "a b", intent: "type a note" }));
+// A new page or a launched app doesn't clear it (the old tab keeps its focus); after a click, a shortcut like Cmd-W holds again.
+await vm.tool("open_url", { url: "https://www.example.com/", intent: "open a reference page" });
+vt.push(await vm.tool("type_text", { text: "ok thanks", intent: "type a note" }));
+await vm.tool("launch_app", { name: "Safari", intent: "bring Safari forward" });
+vt.push(await vm.tool("type_text", { text: "ok thanks", intent: "type a note" }));
+await vm.tool("click", { x: 300, y: 400, intent: "click in the search box" });
+await vm.tool("hotkey", { keys: "cmd+w", intent: "close the tab" });
+vt.push(await vm.tool("type_text", { text: "ok thanks", intent: "type a note" }));
 vm.end();
 check("VM lane: text with spaces goes through, then after Tab it's held (a screenshot doesn't clear it), a click clears it, Shift-Tab holds again",
   !vt[0].err && vt[1].err && /BLOCKED/.test(vt[1].text) && vt[2].err && !vt[3].err && vt[4].err && /BLOCKED/.test(vt[4].text), vt.map((x) => x.text.slice(0, 30)).join(" | "));
+check("VM lane: after a Tab, open_url and launch_app don't clear it, and Cmd-W after a click holds again (security 579132b8 #1)",
+  vt.slice(5).every((x) => x.err && /BLOCKED/.test(x.text)), vt.slice(5).map((x) => x.text.slice(0, 30)).join(" | "));
 check("VM lane: only the two allowed texts reached the VM", JSON.stringify(typed()) === JSON.stringify(["ok thanks", "see you at 5"]), JSON.stringify(typed()));
 
 console.log(`gate drive: ${pass} passed, ${fail} failed`);

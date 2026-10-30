@@ -502,9 +502,13 @@ const roles = new Map();  // element_token -> role, from the last looks
 const searchFocus = new Map();
 // A search box or address bar, by its role and label: Return there searches or loads a page. A field whose label also
 // says send, reply, post or comment ("Reply or search") isn't one.
-// pid -> true after a Tab key in that app: focus may be on a Send button until a click or element action on a text field,
-// a new page from open_url, or a look that shows a text field has focus.
+// pid -> true after a Tab key in that app, for the rest of the job: focus may be on a Send button in that tab or window, and
+// a new tab (open_url), Cmd-W, Cmd-1 or a click in another window can go back to it. So it is never cleared; instead, typing
+// needs fresh proof of focus each time (fieldFocus).
 const tabbed = new Set();
+// pid -> window_id where the action just before put focus in a text field (a click on one, or typing or a key by its element),
+// or a look showed a text field has focus. Any other action in that app ends it; typing on there, with no Tab or line break, keeps it.
+const fieldFocus = new Map();
 const TEXT_FIELD = /^AX(TextField|TextArea|ComboBox|SearchField)$/;
 export const isSearchBox = (role = "", label = "") => (role === "AXSearchField" || (/^AX(TextField|ComboBox)$/.test(role) && /\bsearch\b|\baddress (and search )?bar\b|\bweb address\b|\burl\b|\benter address\b/i.test(label)))
   && !CATEGORIES.send.test(label) && !CATEGORIES.post.test(label);
@@ -646,7 +650,8 @@ async function call(name, a = {}) {
       if (els.some((e) => e.role === "AXWebArea")) webPids.add(a.pid);
       looked.set(a.pid, { wid: a.window_id, url, claude, query: !!a.query });
       lastLook.set(a.pid, a.window_id);
-      if (els.some((e) => e.focused === true && TEXT_FIELD.test(e.role || ""))) tabbed.delete(a.pid);
+      if (els.some((e) => e.focused === true && TEXT_FIELD.test(e.role || ""))) fieldFocus.set(a.pid, Number(a.window_id));
+      else if (els.some((e) => e.focused === true) && fieldFocus.get(a.pid) === Number(a.window_id)) fieldFocus.delete(a.pid);
     }
     let scaled = false; // the scale comes from this look, so a window moved or resized since the last one maps right
     for (const e of r.data.elements || []) {
@@ -759,9 +764,9 @@ async function call(name, a = {}) {
   // this app typed or clicked, in the same window. Anywhere else in a browser or a mail or chat app, the gate holds it as a possible send.
   const searchBox = ["press_key", "hotkey", "type_text"].includes(name) && (a.element_token ? isSearchBox(roles.get(a.element_token), labels.get(a.element_token)) : !!wid && searchFocus.get(a.pid) === Number(wid));
   // The action puts focus in a text field: a click on one, or an element token for one. Typing or keys there don't go to
-  // whatever a Tab moved focus to.
+  // whatever a Tab moved focus to; nor does typing right after that in the same window.
   const intoField = (name === "click" && !a.element_token ? TEXT_FIELD.test(pixelRole) : !!a.element_token && ["click", "type_text", "press_key"].includes(name) && TEXT_FIELD.test(roles.get(a.element_token) || ""));
-  const afterTab = !!a.pid && tabbed.has(a.pid) && !intoField;
+  const afterTab = !!a.pid && tabbed.has(a.pid) && !intoField && fieldFocus.get(a.pid) !== Number(wid);
   const g = { url: a.url || "", action: name === "hotkey" ? "hotkey" : name, intent: a.intent, text: a.text || "", keys: name === "hotkey" ? (a.keys || []).join("+") : name === "press_key" ? [...(a.modifiers || []), a.key].join("+") : "", app,
     request: REQUEST, label: (a.element_token && labels.get(a.element_token)) || pixelLabel, site, browser: inBrowser || (a.pid ? webPids.has(a.pid) : false), searchBox, afterTab };
   const blocked = name === "activate_app" ? null : gate(g, ALLOW, NO_IMPLY); // bringing a window forward can't send, buy or post
@@ -791,6 +796,10 @@ async function call(name, a = {}) {
   const idleNow = idleSeconds();
   if (idleNow < IDLE_NEEDED && !ownInput(idleNow)) { busy = await waitIdle(); if (busy) { log(`GAVE UP ${name}: ${busy}`); return text(busy, true); } }
   const p0 = await pointer(), t0 = Date.now();
+  // Proof of focus in a text field lasts one action: this one ends it, unless (below) it puts focus in a field or types on there.
+  // open_url and launch_app by name may act in any app.
+  const fieldWin = a.pid ? fieldFocus.get(a.pid) : undefined;
+  if (a.pid && name !== "open_url") fieldFocus.delete(a.pid); else fieldFocus.clear();
   let r;
   if (name === "open_url") {
     // Straight from the address, like `open -a "Google Chrome" URL`: no typing in the address bar, no other browser.
@@ -807,7 +816,6 @@ async function call(name, a = {}) {
       if (!bpid) r = { error: "The page was sent to the browser, but its window wasn't found yet. Call list_windows to find it." };
       else {
         if (!before.has(bpid)) launched.add(bpid);
-        tabbed.delete(bpid); // the new page has its own focus
         await driver("bring_to_front", { pid: bpid });
         r = { data: { pid: bpid, name: appOf(bpid).name, windows: await onScreen(bpid) } };
       }
@@ -876,10 +884,14 @@ async function call(name, a = {}) {
     if (inSearch && focusWin) searchFocus.set(a.pid, focusWin); else searchFocus.delete(a.pid);
     // A Tab key (Shift-Tab too) may move focus to a Send button, even from a search box: marked even if the driver reported an
     // error, since the key may have landed. Bringing the app forward (activate_app, launch_app) leaves focus where it was.
-    if ((name === "press_key" || name === "hotkey") && tabKey(name === "hotkey" ? (a.keys || []).join("+") : [...(a.modifiers || []), a.key].join("+"))) tabbed.add(a.pid);
-    else if (!r.error && intoField) tabbed.delete(a.pid);
+    const tabNow = (name === "press_key" || name === "hotkey") && tabKey(name === "hotkey" ? (a.keys || []).join("+") : [...(a.modifiers || []), a.key].join("+"));
+    if (tabNow) tabbed.add(a.pid);
     // Web content refuses background typing (Electron, page fields): send it as real key presses to that window instead.
     if (r.code === "background_unavailable" && args.window_id && !args.delivery_mode) { args.delivery_mode = "foreground"; r = await driver(name, args); ownInputAt = Date.now(); }
+    // Focus is in a text field after a click or element action on one, or after typing on in the window where it was (no Tab
+    // or line break in the text, which can move it).
+    if (!tabNow && !r.error && focusWin && !(name === "type_text" && /[\t\v\f\r\n\u0085\u2028\u2029]/.test(a.text))
+      && (intoField || (name === "type_text" && !a.element_token && fieldWin === focusWin))) fieldFocus.set(a.pid, focusWin);
     if (!r.error && charging) { ALLOW.delete("charge"); log(`charge pressed once, as {{OWNER}} approved; any further charge is held again`); }
   }
   log(`${name}${a.pid ? ` pid ${a.pid}` : ""} ${name === "type_text" ? `(${String(a.text).length} chars)` : name === "launch_app" ? (a.name || a.bundle_id) : name === "open_url" ? a.url : name === "move_window" ? `to ${a.x},${a.y}` : ""}: ${a.intent}${r.error ? ` -> ERROR ${r.error}` : ""}`);
