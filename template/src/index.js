@@ -415,7 +415,7 @@ const TOOLS = [
       "Returns a job id; call get_job to hear the result (also a phone push when phone notifications are on). On the host it waits while {{OWNER}} is using the mouse or keyboard and never touches " +
       "apps that run commands or scripts (Terminal and other terminals, Script Editor, Automator, Shortcuts, code editors), launchers, apps that change the system, System Settings, " +
       "Keychain Access, password managers or Claude (the app, a claude.ai tab, or Claude in Chrome's side panel) unless {{HE}} names them. " +
-      "Pressing Return, searching and opening web pages always go through, in the browser {{HE}} names. {{HIS_CAP}} request is {{HIS}} yes for every step of the task it asks for, " +
+      "Searching and opening web pages always go through, in the browser {{HE}} names. In a browser or a mail or chat app, Return and Space can send a message, so they are held unless {{HIS}} request asks to send, except in a search box or address bar. {{HIS_CAP}} request is {{HIS}} yes for every step of the task it asks for, " +
       "including the details the task needs on the site {{HE}} named; the only stop is right before money is charged, which comes back as needs_approval with the item, total and delivery address " +
       "for {{HIM}} to approve once. A safety gate still blocks sending, posting, uploading, deleting or access changes {{HE}} didn't ask for, and {{HIS}} details on sites {{HE}} didn't ask to use; " +
       "such a job stops with needs_approval and approve_job lets it do exactly the held action.",

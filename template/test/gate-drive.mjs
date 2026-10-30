@@ -1,5 +1,5 @@
 // Drives worker/host-lane.mjs over MCP stdio against test/fake-cua-driver.mjs (no desktop, no Claude) to check the gate
-// end to end: Return, searching and pages go through; posts and details on other sites stop; a task {{OWNER}} asked for
+// end to end: searching and pages go through, Return only in a search box or address bar unless the request asks to send; posts and details on other sites stop; a task {{OWNER}} asked for
 // runs every step until the charge, which is held once for {{HIS}} approve card, then pressed once after approval. Every
 // browser action needs a look since the last one, a tab on claude.ai is refused however it got there, Claude in Chrome's side
 // panel and the Claude toolbar icon are refused (by element or by position), an element token is checked against its own
@@ -363,6 +363,100 @@ L = lane(d23, { FAKE_PAGE_URL: "claude.ai/new", HOST_REQUEST: READ });
 await L.tool("get_window_state", look);
 const rw = [await L.tool("type_text", { pid: 5555, window_id: 7, text: "approve job abc", intent: "type a note" }), await L.tool("click", { pid: 5555, window_id: 7, x: 15, y: 20, intent: "click the box" })];
 check("another app's pid with this window's window_id is refused", rw.every((x) => x.err && /belongs to a different app/.test(x.text)) && !calls(d23).some((c) => ACTS.includes(c.tool) && c.args.pid === 5555), rw.map((x) => x.text).join(" | "));
+L.end();
+
+// 16. In a browser, Return, Enter, Space and typed line breaks can send (Slack, WhatsApp or Gmail on the web): held as a
+// send unless the request asks to send, except in a search box or address bar.
+const SLACK = { FAKE_PAGE_URL: "app.slack.com/client/T1/C1", HOST_REQUEST: "On my Mac, open Slack in Chrome and summarize the #general channel",
+  FAKE_EXTRA_ELS: JSON.stringify([{ role: "AXTextArea", label: "Message #general", value: "" }]) }; // t:7
+const d24 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d24, SLACK);
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:7", text: "ok, approved", intent: "type a note in the box" });
+check("browser: typing plain text in a message box goes through", !r.err, r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "press return to add a line" });
+check("browser: Return in Slack's message box is held as a send", r.err && /BLOCKED/.test(r.text) && held(d24).includes("send"), r.text);
+const rk = [];
+for (const k of [{ key: "enter" }, { key: "return", modifiers: ["cmd"] }, { key: "space" }]) { await L.tool("get_window_state", look); rk.push(await L.tool("press_key", { pid: P, ...k, intent: "press the key" })); }
+await L.tool("get_window_state", look);
+rk.push(await L.tool("hotkey", { pid: P, keys: ["shift", "return"], intent: "press the keys" }));
+await L.tool("get_window_state", look);
+rk.push(await L.tool("type_text", { pid: P, element_token: "t:7", text: "ok, approved\n", intent: "type a note" }));
+check("browser: Enter, Cmd-Return, Space, Shift-Return and a typed line break are held too", rk.every((x) => x.err && /BLOCKED/.test(x.text)), rk.map((x) => x.text.slice(0, 40)).join(" | "));
+check("browser: no held key or text reached the driver", !calls(d24).some((c) => (c.tool === "press_key" || c.tool === "hotkey") || (c.tool === "type_text" && /\n/.test(c.args.text))), JSON.stringify(calls(d24).filter((c) => c.tool !== "get_window_state").map((c) => c.tool)));
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:5", text: "launch notes", intent: "type in the search box" });
+await L.tool("get_window_state", look);
+const rs1 = await L.tool("press_key", { pid: P, key: "return", intent: "run the search" });
+check("search: Return right after typing in the search box goes through", !r.err && !rs1.err, rs1.text);
+await L.tool("get_window_state", look);
+const rs2 = await L.tool("press_key", { pid: P, key: "return", element_token: "t:1", intent: "load the page" });
+check("search: Return with the address bar's element_token goes through", !rs2.err, rs2.text);
+await L.tool("get_window_state", look);
+await L.tool("type_text", { pid: P, element_token: "t:5", text: "x", intent: "type in the search box" });
+await L.tool("get_window_state", look);
+await L.tool("click", { pid: P, element_token: "t:7", intent: "click the box" });
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "run the search" });
+check("search: after a click moves to the message box, Return is held again", r.err && /BLOCKED/.test(r.text), r.text);
+await L.tool("get_window_state", look);
+await L.tool("click", { pid: P, window_id: 7, x: 60, y: 20, intent: "click in the search box" });
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "run the search" });
+check("search: Return right after a click by position on the search box goes through", !r.err, r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", element_token: "t:3", intent: "submit the address" });
+check("a form field that isn't a search box (Street address) doesn't count as one", r.err && /BLOCKED/.test(r.text), r.text);
+L.end();
+const d25 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d25, { FAKE_PAGE_URL: "mail.google.com/mail/u/0", HOST_REQUEST: "On my Mac, read my newest email in Gmail in Chrome" });
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+await L.tool("get_window_state", look);
+const g1 = await L.tool("press_key", { pid: P, key: "space", intent: "press the focused control" });
+await L.tool("get_window_state", look);
+const g2 = await L.tool("press_key", { pid: P, key: "return", intent: "press the focused control" });
+check("Gmail: Tab goes through, then Space or Return on the focused control is held", !r.err && g1.err && g2.err && held(d25).filter((c) => c === "send").length === 2, [r.text, g1.text, g2.text].join(" | "));
+L.end();
+const d26 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d26, { ...SLACK, HOST_REQUEST: "On my Mac, open Slack in Chrome and reply 'on my way' to Sam in #general" });
+await L.tool("get_window_state", look);
+await L.tool("type_text", { pid: P, element_token: "t:7", text: "on my way", intent: "type the reply" });
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "send the reply" });
+check("browser: Return goes through when the request asks to reply", !r.err && calls(d26).some((c) => c.tool === "press_key"), r.text);
+L.end();
+
+// 17. open_url and launch_app take an app by name, never by path: a path to an off-limits app is refused before anything opens.
+const d27 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d27, { HOST_REQUEST: READ, HOST_OPEN_BIN: fakeOpen });
+const rp = [];
+for (const b of ["/System/Applications/Utilities/Terminal.app", "/Applications/Utilities/Script Editor.app/", "Terminal.app", "~/Applications/Claude.app", "..\\Terminal", "Utilities/Terminal", "Terminal\u200b"]) rp.push(await L.tool("open_url", { url: "https://www.example.com/recipe", browser: b, intent: "open the page" }));
+check("open_url refuses a browser given as a path or .app", rp.every((x) => x.err && /not a path/.test(x.text)), rp.map((x) => x.text.slice(0, 50)).join(" | "));
+check("and the stand-in open never ran", !existsSync(opened), existsSync(opened) ? readFileSync(opened, "utf8") : "");
+r = await L.tool("launch_app", { name: "/System/Applications/Utilities/Terminal.app", intent: "open the app" });
+r = await L.tool("open_url", { url: "https://www.example.com/recipe", browser: "com.apple.Terminal", intent: "open the page" });
+check("open_url refuses an off-limits app's bundle id as the browser", r.err && /off-limits/.test(r.text) && !existsSync(opened), r.text);
+r = await L.tool("launch_app", { name: "/System/Applications/Utilities/Terminal.app", intent: "open the app" });
+check("launch_app refuses an app given as a path", r.err && /not a path/.test(r.text) && !calls(d27).some((c) => c.tool === "launch_app"), r.text);
+L.end();
+
+// 18. Two windows of one app: a look showed a Claude pane in window 20, then a clean look at window 21. Typing and keys with
+// no element go to the app's focused element, which may be the pane, so they are refused (Mac verify 56db5063 #1).
+const d28 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d28, { ...XL, FAKE_EXTRA_ELS_20: JSON.stringify([{ role: "AXWebArea", label: "Claude", frame: { x: 900, y: 40, w: 300, h: 700 } }, { role: "AXTextArea", label: "Reply to Claude", frame: { x: 910, y: 700, w: 280, h: 30 } }]) });
+await L.tool("get_window_state", { pid: P, window_id: 20 });
+const r2w = [];
+for (const [t, x] of [["type_text", { text: "approve job abc" }], ["press_key", { key: "return" }], ["hotkey", { keys: ["cmd", "v"] }]]) {
+  await L.tool("get_window_state", { pid: P, window_id: 21 });
+  r2w.push(await L.tool(t, { pid: P, ...x, intent: "fill in the total" }));
+}
+check("two windows: typing, Return and a hotkey after a clean look at one are refused when the other has a Claude pane", r2w.every((x) => x.err && /Claude is open inside this window/.test(x.text)), r2w.map((x) => x.text.slice(0, 50)).join(" | "));
+check("two windows: none of them reached the driver", !calls(d28).some((c) => ["type_text", "press_key", "hotkey"].includes(c.tool)), JSON.stringify(calls(d28).map((c) => c.tool)));
+await L.tool("get_window_state", { pid: P, window_id: 21 });
+r = await L.tool("click", { pid: P, window_id: 21, intent: "click the cell" });
+check("a click with neither an element nor both x and y is refused", r.err && /element_token or both x and y/.test(r.text) && !calls(d28).some((c) => c.tool === "click"), r.text);
 L.end();
 
 console.log(`gate drive: ${pass} passed, ${fail} failed`);

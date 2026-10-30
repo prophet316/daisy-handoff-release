@@ -10,11 +10,11 @@ cd "$(dirname "$0")"
 if [ "$1" = "gate" ]; then
   NODE="$(command -v node || echo "$HOME/{{DOTDIR}}/node/bin/node")"
   set -o pipefail; rc=0
-  echo "1 gate rules (search/Return/URL allowed; posts, sends, uploads, details on other sites blocked; charge held):"
+  echo "1 gate rules (search/URL allowed; Return in a browser or chat app held as a send except in a search box or address bar; posts, sends, uploads, details on other sites blocked; charge held):"
   "$NODE" worker/cua-lane.mjs --selftest | grep -v '^PASS' || rc=1
   echo "2 host lane (browser choice, off-limits apps):"
   "$NODE" worker/host-lane.mjs --selftest | grep -v '^PASS' || rc=1
-  echo "3 host lane over MCP with a fake driver (task steps, approve card, one charge, redirects, claude.ai tabs, Claude's side panel, clicks by position in any app, typing after a Claude pane opens, token windows, calls without a pid, unlisted browsers, off-limits apps):"
+  echo "3 host lane over MCP with a fake driver (task steps, approve card, one charge, redirects, claude.ai tabs, Claude's side panel, clicks by position in any app, typing after a Claude pane opens (in that window or another of the app), Return and Space in web chat and mail, open_url and launch_app given a path, token windows, calls without a pid, unlisted browsers, off-limits apps):"
   "$NODE" test/gate-drive.mjs | grep -v '^PASS' || rc=1
   echo "4 command line and desktop control switch (connector, worker, supervisor; on and off):"
   "$NODE" test/power-lanes.mjs | grep -v '^PASS' || rc=1

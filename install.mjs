@@ -54,15 +54,18 @@ const LEAD_WARNING = (name) => [
   "this computer can read that file, so a job that was tricked could approve for you too. Turn it on only if you accept that.",
 ];
 const POWER_WARNING = [
-  "Read this first. This ships with the command line and desktop control turned on.",
-  "That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps,",
-  "click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or",
-  "email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you",
-  "asked for them. That lowers the risk but doesn't remove it. To turn it off, answer no here or rerun the installer",
-  "with --no-power-lanes. Off isn't a sandbox: code and design jobs still run Claude Code with its own command line",
-  "and can change any file in your home folder, so a leaked URL can still reach this computer.",
-  "Anyone who can change your Cloudflare account can run jobs here too. Install it only on a computer you trust",
-  "it with. Desktop control is Mac only for now.",
+  "Read this first. This ships with the command line and desktop control turned",
+  "on. That means a job can do anything you can do at your keyboard: run",
+  "commands, change or delete files, open apps, click and type on your desktop,",
+  "using your logins. A leaked connector URL or a prompt injection in a web page",
+  "or email could cause real damage. Sends, posts, spending, deletes and access",
+  "changes stop for your yes unless you asked for them. That lowers the risk but",
+  "doesn't remove it. To turn it off, answer no here or rerun the installer with",
+  "--no-power-lanes. Off isn't a sandbox: code and design jobs still run Claude",
+  "Code with its own command line and can change any file in your home folder, so",
+  "a leaked URL can still reach this computer. Anyone who can change your",
+  "Cloudflare account can run jobs here too. Install it only on a computer you",
+  "trust it with. Desktop control is Mac only for now.",
 ];
 // Says plainly that Enter means on and what on means for a leaked URL. Each question stands on its own: an update or a flag can
 // skip the other one. Short lines, so an 80-column Terminal doesn't break words.
@@ -110,19 +113,24 @@ const LEAK_STEPS = (dir, db) => [
 ];
 // Shown at install, Mac only: what the phone bell answers for you. Same substance as README, SECURITY.md and RELEASE_NOTES.md.
 const BELL_NOTE = [
-  "Phone notifications: the bell is a Claude Code session with Remote Control on that gets each finished job through Claude",
-  "Code channels, a research preview. The bell's channel isn't on Anthropic's approved list, so it uses Claude Code's",
-  "developer flag for channels (--dangerously-load-development-channels). That flag shows a warning Anthropic meant for people",
-  "testing their own channels, answered \"I am using this for local development\", every time the bell starts. Nobody is at",
-  "that terminal, so the bell picks that answer for you each time, and says yes to its own MCP server. Without the bell,",
-  "jobs work the same; you just get no phone notifications. It stays off unless you say yes. Turn it off later with --update --no-bell.",
+  "Phone notifications: the bell is a Claude Code session with Remote Control on",
+  "that gets each finished job through Claude Code channels, a research preview.",
+  "The bell's channel isn't on Anthropic's approved list, so it uses Claude",
+  "Code's developer flag for channels (--dangerously-load-development-channels).",
+  "That flag shows a warning Anthropic meant for people testing their own",
+  "channels, answered \"I am using this for local development\", every time the",
+  "bell starts. Nobody is at that terminal, so the bell picks that answer for you",
+  "each time, and says yes to its own MCP server. Without the bell, jobs work the",
+  "same; you just get no phone notifications. It stays off unless you say yes.",
+  "Turn it off later with --update --no-bell.",
 ];
 // The bell question itself carries the one sentence that matters, so nobody turns it on without reading it.
 const BELL_QUESTION = [
   "Turn on phone notifications? The bell uses a Claude Code development channel",
   "(a research preview), and Nuff Said answers Claude Code's \"I am using this for",
   "local development\" warning for you each time the bell starts. Jobs work the",
-  "same without it, so it stays off unless you type yes. Type yes to turn it on",
+  "same without it, so it stays off unless you type yes.",
+  "Type yes to turn it on",
 ].join("\n  ");
 const HOST = process.platform; // the OS we are really running on
 // While an update runs: what is still on your old settings if it stops now (set by main as it goes).

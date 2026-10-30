@@ -4,6 +4,7 @@
 // $FAKE_PAGE_URL sets what the address bar shows (default www.walmart.com/checkout); $FAKE_PAGE_URL_<window_id> for one window.
 // Window 7's element tokens are t:1 to t:6; another window's are w<id>:t:1 and so on. $FAKE_EXTRA_ELS (JSON) adds elements,
 // and so does the JSON in the file $FAKE_EXTRA_FILE, read on every call (a pane that opens after a look).
+// $FAKE_EXTRA_ELS_<window_id> adds elements to that window only.
 import { appendFileSync, readFileSync } from "node:fs";
 
 const [, , cmd, tool, raw] = process.argv;
@@ -20,6 +21,7 @@ const tok = (i) => (wid === 7 ? `t:${i}` : `w${wid}:t:${i}`);
 const el = (i, role, label, value, frame = { x: 10 * i, y: 10, w: 100, h: 30 }) => ({ element_token: tok(i), role, label, value, frame, screenshot_frame: frame });
 let extra = [];
 try { extra = JSON.parse(process.env.FAKE_EXTRA_ELS || "[]"); } catch {}
+try { extra = extra.concat(JSON.parse(process.env[`FAKE_EXTRA_ELS_${wid}`] || "[]")); } catch {}
 try { if (process.env.FAKE_EXTRA_FILE) extra = extra.concat(JSON.parse(readFileSync(process.env.FAKE_EXTRA_FILE, "utf8"))); } catch {}
 const out = {
   list_windows: { windows: [win] },
