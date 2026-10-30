@@ -65,7 +65,7 @@ const INSTRUCTIONS =
   "For ongoing work {{OWNER}} wants to come back to, use start_thread (named, optionally in a project folder) and continue_thread; " +
   "list_threads shows them. Pick the mode that fits: code, research, writing or design. Only set publish_to when {{OWNER}} asks to publish " +
   "to Google Docs or Drive, and only set share_with to the exact people {{HE}} names: sharing grants access. " +
-  "For {{HIS}} day: schedule_job runs a job or routine once or on repeat (times are Central Time), list_schedules and cancel_schedule " +
+  "For {{HIS}} day: schedule_job runs a job or routine once or on repeat (times are {{HIS}} own time zone, {{TIME_ZONE}}), list_schedules and cancel_schedule " +
   "manage them; save_routine and run_routine handle named multi-step routines; daily_digest reads or sets {{HIS}} daily summary push. " +
   "Any tool that takes a job id also takes a description ('the one about finances', 'the last one'); " +
   "if several jobs match it lists them, so read them to {{OWNER}} and let {{HIM}} pick. reply_to_job also steers a running job mid-run. stop_all halts everything " +
@@ -267,7 +267,7 @@ const TOOLS = [
     name: "schedule_job",
     title: "Schedule a job or routine",
     description:
-      "Run a job, or one of {{OWNER}}'s saved routines, at a set time: once, daily, on weekdays, or weekly on certain days. Times are Central Time. " +
+      "Run a job, or one of {{OWNER}}'s saved routines, at a set time: once, daily, on weekdays, or weekly on certain days. Times are in {{HIS}} time zone ({{TIME_ZONE}}). " +
       "What {{OWNER}} says here is saved and run exactly as {{HE}} said it each time, so put {{HIS}} whole request in details. Returns the schedule id and the next run.",
     inputSchema: {
       type: "object",
@@ -276,8 +276,8 @@ const TOOLS = [
         details: { type: "string", maxLength: 5000, description: "Everything the agent needs each time it runs (not needed for a routine)." },
         routine: { type: "string", maxLength: 80, description: "Name of a saved routine to run instead of a single job." },
         repeat: { type: "string", enum: REPEATS, default: "once", description: "once, daily, weekdays (Mon-Fri), or weekly (on 'days')." },
-        time: { type: "string", maxLength: 20, description: "Time of day in Central Time, e.g. '7:30', '7:30 pm', '19:30'. For once without a date: the next time that clock time comes." },
-        date: { type: "string", maxLength: 10, description: "For once: the day, YYYY-MM-DD (Central Time)." },
+        time: { type: "string", maxLength: 20, description: "Time of day in {{HIS}} time zone ({{TIME_ZONE}}), e.g. '7:30', '7:30 pm', '19:30'. For once without a date: the next time that clock time comes." },
+        date: { type: "string", maxLength: 10, description: "For once: the day, YYYY-MM-DD ({{TIME_ZONE}})." },
         in_minutes: { type: "integer", minimum: 1, maximum: 10080, description: "For once: run this many minutes from now instead of at a clock time." },
         days: { type: "array", items: { type: "string", enum: DAYS }, maxItems: 7, description: "For weekly: which days, e.g. ['mon','thu']." },
         ...workProps,
@@ -289,7 +289,7 @@ const TOOLS = [
   {
     name: "list_schedules",
     title: "List schedules and routines",
-    description: "{{OWNER}}'s scheduled and recurring jobs with their next run (Central Time), {{HIS}} saved routines and their steps, and the daily digest time.",
+    description: "{{OWNER}}'s scheduled and recurring jobs with their next run ({{TIME_ZONE}}), {{HIS}} saved routines and their steps, and the daily digest time.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -364,11 +364,11 @@ const TOOLS = [
     title: "Daily digest",
     description:
       "{{OWNER}}'s daily digest: one short summary of what finished, failed, or needs {{HIM}}, pushed to {{HIS}} phone each day. " +
-      "With no arguments, returns the digest as of now (it does not mark anything as heard). With time, sets when the push comes (Central Time). With off, stops it.",
+      "With no arguments, returns the digest as of now (it does not mark anything as heard). With time, sets when the push comes ({{TIME_ZONE}}). With off, stops it.",
     inputSchema: {
       type: "object",
       properties: {
-        time: { type: "string", maxLength: 20, description: "When to push it each day, Central Time, e.g. '6 pm' or '18:00'" },
+        time: { type: "string", maxLength: 20, description: "When to push it each day, in {{TIME_ZONE}}, e.g. '6 pm' or '18:00'" },
         off: { type: "boolean", description: "true to stop the daily push" },
       },
       additionalProperties: false,
@@ -541,8 +541,13 @@ const rpcResult = (id, result) => ({ jsonrpc: "2.0", id, result });
 const rpcError = (id, code, message) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 const toolText = (text, isError = false) => ({ content: [{ type: "text", text }], isError });
 
-const centralTime = (iso) =>
-  new Date(iso).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " CT";
+// Every clock time is in the owner's own time zone, set by the installer from this computer's (or --time-zone).
+const TZ = "{{TIME_ZONE}}";
+const localTime = (iso) =>
+  new Date(iso).toLocaleString("en-US", { timeZone: TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+// The zone's short name at a moment ("CDT", "PST", "GMT+5:30"), for clock times said without a date.
+const zoneShort = (ms = Date.now()) =>
+  new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "short" }).formatToParts(new Date(ms)).find((x) => x.type === "timeZoneName").value;
 
 async function keyMatches(given, expected) {
   if (!given || !expected) return false;
@@ -670,7 +675,7 @@ export async function searchJobs(env, query, statuses) {
   return { ranked: ranked.filter((r) => r.score >= min - 0.02).slice(0, 3), clear, sure, semantic: !!vecs };
 }
 
-const pickLine = (j, i) => `${i + 1}. ${j.title} (id ${j.id}, ${j.status}, added ${centralTime(j.created_at)})`;
+const pickLine = (j, i) => `${i + 1}. ${j.title} (id ${j.id}, ${j.status}, added ${localTime(j.created_at)})`;
 
 // Which statuses each action can act on, so "the last one" for approve means the last job waiting for approval.
 const ACTS = {
@@ -728,7 +733,7 @@ async function setSetting(env, key, value) {
     .bind(key, JSON.stringify(value), now).run();
 }
 
-const sentText = (x) => `${centralTime(x.at)} from ${x.from} (${x.account}) to ${x.to.join(", ")}, subject "${x.subject}"${x.message_id ? `, Gmail message ${x.message_id}` : ""}.`;
+const sentText = (x) => `${localTime(x.at)} from ${x.from} (${x.account}) to ${x.to.join(", ")}, subject "${x.subject}"${x.message_id ? `, Gmail message ${x.message_id}` : ""}.`;
 
 async function markReported(env, ids) {
   if (!ids.length) return;
@@ -751,7 +756,7 @@ const publishedText = (p) => [
   ...(p.shared || []).map((x) => `shared with ${x.who === "anyone" ? "anyone with the link" : x.who} (${x.role})`),
 ].filter(Boolean).join("; ");
 
-const finishedLine = (j) => `- [${j.status}] ${j.title} (id ${j.id}, finished ${centralTime(j.finished_at || j.updated_at)}). ${j.result || ""}`.trim();
+const finishedLine = (j) => `- [${j.status}] ${j.title} (id ${j.id}, finished ${localTime(j.finished_at || j.updated_at)}). ${j.result || ""}`.trim();
 
 // What a running job is doing now and roughly how long is left. The worker sends its step every 10 seconds or so.
 // Time left: from its own checklist if it keeps one (done of total), else from how long recent jobs of its kind took.
@@ -792,12 +797,12 @@ export function watchText(j, short = false) {
   try { c = j.checkin ? JSON.parse(j.checkin) : null; } catch {}
   try { rs = j.recoveries ? JSON.parse(j.recoveries) : []; } catch {}
   const parts = [];
-  if (c) parts.push(short ? ` Check-in ${c.n} at ${centralTime(c.at)}: ${c.progress ? "making progress" : `NO progress${c.no_progress > 1 ? ` (${c.no_progress} in a row)` : ""}`}.` : `Last check-in (${centralTime(c.at)}): ${c.text}`);
+  if (c) parts.push(short ? ` Check-in ${c.n} at ${localTime(c.at)}: ${c.progress ? "making progress" : `NO progress${c.no_progress > 1 ? ` (${c.no_progress} in a row)` : ""}`}.` : `Last check-in (${localTime(c.at)}): ${c.text}`);
   if (rs.length) {
     const last = rs[rs.length - 1];
     const what = (r) => r.decision === "resume" ? `recovery ${r.n}` : r.decision === "needs_owner" ? "needs {{OWNER}}" : "blocked";
-    parts.push(short ? ` {{ASSISTANT}} self-recovered it ${rs.filter((r) => r.decision === "resume").length} time(s), last ${centralTime(last.at)} (${what(last)}: ${String(last.why || "").slice(0, 120)}).`
-      : `Self-recovery (${rs.length}):\n${rs.map((r) => `- ${centralTime(r.at)} ${what(r)} (${r.cause}): ${r.why}${r.step ? `; step: ${r.step}` : ""}. ${r.action || ""}`.trim()).join("\n")}`);
+    parts.push(short ? ` {{ASSISTANT}} self-recovered it ${rs.filter((r) => r.decision === "resume").length} time(s), last ${localTime(last.at)} (${what(last)}: ${String(last.why || "").slice(0, 120)}).`
+      : `Self-recovery (${rs.length}):\n${rs.map((r) => `- ${localTime(r.at)} ${what(r)} (${r.cause}): ${r.why}${r.step ? `; step: ${r.step}` : ""}. ${r.action || ""}`.trim()).join("\n")}`);
   }
   return short ? parts.join("") : parts.join("\n");
 }
@@ -832,10 +837,10 @@ async function checkUpdates(env) {
   const parts = [];
   parts.push(fresh.length ? `Finished since {{OWNER}} last heard (${fresh.length}):\n${fresh.map(finishedLine).join("\n")}` : "No newly finished jobs.");
   parts.push(active.length
-    ? `Still in progress (${active.length}):\n${active.map((j) => `- [${j.status}] ${j.title} (id ${j.id}, ${j.status === "running" ? "started " + centralTime(j.started_at) : "added " + centralTime(j.created_at)})${j.now ? ` ${j.now}` : ""}`).join("\n")}`
+    ? `Still in progress (${active.length}):\n${active.map((j) => `- [${j.status}] ${j.title} (id ${j.id}, ${j.status === "running" ? "started " + localTime(j.started_at) : "added " + localTime(j.created_at)})${j.now ? ` ${j.now}` : ""}`).join("\n")}`
     : "Nothing running or waiting.");
   const paused = await getSetting(env, "paused");
-  if (paused) parts.push(`Everything is paused (stop_all, ${centralTime(paused.at)}): nothing new starts and schedules are skipped until resume_all.`);
+  if (paused) parts.push(`Everything is paused (stop_all, ${localTime(paused.at)}): nothing new starts and schedules are skipped until resume_all.`);
   return toolText(parts.join("\n\n"));
 }
 
@@ -848,8 +853,8 @@ async function getJob(env, args) {
   const text = [
     `${j.title} (id ${j.id}): ${j.status}${j.cancel_requested && j.status === "running" ? ", stop requested" : ""}.`,
     `Asked: ${j.details || "(no extra details)"}`,
-    `Added ${centralTime(j.created_at)}` + (j.started_at ? `, started ${centralTime(j.started_at)}` : "") +
-      (j.finished_at ? `, finished ${centralTime(j.finished_at)}` : "") + (mins !== null ? ` (${mins} min)` : "") + ".",
+    `Added ${localTime(j.created_at)}` + (j.started_at ? `, started ${localTime(j.started_at)}` : "") +
+      (j.finished_at ? `, finished ${localTime(j.finished_at)}` : "") + (mins !== null ? ` (${mins} min)` : "") + ".",
     j.origin ? `From ${j.origin}.` : "",
     j.created_by ? `Created by ${j.created_by}, not {{OWNER}}.` : "",
     await progressText(env, j),
@@ -978,7 +983,7 @@ async function addJob(env, args) {
   if (pb.share && !pb.publish) return toolText("share_with needs publish_to too: a job can only share what it publishes.", true);
   const now = new Date().toISOString();
   const id = await insertJob(env, { title, details, now, ...w, ...pb, created_by: notOwner(whoOf(env)) });
-  return toolText(`Queued job ${id}: "${title}" (added ${centralTime(now)}).${modeText(w.mode, w.project_dir)}${publishText(pb.publish, pb.share)} The {{MACHINE}} worker usually picks it up within a minute.${await pendingNote(env)}`);
+  return toolText(`Queued job ${id}: "${title}" (added ${localTime(now)}).${modeText(w.mode, w.project_dir)}${publishText(pb.publish, pb.share)} The {{MACHINE}} worker usually picks it up within a minute.${await pendingNote(env)}`);
 }
 
 // ---- Threads: named, ongoing work. Each task is a job; the thread keeps the folder, mode and Claude session. ----
@@ -1038,7 +1043,7 @@ async function listThreads(env, args) {
   ).bind(limit).all();
   if (!results.length) return toolText("No threads yet. Use start_thread to make one.");
   return toolText(`${results.length} thread(s), most recent first:\n` + results.map((t) =>
-    `- "${t.name}" (thread id ${t.id}, ${t.mode}${t.project_dir ? `, ${t.project_dir.replace(HOME, "~")}` : ""}, active ${centralTime(t.updated_at)}). Latest: ${t.last_title || "?"} [${t.last_status || "?"}, job ${t.last_job_id}]`
+    `- "${t.name}" (thread id ${t.id}, ${t.mode}${t.project_dir ? `, ${t.project_dir.replace(HOME, "~")}` : ""}, active ${localTime(t.updated_at)}). Latest: ${t.last_title || "?"} [${t.last_status || "?"}, job ${t.last_job_id}]`
   ).join("\n"));
 }
 
@@ -1068,7 +1073,7 @@ async function publishJob(env, args) {
 // ---- Follow-ups: approve, reply, retry. Each puts a finished job back in the queue with a run mode. ----
 
 const addHistory = (j, now, ...lines) => {
-  const h = [j.history, ...lines.map((l) => `[${centralTime(now)}] ${l}`)].filter(Boolean).join("\n");
+  const h = [j.history, ...lines.map((l) => `[${localTime(now)}] ${l}`)].filter(Boolean).join("\n");
   return h.length > HISTORY_MAX ? "…" + h.slice(-HISTORY_MAX) : h;
 };
 const lastRun = (j) => `Run ${j.attempts || 1} ended ${j.status}: ${j.result || "(no summary)"}`;
@@ -1246,7 +1251,7 @@ async function readLive(env, j, path, offsetArg) {
   if (!snap.fresh && snap.status && snap.status !== "running") return readJobFiles(env, { id }); // it just finished
   const { results: files } = await env.DB.prepare("SELECT * FROM job_live WHERE job_id=?1 ORDER BY CASE WHEN path LIKE '@%' THEN 0 ELSE 1 END, path").bind(id).all();
   const ageS = snap.at ? Math.round((Date.now() - Date.parse(snap.at)) / 1000) : null;
-  const when = snap.fresh ? `live, as of ${ageS} seconds ago` : snap.at ? `the worker did not answer within ${LIVE_WAIT_MS / 1000} seconds; this is its last live view, from ${centralTime(snap.at)}` : "";
+  const when = snap.fresh ? `live, as of ${ageS} seconds ago` : snap.at ? `the worker did not answer within ${LIVE_WAIT_MS / 1000} seconds; this is its last live view, from ${localTime(snap.at)}` : "";
   if (!files.length) {
     return toolText(`"${j.title}" (id ${id}) is running, but the worker did not send a live view within ${LIVE_WAIT_MS / 1000} seconds (it may be busy or on older code). ${await progressText(env, j)} Try again in a minute.`);
   }
@@ -1281,21 +1286,21 @@ async function readLive(env, j, path, offsetArg) {
   return toolText(`"${j.title}" (id ${id}) is still running (${when}). ${now}\nFiles now, ${files.length} total:\n${list.join("\n")}\n\n${shown.join("\n\n")}`.trim());
 }
 
-// ---- {{HIS_CAP}} day: schedules, routines, the daily digest, the screen. Every clock time is Central Time. ----
+// ---- {{HIS_CAP}} day: schedules, routines, the daily digest, the screen. Every clock time is in TZ. ----
 
-const TZ = "America/Chicago";
-const ctFmt = new Intl.DateTimeFormat("en-US", {
-  timeZone: TZ, hourCycle: "h23", weekday: "short", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric",
-});
-export function ctParts(ms) {
-  const p = Object.fromEntries(ctFmt.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+const zoneFmts = new Map();
+const zoneFmt = (tz) => zoneFmts.get(tz) || zoneFmts.set(tz, new Intl.DateTimeFormat("en-US", {
+  timeZone: tz, hourCycle: "h23", weekday: "short", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric",
+})).get(tz);
+export function zoneParts(ms, tz = TZ) {
+  const p = Object.fromEntries(zoneFmt(tz).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
   return { y: +p.year, m: +p.month, d: +p.day, hh: +p.hour % 24, mm: +p.minute, wd: DAYS.indexOf(p.weekday.slice(0, 3).toLowerCase()) };
 }
 
-// The UTC instant of a Central Time wall-clock time. DST-safe; a time skipped by the spring change lands an hour off.
-export function ctToUtc(y, m, d, hh, mm) {
+// The UTC instant of a wall-clock time in tz. DST-safe; a time skipped by the spring change lands an hour off.
+export function zoneToUtc(y, m, d, hh, mm, tz = TZ) {
   const wall = Date.UTC(y, m - 1, d, hh, mm);
-  const offset = (t) => { const p = ctParts(t); return Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm) - t; };
+  const offset = (t) => { const p = zoneParts(t, tz); return Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm) - t; };
   const t = wall - offset(wall);
   return wall - offset(t);
 }
@@ -1316,28 +1321,28 @@ export function parseTime(raw) {
 }
 
 const clock = (t) => `${String(t.hh).padStart(2, "0")}:${String(t.mm).padStart(2, "0")}`;
-const spoken = (at) => { const [h, m] = at.split(":").map(Number); return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"} CT`; };
+const spoken = (at) => { const [h, m] = at.split(":").map(Number); return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"} ${zoneShort()}`; };
 const DAY_NAMES = { sun: "Sun", mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat" };
 
 // Next run after afterMs (UTC ISO) for a repeating schedule; once-with-a-clock-time uses "daily" to find the next one.
-export function nextRun(repeat, atTime, days, afterMs) {
+export function nextRun(repeat, atTime, days, afterMs, tz = TZ) {
   const [hh, mm] = atTime.split(":").map(Number);
   const allowed = repeat === "weekdays" ? [1, 2, 3, 4, 5] : repeat === "weekly" ? String(days || "").split(",").map((d) => DAYS.indexOf(d)) : [0, 1, 2, 3, 4, 5, 6];
-  const p = ctParts(afterMs);
+  const p = zoneParts(afterMs, tz);
   for (let i = 0; i <= 8; i++) {
     const day = new Date(Date.UTC(p.y, p.m - 1, p.d + i));
     if (!allowed.includes(day.getUTCDay())) continue;
-    const t = ctToUtc(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), hh, mm);
+    const t = zoneToUtc(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), hh, mm, tz);
     if (t > afterMs) return new Date(t).toISOString();
   }
   return null;
 }
 
-const whenText = (s) => s.repeat === "once" ? `once, ${centralTime(s.next_run_at)}`
+const whenText = (s) => s.repeat === "once" ? `once, ${localTime(s.next_run_at)}`
   : s.repeat === "daily" ? `every day at ${spoken(s.at_time)}`
   : s.repeat === "weekdays" ? `weekdays at ${spoken(s.at_time)}`
   : `every ${s.days.split(",").map((d) => DAY_NAMES[d]).join(" and ")} at ${spoken(s.at_time)}`;
-const schedOrigin = (s) => `{{OWNER}}'s schedule "${s.name}" (schedule ${s.id}, ${whenText(s)}, saved ${centralTime(s.created_at)})`;
+const schedOrigin = (s) => `{{OWNER}}'s schedule "${s.name}" (schedule ${s.id}, ${whenText(s)}, saved ${localTime(s.created_at)})`;
 
 const findRoutine = async (env, ref) => {
   const r = typeof ref === "string" ? ref.trim() : "";
@@ -1366,23 +1371,23 @@ async function scheduleJob(env, args) {
       const n = Number(args.in_minutes);
       if (!Number.isInteger(n) || n < 1 || n > 10080) return toolText("in_minutes must be a whole number from 1 to 10080 (one week).", true);
       next = now + n * 60_000;
-      atTime = clock(ctParts(next));
+      atTime = clock(zoneParts(next));
     } else {
       const t = parseTime(args.time);
-      if (!t) return toolText("For a one-time job give a 'time' like '7:30 am' (Central Time), optionally a 'date' (YYYY-MM-DD), or 'in_minutes'.", true);
+      if (!t) return toolText("For a one-time job give a 'time' like '7:30 am' ({{TIME_ZONE}}), optionally a 'date' (YYYY-MM-DD), or 'in_minutes'.", true);
       atTime = clock(t);
       if (args.date !== undefined) {
         const m = String(args.date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!m) return toolText("date must look like 2026-10-31.", true);
-        next = ctToUtc(+m[1], +m[2], +m[3], t.hh, t.mm);
-        if (next <= now) return toolText(`That time has already passed (it is now ${centralTime(now)}).`, true);
+        next = zoneToUtc(+m[1], +m[2], +m[3], t.hh, t.mm);
+        if (next <= now) return toolText(`That time has already passed (it is now ${localTime(now)}).`, true);
         if (next > now + 366 * 86400_000) return toolText("That is more than a year away.", true);
       } else next = Date.parse(nextRun("daily", atTime, null, now));
     }
   } else {
     if (args.in_minutes !== undefined || args.date !== undefined) return toolText("in_minutes and date are only for a one-time job (repeat 'once').", true);
     const t = parseTime(args.time);
-    if (!t) return toolText(`A ${repeat} job needs a 'time' like '7:30 am' (Central Time).`, true);
+    if (!t) return toolText(`A ${repeat} job needs a 'time' like '7:30 am' ({{TIME_ZONE}}).`, true);
     atTime = clock(t);
     if (repeat === "weekly") {
       if (!Array.isArray(args.days) || !args.days.length || args.days.some((d) => !DAYS.includes(d))) return toolText(`A weekly job needs 'days', e.g. ["mon","thu"], from: ${DAYS.join(", ")}.`, true);
@@ -1398,7 +1403,7 @@ async function scheduleJob(env, args) {
     "INSERT INTO schedules (id, name, kind, repeat, at_time, days, job, routine_id, next_run_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)"
   ).bind(id, title, routine ? "routine" : "job", repeat, atTime, days, job, routine?.id || null, s.next_run_at, iso).run();
   const what = routine ? ` It runs routine "${routine.name}" (${JSON.parse(routine.steps).length} steps).` : modeText(w.mode, w.project_dir);
-  return toolText(`Scheduled "${title}" (schedule id ${id}): ${whenText(s)}. Next run ${centralTime(s.next_run_at)}.${what} Cancel it any time with cancel_schedule.`);
+  return toolText(`Scheduled "${title}" (schedule id ${id}): ${whenText(s)}. Next run ${localTime(s.next_run_at)}.${what} Cancel it any time with cancel_schedule.`);
 }
 
 async function listSchedules(env) {
@@ -1408,14 +1413,14 @@ async function listSchedules(env) {
   const names = Object.fromEntries(rts.map((r) => [r.id, r.name]));
   const parts = [];
   parts.push(sch.length ? `Schedules (${sch.length}):\n` + sch.map((s) =>
-    `- "${s.name}" (schedule id ${s.id}): ${whenText(s)}, next ${centralTime(s.next_run_at)}.` +
+    `- "${s.name}" (schedule id ${s.id}): ${whenText(s)}, next ${localTime(s.next_run_at)}.` +
     (s.kind === "routine" ? ` Runs routine "${names[s.routine_id] || "?"}".` : modeText(JSON.parse(s.job).mode, JSON.parse(s.job).project_dir)) +
-    (s.last_run_at ? ` Last: ${centralTime(s.last_run_at)}, ${s.last_note || ""}` : "")).join("\n") : "No schedules.");
+    (s.last_run_at ? ` Last: ${localTime(s.last_run_at)}, ${s.last_note || ""}` : "")).join("\n") : "No schedules.");
   parts.push(rts.length ? `Routines (${rts.length}):\n` + rts.map((r) => {
     const steps = JSON.parse(r.steps);
-    return `- "${r.name}" (routine id ${r.id}, ${steps.length} steps): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}${r.last_run_at ? `. Last run ${centralTime(r.last_run_at)}` : ""}`;
+    return `- "${r.name}" (routine id ${r.id}, ${steps.length} steps): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}${r.last_run_at ? `. Last run ${localTime(r.last_run_at)}` : ""}`;
   }).join("\n") : "No routines saved.");
-  parts.push(dg?.enabled ? `Daily digest: pushed every day at ${spoken(dg.at_time)}, next ${centralTime(dg.next_run_at)}.` : "Daily digest push: off.");
+  parts.push(dg?.enabled ? `Daily digest: pushed every day at ${spoken(dg.at_time)}, next ${localTime(dg.next_run_at)}.` : "Daily digest push: off.");
   return toolText(parts.join("\n\n"));
 }
 
@@ -1430,7 +1435,7 @@ async function cancelSchedule(env, args) {
   const s = results[0];
   const now = new Date().toISOString();
   await env.DB.prepare("UPDATE schedules SET enabled=0, next_run_at=NULL, last_note=?2, updated_at=?3 WHERE id=?1")
-    .bind(s.id, `Cancelled by {{OWNER}} ${centralTime(now)}.`, now).run();
+    .bind(s.id, `Cancelled by {{OWNER}} ${localTime(now)}.`, now).run();
   return toolText(`Cancelled schedule "${s.name}" (${whenText(s)}). It won't run again. Jobs it already started are not affected.`);
 }
 
@@ -1478,7 +1483,7 @@ async function runRoutine(env, args) {
   const r = await findRoutine(env, args.name);
   if (!r) return toolText(`No routine called "${args.name}". Use list_schedules to see saved routines.`, true);
   const now = new Date().toISOString();
-  const ids = await startRoutine(env, r, now, `{{OWNER}}'s routine "${r.name}" (run by {{OWNER}} ${centralTime(now)})`);
+  const ids = await startRoutine(env, r, now, `{{OWNER}}'s routine "${r.name}" (run by {{OWNER}} ${localTime(now)})`);
   return toolText(`Started routine "${r.name}": ${ids.length} step(s) queued, run one after another (job ids ${ids.join(", ")}). Cancelling a step also cancels the steps after it.`);
 }
 
@@ -1509,10 +1514,10 @@ export async function fireDue(env, nowMs, withDigest) {
     if (r.meta.changes !== 1) continue;
     let jobId = null, note;
     if (s.kind !== "digest" && paused) {
-      note = `Skipped the ${centralTime(s.next_run_at)} run: everything was paused (stop_all).`;
+      note = `Skipped the ${localTime(s.next_run_at)} run: everything was paused (stop_all).`;
       out.skipped.push(s.id);
     } else if (s.kind !== "digest" && nowMs - Date.parse(s.next_run_at) > LATE_GRACE_MS) {
-      note = `Skipped the ${centralTime(s.next_run_at)} run: the {{MACHINE}} wasn't picking up work then.`;
+      note = `Skipped the ${localTime(s.next_run_at)} run: the {{MACHINE}} wasn't picking up work then.`;
       out.skipped.push(s.id);
     } else if (s.kind === "digest") {
       out.digest = await buildDigest(env, nowMs, s.last_run_at);
@@ -1546,7 +1551,7 @@ export async function buildDigest(env, nowMs, sinceIso) {
     `Daily digest: ${done.length} done, ${failed.length} failed${failed.length && n ? ` (${names(failed, n)})` : ""}, ${waiting.length} need you${waiting.length && n ? ` (${names(waiting, n)})` : ""}.`,
     missed.length ? `${missed.length} schedule(s) missed.` : "",
     act.n ? `${act.running} running, ${act.n - act.running} queued.` : "",
-    next ? `Next: ${cut(next.name, n || 30)} ${centralTime(next.next_run_at)}.` : "",
+    next ? `Next: ${cut(next.name, n || 30)} ${localTime(next.next_run_at)}.` : "",
   ].filter(Boolean).join(" ");
   const hl = await healthLines(env);
   // One health line (health_check has the details). The push keeps job names first and adds health where it fits.
@@ -1556,7 +1561,7 @@ export async function buildDigest(env, nowMs, sinceIso) {
   const line = [health, healthShort].map((h) => `${base} ${h}`).find((l) => l.length <= 200) || base;
   const list = (head, rows, f) => (rows.length ? `${head} (${rows.length}, newest first):\n${rows.slice(0, 10).map(f).join("\n")}${rows.length > 10 ? `\n- …and ${rows.length - 10} more` : ""}` : "");
   const text = [
-    `Digest since ${centralTime(since)}:`, line, health, hl.lines.join("\n"),
+    `Digest since ${localTime(since)}:`, line, health, hl.lines.join("\n"),
     list("Done", done, (j) => `- ${j.title} (id ${j.id})`),
     list("Failed", failed, (j) => `- ${j.title} (id ${j.id}): ${cut(j.result || "", 200)}`),
     list("Waiting for {{OWNER}}", waiting, (j) => `- ${j.title} (id ${j.id})`),
@@ -1573,13 +1578,13 @@ async function dailyDigest(env, args) {
   }
   if (args.time !== undefined) {
     const t = parseTime(args.time);
-    if (!t) return toolText("time must look like '6 pm' or '18:00' (Central Time).", true);
+    if (!t) return toolText("time must look like '6 pm' or '18:00' ({{TIME_ZONE}}).", true);
     const at = clock(t), next = nextRun("daily", at, null, now);
     await env.DB.prepare(
       `INSERT INTO schedules (id, name, kind, repeat, at_time, next_run_at, enabled, created_at, updated_at) VALUES ('digest', 'daily digest', 'digest', 'daily', ?1, ?2, 1, ?3, ?3)
        ON CONFLICT(id) DO UPDATE SET at_time=?1, next_run_at=?2, enabled=1, updated_at=?3`
     ).bind(at, next, iso).run();
-    return toolText(`The daily digest will be pushed to {{OWNER}}'s phone every day at ${spoken(at)}. Next: ${centralTime(next)}.`);
+    return toolText(`The daily digest will be pushed to {{OWNER}}'s phone every day at ${spoken(at)}. Next: ${localTime(next)}.`);
   }
   const row = await env.DB.prepare("SELECT * FROM schedules WHERE id='digest'").first();
   const d = await buildDigest(env, now, row?.last_run_at);
@@ -1635,7 +1640,7 @@ async function resumeAll(env) {
   const p = await getSetting(env, "paused");
   if (!p) return toolText("Nothing was paused; everything is running normally.");
   await setSetting(env, "paused", null);
-  return toolText(`Resumed (paused since ${centralTime(p.at)}). Queued jobs and schedules run again; jobs stopped by stop_all stay stopped (retry_job brings one back).`);
+  return toolText(`Resumed (paused since ${localTime(p.at)}). Queued jobs and schedules run again; jobs stopped by stop_all stay stopped (retry_job brings one back).`);
 }
 
 const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? "just now" : m < 120 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
@@ -1650,7 +1655,7 @@ export async function healthLines(env) {
   add(silent < 2 * 60_000, beat ? `worker last checked in ${ago(beat.at)}` : "worker has never checked in", "worker silent");
   if (beat?.draining_since && silent < 2 * 60_000) {
     const mins = Math.round((Date.now() - Date.parse(beat.draining_since)) / 60000);
-    add(mins < 10, `worker is waiting for its running jobs to end before a restart (since ${centralTime(beat.draining_since)}, ${mins} min); it picks up nothing new until then`, "worker stuck draining");
+    add(mins < 10, `worker is waiting for its running jobs to end before a restart (since ${localTime(beat.draining_since)}, ${mins} min); it picks up nothing new until then`, "worker stuck draining");
   }
   const sup = await getSetting(env, "supervisor");
   add(!!sup && Date.now() - Date.parse(sup.at) < SUPERVISOR_SILENT_MS, `emergency lane: ${sup ? `supervisor last checked in ${ago(sup.at)}` : "supervisor has never checked in"}`, "emergency lane down");
@@ -1659,11 +1664,11 @@ export async function healthLines(env) {
   const one = (k, label) => { if (c[k]) add(c[k].ok, `${label}: ${c[k].text}`, label); else lines.push(`UNKNOWN: ${label} (no report yet)`); };
   one("bell", "phone bell"); if (VM_LANE) one("vm", "VM lane"); one("host", "host lane"); one("disk", "disk"); one("claude", "Claude sign-in"); one("composio", "Composio sign-ins");
   if (h?.at) lines.push(`(worker checks from ${ago(h.at)})`);
-  lines.push(paused ? `PAUSED since ${centralTime(paused.at)} (stop_all); resume_all to undo.` : "Not paused.");
-  lines.push(`Dead-man alarm: ${env.RESEND_KEY ? "armed (email via Resend)" : "NOT armed: no email key set ({{OWNER}}'s step)"}${alarm?.state === "alerted" ? `, alarm sent ${centralTime(alarm.at)}` : ""}.`);
+  lines.push(paused ? `PAUSED since ${localTime(paused.at)} (stop_all); resume_all to undo.` : "Not paused.");
+  lines.push(`Dead-man alarm: ${env.RESEND_KEY ? "armed (email via Resend)" : "NOT armed: no email key set ({{OWNER}}'s step)"}${alarm?.state === "alerted" ? `, alarm sent ${localTime(alarm.at)}` : ""}.`);
   if (!env.RESEND_KEY) problems.push("alarm unarmed");
   const err = await env.DB.prepare("SELECT id, title, result, finished_at FROM jobs WHERE status='failed' ORDER BY finished_at DESC LIMIT 1").first();
-  lines.push(err ? `Last error: ${err.title} (id ${err.id}, ${centralTime(err.finished_at)}): ${String(err.result || "").slice(0, 160)}` : "No failed jobs.");
+  lines.push(err ? `Last error: ${err.title} (id ${err.id}, ${localTime(err.finished_at)}): ${String(err.result || "").slice(0, 160)}` : "No failed jobs.");
   return { lines, problems, paused: !!paused };
 }
 
@@ -1697,14 +1702,14 @@ export async function checkAlarm(env, nowMs, simulateSilentMs = 0) {
   const nowIso = new Date(nowMs).toISOString();
   if (alarm.state !== "alerted" && silent > ALARM_SILENT_MS && !grace) {
     const r = await sendAlarmEmail(env, "{{ASSISTANT}}: the {{MACHINE}} worker has gone quiet",
-      `The {{ASSISTANT}} worker on the {{MACHINE}} has not checked in for ${Math.round(silent / 60000)} minutes (last ${centralTime(new Date(nowMs - silent).toISOString())}).\n` +
+      `The {{ASSISTANT}} worker on the {{MACHINE}} has not checked in for ${Math.round(silent / 60000)} minutes (last ${localTime(new Date(nowMs - silent).toISOString())}).\n` +
       `Jobs are not being picked up. Check that the Mac is on and logged in; the worker restarts itself through launchd.\nYou'll get one more email when it's back.`);
     await setSetting(env, "alarm", r.ok ? { state: "alerted", at: nowIso, id: r.id } : { ...alarm, last_error: r.error, tried_at: nowIso });
     return { state: r.ok ? "alerted" : "send failed", error: r.error };
   }
   if (alarm.state === "alerted" && silent < 2 * 60_000) {
     const r = await sendAlarmEmail(env, "{{ASSISTANT}}: the {{MACHINE}} worker is back up",
-      `The {{ASSISTANT}} worker checked in again at ${centralTime(beat.at)}, after being quiet since about ${centralTime(alarm.at)}. Jobs are being picked up again.`);
+      `The {{ASSISTANT}} worker checked in again at ${localTime(beat.at)}, after being quiet since about ${localTime(alarm.at)}. Jobs are being picked up again.`);
     if (r.ok) await setSetting(env, "alarm", { state: "ok", at: nowIso, back_id: r.id });
     return { state: r.ok ? "back up" : "send failed", error: r.error };
   }
@@ -2043,7 +2048,7 @@ async function listJobs(env, args) {
   if (!results.length) return toolText(args.status ? `No ${args.status} jobs.` : "No jobs yet.");
   const lines = results.map((j) => {
     const note = j.result ? ` Result: ${j.result}` : "";
-    return `- [${j.status}] ${j.title} (id ${j.id}, added ${centralTime(j.created_at)}, updated ${centralTime(j.updated_at)}).${note}`;
+    return `- [${j.status}] ${j.title} (id ${j.id}, added ${localTime(j.created_at)}, updated ${localTime(j.updated_at)}).${note}`;
   });
   await markReported(env, results.filter((j) => FINISHED.includes(j.status)).map((j) => j.id));
   const res = toolText(`${results.length} job(s), newest first:\n${lines.join("\n")}`);
@@ -2075,9 +2080,9 @@ const listTools = (env) => { const tools = powerOn(env) ? TOOLS : TOOLS.filter((
 async function cardJob(env, j, max) {
   const mins = j.started_at ? Math.round((new Date(j.finished_at || Date.now()) - new Date(j.started_at)) / 60000) : null;
   const ended = { done: "Finished", failed: "Failed", needs_approval: "Waiting for you since", cancelled: "Cancelled" }[j.status];
-  const when = j.status === "queued" ? `Added ${centralTime(j.created_at)}`
-    : j.status === "running" ? `Started ${centralTime(j.started_at || j.created_at)} · ${mins ?? 0} min so far${j.cancel_requested ? " · stopping" : ""}`
-    : `${ended} ${centralTime(j.finished_at || j.updated_at)}${mins !== null ? ` · took ${mins} min` : ""}`;
+  const when = j.status === "queued" ? `Added ${localTime(j.created_at)}`
+    : j.status === "running" ? `Started ${localTime(j.started_at || j.created_at)} · ${mins ?? 0} min so far${j.cancel_requested ? " · stopping" : ""}`
+    : `${ended} ${localTime(j.finished_at || j.updated_at)}${mins !== null ? ` · took ${mins} min` : ""}`;
   const now = j.status === "running" ? await progressText(env, j) : "";
   const full = [now, j.result || (j.status === "queued" ? "Waiting for the {{MACHINE}} to pick it up." : "")].filter(Boolean).join("\n");
   return { id: j.id, title: j.title, status: j.status, stopping: !!(j.cancel_requested && j.status === "running"), when, summary: full.length > max ? full.slice(0, max - 1).trimEnd() + "…" : full, cut: full.length > max };

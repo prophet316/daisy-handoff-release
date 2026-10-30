@@ -6,7 +6,7 @@ ALTER TABLE jobs ADD COLUMN origin TEXT;
 ALTER TABLE jobs ADD COLUMN after_job TEXT;
 ALTER TABLE jobs ADD COLUMN run_group TEXT;
 -- kind: job (job holds the saved request), routine (routine_id), digest (one row, id 'digest').
--- repeat: once, daily, weekdays, weekly (days like 'mon,thu'). at_time: HH:MM Central Time. next_run_at: UTC ISO, NULL when over.
+-- repeat: once, daily, weekdays, weekly (days like 'mon,thu'). at_time: HH:MM in the install's time zone (TIME_ZONE in src/index.js). next_run_at: UTC ISO, NULL when over.
 CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

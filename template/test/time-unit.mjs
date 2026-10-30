@@ -1,5 +1,10 @@
-// Unit checks for the Central Time schedule math in src/index.js. Usage: node test/time-unit.mjs
-import { ctToUtc, nextRun, parseTime, ctParts } from "../src/index.js";
+// Unit checks for the schedule math in src/index.js, in several time zones. Usage: node test/time-unit.mjs
+// The math takes the zone as an argument, so these give the same answers whatever zone this install uses.
+import { zoneToUtc, nextRun as nextRunIn, parseTime, zoneParts } from "../src/index.js";
+const CT = "America/Chicago";
+const ctToUtc = (y, m, d, hh, mm) => zoneToUtc(y, m, d, hh, mm, CT);
+const ctParts = (ms) => zoneParts(ms, CT);
+const nextRun = (r, a, d, ms) => nextRunIn(r, a, d, ms, CT);
 let pass = 0, fail = 0;
 const eq = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : `: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`); };
 const at = (iso) => Date.parse(iso);
@@ -24,5 +29,14 @@ eq("parse 'noon'", parseTime("noon"), { hh: 12, mm: 0 });
 eq("reject '25:00'", parseTime("25:00"), null);
 eq("reject '13 pm'", parseTime("13 pm"), null);
 eq("reject 'tomorrow'", parseTime("tomorrow"), null);
+// Other zones: the install uses its owner's own zone, never a fixed one.
+eq("7:00 PDT in Los Angeles (Oct 22) = 14:00Z", new Date(zoneToUtc(2026, 10, 22, 7, 0, "America/Los_Angeles")).toISOString(), "2026-10-22T14:00:00.000Z");
+eq("Los Angeles daily 7:00 across its Nov 1 change = 15:00Z", nextRunIn("daily", "07:00", null, at("2026-10-31T16:00:00Z"), "America/Los_Angeles"), "2026-11-01T15:00:00.000Z");
+eq("London 9:00 before its Oct 25 change (BST) = 08:00Z", new Date(zoneToUtc(2026, 10, 24, 9, 0, "Europe/London")).toISOString(), "2026-10-24T08:00:00.000Z");
+eq("London 9:00 after its Oct 25 change (GMT) = 09:00Z", new Date(zoneToUtc(2026, 10, 26, 9, 0, "Europe/London")).toISOString(), "2026-10-26T09:00:00.000Z");
+eq("Kolkata half-hour zone: 7:00 = 01:30Z", new Date(zoneToUtc(2026, 10, 22, 7, 0, "Asia/Kolkata")).toISOString(), "2026-10-22T01:30:00.000Z");
+eq("Sydney weekdays 8:00 from Friday evening -> Monday (AEDT) = Sunday 21:00Z", nextRunIn("weekdays", "08:00", null, at("2026-10-23T09:00:00Z"), "Australia/Sydney"), "2026-10-25T21:00:00.000Z");
+eq("Tokyo weekday of 2026-10-22T16:00Z is fri", zoneParts(at("2026-10-22T16:00:00Z"), "Asia/Tokyo").wd, 5);
+eq("UTC zone is plain UTC", new Date(zoneToUtc(2026, 10, 22, 7, 0, "UTC")).toISOString(), "2026-10-22T07:00:00.000Z");
 console.log(`TIME UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

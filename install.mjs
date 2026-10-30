@@ -4,15 +4,17 @@
 //   node install.mjs                install for real (4 questions, one Cloudflare sign-in in your browser)
 //   node install.mjs --dry-run      build a full install in a throwaway folder; deploys nothing, starts nothing
 //   node install.mjs --uninstall    stop the background worker and remove its startup entry (your files stay)
+//   node install.mjs --doctor       check this computer and your install, and save a report with secrets removed
 //
 //   Other flags: --name NAME  --assistant NAME  --machine NAME  --yes (take the defaults)
+//                --time-zone ZONE (schedules use this computer's time zone; e.g. --time-zone America/New_York to pick another)
 //                --home DIR (install as if DIR were your home)  --force (replace an existing install, old one backed up)
 //                --platform darwin|win32 (only with --dry-run: write the other OS's files, for testing)
 //                --no-start (deploy for real, write the startup files, but don't start the worker)
 //                --no-power-lanes (turn off the command line and desktop control, which are on by default)
 //                --lead-agent NAME (let one named agent approve held actions for you; off by default, see the README)
 //
-// Needs Node 20+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
+// Needs Node 22+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
 // It never prints your connector URL or keys. The URL works like a password: it goes to your clipboard
 // and to a private file in the install folder, nowhere else.
 
@@ -53,10 +55,15 @@ const HOST = process.platform; // the OS we are really running on
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(`--${f}`);
 const val = (f) => { const i = argv.indexOf(`--${f}`); const v = argv[i + 1]; return i >= 0 && v && !v.startsWith("--") ? v : undefined; };
-const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent"]);
+if (has("doctor")) { // the doctor lives in its own file, so the installer copies it into every install
+  const d = spawnSync(process.execPath, [path.join(HERE, "doctor.mjs"), ...argv.filter((a) => a !== "--doctor")], { stdio: "inherit" });
+  process.exit(d.status ?? 1);
+}
+const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "time-zone"]);
 for (const a of argv) if (a.startsWith("--") && !KNOWN.has(a.slice(2))) die(`unknown option ${a} (try --help)`);
 if (has("help")) {
-  const head = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 18);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n");
+  const head = lines.slice(1, lines.findIndex((l, i) => i > 0 && !l.startsWith("//")));
   console.log(head.map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(0);
 }
@@ -119,8 +126,9 @@ function uninstall() {
   }
   if (!n) say("  no Handoff worker found for this user");
   else if (!DRY) say(`\nStartup entries moved to ${bak} (not deleted).`);
-  say("Your install folder and Cloudflare connector are untouched. To remove the connector too, open the install");
-  say(`folder and run:  npx -y ${WRANGLER} delete   then remove it in Claude under Customize > Connectors.`);
+  say("Your install folder and Cloudflare connector are untouched. To remove everything, follow the README's Uninstall");
+  say(`steps: in the install folder run  npx -y ${WRANGLER} delete --force  and  npx -y ${WRANGLER} d1 delete NAME-handoff-jobs -y,`);
+  say("delete the install folder, and remove the connector in Claude under Customize > Connectors.");
 }
 
 // ---------- install ----------
@@ -130,11 +138,14 @@ async function main() {
   const TOTAL = 7;
   say(`Daisy Handoff installer ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
   if (!fs.existsSync(TEMPLATE)) die(`no template folder next to install.mjs (looked for ${TEMPLATE}). Unzip the whole release and run it from that folder.`);
+  // Schedules and the times Claude reads out use the owner's own time zone: this computer's, or --time-zone.
+  const timeZone = val("time-zone") || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  try { new Intl.DateTimeFormat("en-US", { timeZone }); } catch { die(`"${timeZone}" isn't a time zone name. Use one like America/New_York, Europe/London or Asia/Tokyo.`); }
 
   // 1. preflight
   step("Checking this computer", TOTAL);
   const major = Number(process.versions.node.split(".")[0]);
-  if (major < 20) die(`Node ${process.versions.node} is too old. Install Node 20 or newer from nodejs.org, then run this again.`);
+  if (major < 22) die(`Node ${process.versions.node} is too old. Install Node 22 or newer from nodejs.org, then open a new Terminal window and run this again.`);
   ok(`Node ${process.versions.node}`);
   const claudeBin = findClaude();
   if (!claudeBin) (DRY ? note : die)("Claude Code isn't installed. Get it at claude.ai/code, sign in, then run this again.");
@@ -171,6 +182,7 @@ async function main() {
   const dir = path.join(HOME, "Projects", slug);
   ok(`${owner}'s assistant ${assistant}, on the ${machine}`);
   ok(`install folder ${dir}`);
+  ok(`schedules use your time zone, ${timeZone} (another one: --time-zone)`);
   if (lead) for (const l of LEAD_WARNING(lead)) note(l);
   else ok("only you can approve held actions, from your own Claude chat; other agents can't (to change that: --lead-agent NAME)");
   (power ? note : ok)(`command line and desktop control ${power ? "on: jobs can run shell commands and use this computer's desktop (turn off: rerun the installer with --no-power-lanes)" : "off (turn on: rerun the installer with --power-lanes, or answer yes)"}`);
@@ -198,13 +210,15 @@ async function main() {
     ALARM_TO: "alarm-off@example.invalid", ALARM_FROM: "alarm-off@example.invalid",
     VM_LANE: "off",
     POWER_LANES: power ? "on" : "off",
+    TIME_ZONE: timeZone,
     LEAD_AGENT: lead,
     WORKER_CONFIG_JSON: JSON.stringify(worker, null, 2),
   };
   const n = render(TEMPLATE, dir, tokens);
   fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION }, null, 2) + "\n");
-  ok(`${n} files written, every placeholder filled`);
+  fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION, timeZone }, null, 2) + "\n");
+  fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
+  ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
   if (MAC) {
     const nodeBin = (!SIM && which("node")) || process.execPath;
     const nb = path.join(HOME, dotdir, "node", "bin");
@@ -233,6 +247,7 @@ async function main() {
 
   // 6. background worker
   step("Starting the worker at login", TOTAL);
+  if (MAC) trustBellFolder(dir);
   if (MAC) installMac(dir); else installWin(dir, assistant);
   if (!DRY) {
     const s = await smokeCheck(fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim());
@@ -251,10 +266,16 @@ async function main() {
   say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > Add custom connector.`);
   say(`  2. Name it "${assistant} Handoff" and paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}).`);
   say(`  3. On your phone, open the Claude app, start voice, and say: "${assistant}, check updates."`);
+  if (MAC) {
+    say(`  For a phone notification when a job finishes (once, about a minute):`);
+    say(`  4. On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`);
+    say(`  5. In Terminal run claude, type /config, turn on "Push when Claude decides", then type /exit.`);
+  }
+  say(`  If something doesn't work: node "${path.join(dir, "doctor.mjs")}"  (TROUBLESHOOTING.md in the release folder explains each problem)`);
   say(`  That URL works like a password. Anyone who has it can hand your computer work. Don't post it or share it.`);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
-    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, steps,
+    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone, steps,
   }, null, 2) + "\n");
   say(`\n${DRY ? "DRY RUN COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
 }
@@ -377,6 +398,25 @@ function deploy(dir, slug, lead) {
   }
   ok("keys stored on Cloudflare");
   return url;
+}
+
+// The phone bell is an always-on Claude Code session in jarvis-bell/. Claude Code asks whether to trust a new folder
+// before it starts, and nobody is at that terminal to answer, so the installer records the yes, as answering it would.
+function trustBellFolder(dir) {
+  if (DRY || SIM) return skip("Claude Code's trust for the bell folder (dry run)");
+  const p = path.join(HOME, ".claude.json");
+  try {
+    const c = JSON.parse(fs.readFileSync(p, "utf8"));
+    const key = path.join(dir, "jarvis-bell");
+    c.projects = c.projects || {};
+    c.projects[key] = { ...(c.projects[key] || {}), hasTrustDialogAccepted: true };
+    const tmp = `${p}.handoff-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(c, null, 2), { mode: fs.statSync(p).mode & 0o777 });
+    fs.renameSync(tmp, p);
+    ok("Claude Code trusts the bell folder, so the phone bell can start");
+  } catch (e) {
+    note(`couldn't mark the bell folder as trusted in ~/.claude.json (${e.message}); phone notifications won't start until it is. Run doctor.mjs for the fix.`);
+  }
 }
 
 function installMac(dir) {

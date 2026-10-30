@@ -72,11 +72,36 @@ if (platform === "darwin") {
   check(fs.existsSync(runner) && fs.readFileSync(runner, "utf8").includes("\r\n"), "run-worker.cmd has Windows line endings");
 }
 
-// 7. receipt
+// 7. time zone: the owner's own, the same in site.json, the connector and the receipt
+const site = JSON.parse(fs.readFileSync(path.join(dir, "site.json"), "utf8"));
+let zoneOk = false;
+try { new Intl.DateTimeFormat("en-US", { timeZone: site.timeZone }); zoneOk = !!site.timeZone; } catch {}
+check(zoneOk, `site.json has a real time zone (${site.timeZone})`);
+const want = process.env.EXPECT_TIME_ZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+check(site.timeZone === want, `time zone is ${want}${process.env.EXPECT_TIME_ZONE ? " (--time-zone)" : " (this computer's own)"}`);
+const src = fs.readFileSync(path.join(dir, "src", "index.js"), "utf8");
+check(src.includes(`const TZ = "${site.timeZone}";`) && !/America\/Chicago|Central Time/.test(src.split(site.timeZone).join("")), "the connector uses that zone and nothing is fixed to Central Time");
+
+// 8. doctor: copied into the install, runs, and its report holds no key or connector URL
+const doc = path.join(dir, "doctor.mjs");
+check(fs.existsSync(doc), "doctor.mjs is in the install folder");
+if (fs.existsSync(doc)) {
+  const before = new Set(fs.readdirSync(path.join(dir, "logs")));
+  const d = spawnSync(process.execPath, [doc, "--dir", dir, "--offline"], { encoding: "utf8", timeout: 60000 });
+  check(d.status === 0 || d.status === 1, `doctor runs and finishes (exit ${d.status})`);
+  const made = fs.readdirSync(path.join(dir, "logs")).filter((f) => !before.has(f) && f.startsWith("doctor-report-"));
+  const rep = made.length ? fs.readFileSync(path.join(dir, "logs", made[0]), "utf8") : "";
+  check(made.length === 1 && rep.includes("Your install"), "doctor saved a report in logs/");
+  check(rep && !keys.some((k) => rep.includes(k)) && !rep.includes(url) && !(d.stdout || "").includes(keys[0]), "doctor's report and screen show no key and no connector URL");
+  for (const f of made) fs.rmSync(path.join(dir, "logs", f));
+}
+
+// 9. receipt
 const r = JSON.parse(fs.readFileSync(path.join(dir, "install-receipt.json"), "utf8"));
 check(r.dryRun === true && r.platform === platform, "install receipt records a dry run for this platform");
 check(!JSON.stringify(r).includes(keys[0]), "receipt contains no key");
 check(r.powerLanes === (power === "on"), `install receipt records command line and desktop control ${power}`);
+check(r.timeZone === site.timeZone, "install receipt records the time zone");
 
 console.log(fails ? `\n${fails} check(s) failed` : "\nALL CHECKS PASSED");
 process.exit(fails ? 1 : 0);

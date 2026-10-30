@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: "Never paste your connector URL or anything from `.connector-url`, `.connector-key` or `.worker-key`. Those are passwords."
+      value: "Never paste your connector URL or anything from `.connector-url`, `.connector-key` or `.worker-key`. Those are passwords. Tip: `node doctor.mjs` saves a report with those removed; you can paste it below."
   - type: dropdown
     id: os
     attributes:
@@ -37,6 +37,12 @@ body:
       label: What happened instead
     validations:
       required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor report (optional)
+      description: "`node doctor.mjs` prints where it saved its report. Read it, then paste it here."
+      render: text
   - type: textarea
     id: receipt
     attributes:

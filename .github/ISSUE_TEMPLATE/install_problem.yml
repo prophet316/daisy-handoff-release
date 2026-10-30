@@ -1,0 +1,52 @@
+name: Install problem
+description: The installer stopped, or something didn't work right after installing.
+labels: [install]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying it. First run `node doctor.mjs` in the unzipped release folder (or in your install folder) and look at [TROUBLESHOOTING.md](https://github.com/prophet316/daisy-handoff-release/blob/main/TROUBLESHOOTING.md). Most install problems are covered there.
+
+        Never paste your connector URL or anything from `.connector-url`, `.connector-key`, `.worker-key` or `.bell-key`. Those are passwords.
+  - type: dropdown
+    id: step
+    attributes:
+      label: Where did it stop?
+      options:
+        - Before the installer ran (Node, Terminal, unzipping)
+        - "[1/7] Checking this computer (Node or Claude Code)"
+        - "[2/7] to [4/7] Questions and building the install"
+        - "[5/7] Cloudflare sign-in or deploy"
+        - "[6/7] Starting the worker"
+        - Adding the connector in Claude
+        - Voice works, but jobs don't run
+        - Jobs run, but no phone notification
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: saw
+    attributes:
+      label: What you saw
+      description: The last lines the installer printed, or the error, word for word. Cut anything private.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor report
+      description: "`node doctor.mjs` prints where it saved its report. Keys, your connector URL, emails and your user name are already removed. Read it, then paste it here."
+      render: text
+  - type: input
+    id: plan
+    attributes:
+      label: Claude plan
+      description: Pro, Max, Team or Enterprise. Team and Enterprise need an Owner to allow some features.
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Before you post
+      options:
+        - label: I checked that nothing I pasted contains my connector URL or a key.
+          required: true

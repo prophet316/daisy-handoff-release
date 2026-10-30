@@ -41,3 +41,12 @@ jobs:
       - name: Verify power lanes are on
         shell: bash
         run: node test/verify-dry-run.mjs "$RUNNER_TEMP/power" daisy-handoff "$(node -p process.platform)" on
+      - name: Dry run with --time-zone (another zone than the runner's)
+        shell: bash
+        run: node install.mjs --dry-run --yes --time-zone Asia/Kolkata --name Tester --assistant Daisy --home "$RUNNER_TEMP/tz"
+      - name: Verify the chosen time zone
+        shell: bash
+        run: EXPECT_TIME_ZONE=Asia/Kolkata node test/verify-dry-run.mjs "$RUNNER_TEMP/tz" daisy-handoff "$(node -p process.platform)"
+      - name: Refuses a made-up time zone
+        shell: bash
+        run: "! node install.mjs --dry-run --yes --time-zone Mars/Olympus --home \"$RUNNER_TEMP/badtz\""

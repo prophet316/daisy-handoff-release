@@ -5,6 +5,12 @@
 - Only you can approve a held action or answer a job waiting for your yes. Agents can still message each other and keep working.
 - New, off by default: `--lead-agent NAME` lets one named agent approve for you. Its approvals are logged as that agent.
 - Updating an older install adds the new columns to its job table.
+- Schedules and the times Claude reads out use your own time zone, taken from your computer when you install. `--time-zone NAME` picks another. Before, they were always US Central Time.
+- New `node doctor.mjs` (also `node install.mjs --doctor`): checks your computer and install for the common problems, says what to do about each, and saves a report with keys, URLs, emails and your user name removed. The installer copies it into your install folder.
+- New TROUBLESHOOTING.md for the common failures, MANUAL-INSTALL.md for installing step by step, and an "Install problem" issue form.
+- The installer now marks the phone bell's folder as trusted in Claude Code, so the bell can start on a new Mac, and lists the phone notification setup at the end.
+- The installer needs Node 22 (the Cloudflare tool it uses needs 22), and says so before it starts.
+- README: the full list of what you need (Command Line Tools, an administrator password, optional CuaDriver), how phone notifications use Remote Control, and how to open Terminal in the right folder.
 
 ## 0.9.0 (2026-10-29)
 - One installer for macOS and Windows: `node install.mjs`, with `--dry-run` and `--uninstall`.

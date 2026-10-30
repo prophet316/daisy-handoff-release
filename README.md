@@ -20,10 +20,13 @@ Mac today, Windows next. The Windows worker is the next thing landing.
 | What | Cost | Notes |
 | ---- | ---- | ----- |
 | A Mac on macOS 13 (Ventura) or newer | | macOS 13 is the oldest version Claude Code supports. Tested on macOS 26. |
-| A paid Claude plan: Pro, Max, Team or Enterprise | Pro is $20 a month ($17 a month billed yearly); Max starts at $100 a month | Claude Code isn't included in the Free plan, so Free can't run the jobs. Custom connectors and voice mode work on every plan. On Team and Enterprise, an owner has to allow the connector first. |
-| Claude Code, installed and signed in on the Mac | Included with the plan | Install it from [claude.ai/code](https://claude.ai/code), run `claude`, and sign in. |
-| The Claude app on your phone | Free | For voice. iPhone or Android. |
-| Node 22 or newer | Free | From [nodejs.org](https://nodejs.org). The Cloudflare tool the installer uses needs Node 22. |
+| A paid Claude plan: Pro, Max, Team or Enterprise | Pro is $20 a month ($17 a month billed yearly); Max starts at $100 a month | Claude Code isn't included in the Free plan, so Free can't run the jobs. Custom connectors and voice mode work on every plan. On Team and Enterprise, an Owner has to allow custom connectors, and turn on Remote Control and channels in Claude Code admin settings for phone notifications. |
+| Claude Code, installed and signed in on the Mac | Included with the plan | Install it from [claude.ai/code](https://claude.ai/code), run `claude`, and type `/login`. Sign in with your Claude plan, not an API key. If `claude` says command not found, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md#claude-command-not-found). |
+| The Claude app on your phone | Free | For voice and job notifications. iPhone or Android, signed in to the same Claude account. |
+| Node 22 or newer | Free | From [nodejs.org](https://nodejs.org) (the LTS download). The Cloudflare tool the installer uses needs Node 22. |
+| Apple's Command Line Tools | Free | The phone bell uses the Python that comes with them. Many Macs have them already; if not, run `xcode-select --install`. |
+| Your Mac's administrator password | | The Node and Command Line Tools installers ask for it. |
+| CuaDriver (optional) | Free | Only for jobs that click and type on your desktop. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#desktop-control-doesnt-work). Everything else works without it. |
 | A Cloudflare account | Free plan is enough | The free Workers plan allows 100,000 requests a day, and its free D1 database allows 5 million rows read and 100,000 rows written a day. Your computer checks in every 20 seconds, about 4,300 requests a day. |
 
 ---
@@ -63,7 +66,7 @@ You (voice, Claude app)
    -> Claude Code does the work, then you get a notification
 ```
 
-When a job finishes, a Claude Code session on your Mac sends the result to your phone as a Claude app notification.
+When a job finishes, a Claude Code session on your Mac sends the result to your phone as a Claude app notification. That session uses Claude Code's own [Remote Control](https://code.claude.com/docs/en/remote-control), which links a session on your computer to the Claude app. The installer starts it and keeps it running; you may see it in the Claude app as "Daisy bell". Setup is in step 7 below.
 
 Your computer never opens a port. The worker reaches out to your connector; nothing reaches in. Every install has its own connector, its own database and its own keys. Nobody else's computer sees your jobs, including mine.
 
@@ -72,18 +75,28 @@ Your computer never opens a port. The worker reaches out to your connector; noth
 ## Install (Mac, about 10 minutes)
 
 1. Download **[daisy-handoff.zip](https://github.com/prophet316/daisy-handoff-release/releases/latest/download/daisy-handoff.zip)** and unzip it.
-2. Open Terminal in that folder and run: `node install.mjs`
+2. Open Terminal (Applications > Utilities > Terminal), go to the folder, and run the installer:
+   ```bash
+   cd ~/Downloads/daisy-handoff
+   node install.mjs
+   ```
+   It checks Node and Claude Code first and tells you exactly what's missing.
 3. Answer four questions (your name, what you call your assistant, what you call this computer, and whether jobs may use the command line and control your desktop; the answer is yes unless you type no).
 4. Sign in to Cloudflare when your browser opens.
 5. In Claude, go to **Customize > Connectors > Add custom connector** and paste the URL the installer copied for you.
 6. Open the Claude app, start voice, and say: **"Daisy, check updates."** (or whatever you named your assistant)
+7. For a notification on your phone when a job finishes: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
+
+Something not working? Run `node doctor.mjs` in the same folder. It finds the common problems and says what to do; [TROUBLESHOOTING.md](TROUBLESHOOTING.md) explains each one. If the installer keeps failing, [MANUAL-INSTALL.md](MANUAL-INSTALL.md) does the same steps one at a time.
 
 To see everything it would do first, run `node install.mjs --dry-run`. It builds the install in a throwaway folder and deploys nothing.
 
 Your install lives in `~/Projects/daisy-handoff` (the name follows what you call your assistant, so an assistant called Max lives in `~/Projects/max-handoff`). Your connector on Cloudflare has the same name, and its database adds `-jobs` to it.
 
 **Good to know in this version:**
-- Schedules and times use US Central Time. Your own time zone is coming in a later release.
+- Schedules and times use your Mac's time zone, which the installer shows. To use another one, add `--time-zone America/New_York` (or your zone's name).
+- One install per Mac user account.
+- Jobs run while your Mac is on and you're logged in.
 - Publishing to Google Docs and Drive and sending email need a separate [Composio](https://composio.dev) account. Everything else works without it.
 
 **Windows:** Mac today, Windows next. The installer already runs on Windows, but the background worker doesn't yet. Windows worker support is the next thing landing.
@@ -123,7 +136,7 @@ Use your own names if your assistant isn't called Daisy (for Max: `max-handoff`,
 
 Partly, and that's good.
 
-**Claude Code Remote Control** lets you open a session on your computer from the Code tab and type into it. Use it.
+**Claude Code Remote Control** lets you open a session on your computer from the Code tab and type into it. Use it. Daisy Handoff uses it too, for the session that sends your phone notifications.
 
 **Daisy Handoff** is for when you're talking, not typing: one voice conversation that can start new jobs, check on all of them, approve the ones waiting on you, and put work on a schedule.
 
@@ -160,13 +173,15 @@ Read [SECURITY.md](SECURITY.md) for the details.
 
 ## Get help
 
-Open an issue at [github.com/prophet316/daisy-handoff-release/issues](https://github.com/prophet316/daisy-handoff-release/issues) and pick **Something broke** or **Idea**. For a security problem, use **Security > Report a vulnerability** instead, so it stays private.
+First run `node doctor.mjs` and look at [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Most install problems are there.
+
+Open an issue at [github.com/prophet316/daisy-handoff-release/issues](https://github.com/prophet316/daisy-handoff-release/issues) and pick **Install problem**, **Something broke** or **Idea**. For a security problem, use **Security > Report a vulnerability** instead, so it stays private.
 
 A good bug report has:
 
 - What you said or ran, word for word, and what happened instead.
-- The installer version (the first line it prints), your macOS version, `node -v` and `claude --version`.
-- `install-receipt.json` from your install folder. It holds no keys.
+- The doctor's report. `node doctor.mjs` saves it and prints where. Keys, your connector URL, emails and your user name are already removed; read it before you paste it.
+- Or, by hand: the installer version (the first line it prints), your macOS version, `node -v`, `claude --version`, and `install-receipt.json` from your install folder (it holds no keys).
 - The last 30 lines of `logs/worker.log` in your install folder, if a job misbehaved. Read them first and cut anything private.
 
 Never paste your connector URL, `.connector-url`, `.connector-key`, `.worker-key` or `.bell-key`. If one slips out, rotate the key (above).
