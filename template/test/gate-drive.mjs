@@ -527,6 +527,21 @@ await L.tool("get_window_state", { pid: P, window_id: 9 });
 r = await L.tool("type_text", { pid: P, text: "lunch places", intent: "type the search" });
 check("Gmail C: typing in window 9, right after the click on its field, goes through", !r.err && calls(d25w).some((c) => c.tool === "type_text" && c.args.text === "lunch places"), r.text);
 L.end();
+// D: Tab, click the address bar by its token, type "x\n\n" there. The first Return submits the bar; the second lands in the page,
+// where the Tab may have left focus on Send. Held, and nothing reaches the driver (security 7f9c2e8f #1).
+const d25d = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d25d, GMAIL);
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+await L.tool("get_window_state", look);
+const ca = await L.tool("click", { pid: P, element_token: "t:1", intent: "click the address bar" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:1", text: "x\n\n", intent: "load the page" });
+check("Gmail D: Tab, click the address bar by token, \"x\\n\\n\" is held and nothing reaches the driver", !ca.err && r.err && /BLOCKED/.test(r.text) && !calls(d25d).some((c) => c.tool === "type_text"), [ca.text, r.text].map((x) => x.slice(0, 40)).join(" | "));
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:1", text: "x\n", intent: "load the page" });
+check("Gmail D: one line break at the very end, typed into the address bar by token, goes through", !r.err && calls(d25d).some((c) => c.tool === "type_text" && c.args.text === "x\n"), r.text);
+L.end();
 // A look that shows a text field has focus clears it; one that doesn't, doesn't.
 const d25f = mkdtempSync(join(tmpdir(), "gate-drive-"));
 const focusFile = join(d25f, "extra.json");
