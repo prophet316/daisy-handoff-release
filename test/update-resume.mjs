@@ -382,7 +382,7 @@ const rhome = fs.mkdtempSync(path.join(os.tmpdir(), "rotate-keys-")), rdir = pat
 const rinstall = (args) => spawnSync(process.execPath, [path.join(REPO, "install.mjs"), ...args, "--home", rhome], { encoding: "utf8" });
 r = rinstall(["--dry-run", "--yes", "--name", "Tester", "--assistant", "Daisy"]);
 check(r.status === 0, "practice install for --rotate-keys");
-check(/Off isn't a sandbox: code jobs still run Claude Code with its own command line/.test(r.stdout) && /Anyone who can change your Cloudflare account can run jobs here too/.test(r.stdout),
+check(/Off isn't a sandbox: code and design jobs still run Claude Code with its own command line/.test(r.stdout) && /Anyone who can change your Cloudflare account can run jobs here too/.test(r.stdout),
   "the installer's warning says off isn't a sandbox and the Cloudflare account is a key too", r.stdout.slice(0, 1500));
 const keyBefore = fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
 r = rinstall(["--rotate-keys"]);

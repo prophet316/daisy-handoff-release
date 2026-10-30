@@ -41,6 +41,9 @@ const VM_LANE = "{{VM_LANE}}" === "on";
 const POWER_TOOLS = ["look_at_screen", "use_computer", "run_command", "command_result"];
 const POWER_OFF = "This install has the command line and desktop control turned off. To turn them on, rerun the installer with --power-lanes, or run it again and answer yes.";
 const powerOn = (env) => env.POWER_LANES === "on";
+// Phone notifications (the bell). Off unless {{OWNER}} said yes at install; the installer writes PHONE_BELL = "on" or "off" in
+// wrangler.toml to match. Off, nothing is pushed, so no reply promises a push; the daily digest still comes in check_updates.
+const bellOn = (env) => env.PHONE_BELL === "on";
 const HOST_WORDS = /\b(on|of|from|at) my (own |real )?(mac|screen|desktop|computer)\b|\bmy real (computer|mac|desktop|screen)\b/i;
 const ALARM_SILENT_MS = 10 * 60_000;   // no worker heartbeat this long: one alarm email
 const RESTART_GRACE_MS = 15 * 60_000;  // a planned .restart-worker gets this long before the alarm counts silence
@@ -72,7 +75,7 @@ const INSTRUCTIONS =
   "list_threads shows them. Pick the mode that fits: code, research, writing or design. Only set publish_to when {{OWNER}} asks to publish " +
   "to Google Docs or Drive, and only set share_with to the exact people {{HE}} names: sharing grants access. " +
   "For {{HIS}} day: schedule_job runs a job or routine once or on repeat (times are {{HIS}} own time zone, {{TIME_ZONE}}), list_schedules and cancel_schedule " +
-  "manage them; save_routine and run_routine handle named multi-step routines; daily_digest reads or sets {{HIS}} daily summary push. " +
+  "manage them; save_routine and run_routine handle named multi-step routines; daily_digest reads or sets {{HIS}} daily summary (check_updates brings up a new one once). " +
   "Any tool that takes a job id also takes a description ('the one about finances', 'the last one'); " +
   "if several jobs match it lists them, so read them to {{OWNER}} and let {{HIM}} pick. reply_to_job also steers a running job mid-run. stop_all halts everything " +
   "until resume_all; health_check says whether everything is up. When a job won't stop or the worker is stuck, the stop switch on the {{MACHINE}} bypasses the " +
@@ -111,7 +114,7 @@ const TOOLS = [
     name: "check_updates",
     title: "What's new with my jobs",
     description:
-      "Call at the start of every conversation with {{OWNER}}, and whenever {{HE}} asks what's going on. Reports background jobs that finished or need {{HIS}} approval since {{HE}} last heard, plus what is still running. Each finished job is reported once.",
+      "Call at the start of every conversation with {{OWNER}}, and whenever {{HE}} asks what's going on. Reports background jobs that finished or need {{HIS}} approval since {{HE}} last heard, plus what is still running, and a new daily digest. Each finished job and each digest is reported once.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
@@ -375,13 +378,14 @@ const TOOLS = [
     name: "daily_digest",
     title: "Daily digest",
     description:
-      "{{OWNER}}'s daily digest: one short summary of what finished, failed, or needs {{HIM}}, pushed to {{HIS}} phone each day. " +
-      "With no arguments, returns the digest as of now (it does not mark anything as heard). With time, sets when the push comes ({{TIME_ZONE}}). With off, stops it.",
+      "{{OWNER}}'s daily digest: one short summary of what finished, failed, or needs {{HIM}}, ready at the same time each day. check_updates brings up a new one once, " +
+      "and it is also pushed to {{HIS}} phone when phone notifications are on. " +
+      "With no arguments, returns the digest as of now (it does not mark anything as heard). With time, sets when it is made each day ({{TIME_ZONE}}). With off, stops it.",
     inputSchema: {
       type: "object",
       properties: {
-        time: { type: "string", maxLength: 20, description: "When to push it each day, in {{TIME_ZONE}}, e.g. '6 pm' or '18:00'" },
-        off: { type: "boolean", description: "true to stop the daily push" },
+        time: { type: "string", maxLength: 20, description: "When to make it each day, in {{TIME_ZONE}}, e.g. '6 pm' or '18:00'" },
+        off: { type: "boolean", description: "true to stop the daily digest" },
       },
       additionalProperties: false,
     },
@@ -392,7 +396,7 @@ const TOOLS = [
     title: "What's on the screen",
     description:
       "Take a screenshot of the {{MACHINE}}'s screen and describe it, or answer {{OWNER}}'s question about it. Takes about a minute: " +
-      "it returns a job id; then call get_job with it to hear the description (it also comes as a phone push).",
+      "it returns a job id; then call get_job with it to hear the description (it also comes as a phone push when phone notifications are on).",
     inputSchema: {
       type: "object",
       properties: { question: { type: "string", maxLength: 1000, description: "What {{OWNER}} wants to know, e.g. 'is the export finished?'. Leave out for a general description." } },
@@ -408,8 +412,9 @@ const TOOLS = [
       "only when {{HE}} says on my Mac, my screen or my real computer. "
         : "Have Claude operate {{OWNER}}'s real Mac (this install has no separate Claude desktop), only when {{HE}} says on my Mac, my screen or my real computer. ") +
       "Open apps and web pages, click, type, read what is on screen, and report back. " +
-      "Returns a job id; call get_job to hear the result (also a phone push). On the host it waits while {{OWNER}} is using the mouse or keyboard and never touches " +
-      "Terminal, iTerm, System Settings, Keychain Access or password managers unless {{HE}} names them. " +
+      "Returns a job id; call get_job to hear the result (also a phone push when phone notifications are on). On the host it waits while {{OWNER}} is using the mouse or keyboard and never touches " +
+      "apps that run commands or scripts (Terminal and other terminals, Script Editor, Automator, Shortcuts, code editors), launchers, apps that change the system, System Settings, " +
+      "Keychain Access, password managers or Claude (the app or a claude.ai tab) unless {{HE}} names them. " +
       "Pressing Return, searching and opening web pages always go through, in the browser {{HE}} names. {{HIS_CAP}} request is {{HIS}} yes for every step of the task it asks for, " +
       "including the details the task needs on the site {{HE}} named; the only stop is right before money is charged, which comes back as needs_approval with the item, total and delivery address " +
       "for {{HIM}} to approve once. A safety gate still blocks sending, posting, uploading, deleting or access changes {{HE}} didn't ask for, and {{HIS}} details on sites {{HE}} didn't ask to use; " +
@@ -913,6 +918,12 @@ async function checkUpdates(env) {
     : "Nothing running or waiting.");
   const paused = await getSetting(env, "paused");
   if (paused) parts.push(`Everything is paused (Stop everything, ${localTime(paused.at)}): nothing new starts and schedules are skipped until {{OWNER}} says "start things again".`);
+  // The daily digest made since {{OWNER}} last heard one, once, whether or not phone notifications are on.
+  const dg = await env.DB.prepare("SELECT last_run_at, last_note FROM schedules WHERE id='digest' AND last_run_at IS NOT NULL").first();
+  if (dg?.last_note && (await getSetting(env, "digest_heard")) !== dg.last_run_at) {
+    parts.push(`Daily digest (${localTime(dg.last_run_at)}): ${dg.last_note} Ask for the digest to hear the details.`);
+    await setSetting(env, "digest_heard", dg.last_run_at);
+  }
   return toolText(parts.join("\n\n"));
 }
 
@@ -1503,9 +1514,12 @@ async function listSchedules(env) {
     const steps = JSON.parse(r.steps);
     return `- "${r.name}" (routine id ${r.id}, ${steps.length} steps): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}${r.last_run_at ? `. Last run ${localTime(r.last_run_at)}` : ""}.${madeBy(r)}`;
   }).join("\n") : "No routines saved.");
-  parts.push(dg?.enabled ? `Daily digest: pushed every day at ${spoken(dg.at_time)}, next ${localTime(dg.next_run_at)}.` : "Daily digest push: off.");
+  parts.push(dg?.enabled ? `Daily digest: ${digestWhere(env)} every day at ${spoken(dg.at_time)}, next ${localTime(dg.next_run_at)}.` : "Daily digest: off.");
   return toolText(parts.join("\n\n"));
 }
+
+// Where the daily digest goes: the phone only with the bell on; check_updates either way.
+const digestWhere = (env) => bellOn(env) ? "pushed to {{OWNER}}'s phone and brought up in the next chat" : "brought up in the next chat (phone notifications are off, so it isn't pushed)";
 
 async function cancelSchedule(env, args) {
   const ref = typeof args.schedule === "string" ? args.schedule.trim() : "";
@@ -1661,7 +1675,7 @@ async function dailyDigest(env, args) {
   const now = Date.now(), iso = new Date(now).toISOString();
   if (args.off === true) {
     await env.DB.prepare("UPDATE schedules SET enabled=0, next_run_at=NULL, updated_at=?1 WHERE id='digest'").bind(iso).run();
-    return toolText("The daily digest push is off. {{OWNER}} can still ask for the digest any time.");
+    return toolText("The daily digest is off: it won't be made each day. {{OWNER}} can still ask for the digest any time.");
   }
   if (args.time !== undefined) {
     const t = parseTime(args.time);
@@ -1671,11 +1685,13 @@ async function dailyDigest(env, args) {
       `INSERT INTO schedules (id, name, kind, repeat, at_time, next_run_at, enabled, created_at, updated_at) VALUES ('digest', 'daily digest', 'digest', 'daily', ?1, ?2, 1, ?3, ?3)
        ON CONFLICT(id) DO UPDATE SET at_time=?1, next_run_at=?2, enabled=1, updated_at=?3`
     ).bind(at, next, iso).run();
-    return toolText(`The daily digest will be pushed to {{OWNER}}'s phone every day at ${spoken(at)}. Next: ${localTime(next)}.`);
+    return toolText(bellOn(env)
+      ? `The daily digest will be pushed to {{OWNER}}'s phone every day at ${spoken(at)}, and brought up at the start of the next chat after that. Next: ${localTime(next)}.`
+      : `The daily digest will be ready every day at ${spoken(at)}, and brought up at the start of the next chat after that. Phone notifications are off on the {{MACHINE}}, so it won't be pushed to {{OWNER}}'s phone; to get it there, {{OWNER}} runs node install.mjs --update --bell on the {{MACHINE}}. Next: ${localTime(next)}.`);
   }
   const row = await env.DB.prepare("SELECT * FROM schedules WHERE id='digest'").first();
   const d = await buildDigest(env, now, row?.last_run_at);
-  return toolText(`${d.text}\n\n${row?.enabled ? `Pushed daily at ${spoken(row.at_time)}.` : "The daily push is off; set a time with daily_digest."}`);
+  return toolText(`${d.text}\n\n${row?.enabled ? `Daily at ${spoken(row.at_time)}: ${digestWhere(env)}.` : "The daily digest is off; set a time with daily_digest."}`);
 }
 
 // The worker takes the screenshot itself, then a Claude run that can only read the images describes it.
@@ -1683,7 +1699,7 @@ async function lookAtScreen(env, args) {
   const q = typeof args.question === "string" ? args.question.trim().slice(0, 1000) : "";
   const now = new Date().toISOString();
   const id = await insertJob(env, { title: "Look at the screen", details: q || "Describe what is on the screen.", now, mode: "screen", project_dir: null, created_by: notOwner(whoOf(env)) });
-  return toolText(`Taking a screenshot of the {{MACHINE}} (job ${id}). In about a minute, call get_job with id ${id} to hear what's on the screen; {{OWNER}} also gets it as a phone push.`);
+  return toolText(`Taking a screenshot of the {{MACHINE}} (job ${id}). In about a minute, call get_job with id ${id} to hear what's on the screen${bellOn(env) ? "; {{OWNER}} also gets it as a phone push" : ""}.`);
 }
 
 // Computer use: a job in the CUA lane. The worker wakes the VM; Claude drives it only through the gated cua-lane tools.
@@ -1707,7 +1723,7 @@ async function useComputer(env, args) {
     ? `Queued job ${id} on {{OWNER}}'s real Mac. It shows a notification when it starts and ends, and waits whenever {{HE}} is using the mouse or keyboard.`
     : `Queued computer job ${id} on the separate desktop (Claude's own Mac desktop, not {{OWNER}}'s screen).`) +
     (allow.length ? ` Allowed for this job: ${[...new Set(allow)].join(", ")}.` : " Every step of what {{HE}} asked goes through; it stops to ask only right before paying, or for anything else that would send, post, delete or change access that {{HE}} didn't ask for.") +
-    ` Call get_job with id ${id} in a minute or two; {{OWNER}} also gets a phone push when it ends.${await pendingNote(env)}`);
+    ` Call get_job with id ${id} in a minute or two${bellOn(env) ? "; {{OWNER}} also gets a phone push when it ends" : ""}.${await pendingNote(env)}`);
 }
 
 // ---- Stop everything, health, and the dead-man alarm ----

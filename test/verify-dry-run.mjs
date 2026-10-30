@@ -65,6 +65,7 @@ if (platform === "darwin") {
 const toml = fs.readFileSync(path.join(dir, "wrangler.toml"), "utf8");
 check(new RegExp(`^name = "${slug}"$`, "m").test(toml), "wrangler.toml names this install's own Worker");
 check(new RegExp(`^POWER_LANES = "${power}"$`, "m").test(toml), `wrangler.toml has POWER_LANES = "${power}"`);
+check(new RegExp(`^PHONE_BELL = "${cfg.bell ? "on" : "off"}"$`, "m").test(toml), `wrangler.toml has PHONE_BELL = "${cfg.bell ? "on" : "off"}", matching the worker's bell`);
 
 // 6. startup entry for the OS
 if (platform === "darwin") {

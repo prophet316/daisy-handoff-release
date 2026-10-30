@@ -841,7 +841,7 @@ async function refuseLinked(job) {
 async function handle(job) {
   const dir = join(ROOT, "jobs", job.id);
   // The jobs folder is checked before the job's folder is made, so nothing is created where a linked jobs folder leads.
-  if (linkedInRoot(dirname(dir)) || linkAt(dir)) return refuseLinked(job);
+  if (linkedInRoot(dirname(dir)) || linkAt(dirname(dir)) || linkAt(dir)) return refuseLinked(job);
   mkdirSync(dir, { recursive: true });
   if (linkedInRoot(dir)) return refuseLinked(job);
   if (job.run_mode === "publish") return publishOnly(job, dir);
@@ -884,7 +884,7 @@ async function handle(job) {
   mkdirSync(state, { recursive: true, mode: 0o700 });
   let plan = planRun(job, dir, state);
   if (resetRunState(plan, dir, state)) log(`job ${job.id} purchase.json moved aside before the ${plan.mode} run`);
-  if (linkedInRoot(dirname(plan.cwd)) || linkAt(plan.cwd)) return refuseLinked(job);
+  if (linkedInRoot(dirname(plan.cwd)) || linkAt(dirname(plan.cwd)) || linkAt(plan.cwd)) return refuseLinked(job);
   mkdirSync(plan.cwd, { recursive: true });
   if (linkedInRoot(plan.cwd)) return refuseLinked(job);
   if (plan.lane) { writeLaneConfig(plan, dir, job); log(`job ${job.id} ${isHost ? "host lane ({{OWNER}}'s Mac)" : "lane"} ready; allowed: ${plan.lane.allow.join(", ") || "nothing gated"}`); }

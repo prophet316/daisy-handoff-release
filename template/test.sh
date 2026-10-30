@@ -14,7 +14,7 @@ if [ "$1" = "gate" ]; then
   "$NODE" worker/cua-lane.mjs --selftest | grep -v '^PASS' || rc=1
   echo "2 host lane (browser choice, off-limits apps):"
   "$NODE" worker/host-lane.mjs --selftest | grep -v '^PASS' || rc=1
-  echo "3 host lane over MCP with a fake driver (task steps, approve card, one charge, redirects):"
+  echo "3 host lane over MCP with a fake driver (task steps, approve card, one charge, redirects, claude.ai tabs, off-limits apps):"
   "$NODE" test/gate-drive.mjs | grep -v '^PASS' || rc=1
   echo "4 command line and desktop control switch (connector, worker, supervisor; on and off):"
   "$NODE" test/power-lanes.mjs | grep -v '^PASS' || rc=1

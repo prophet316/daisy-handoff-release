@@ -306,13 +306,17 @@ check("a research job sent to a project folder may still write only in its job f
   symlinkSync(join(root, "nowhere"), join(root, "threads", "dangling"));
   check("a thread folder that is a link to nothing is caught before anything is made", linkAt(join(root, "threads", "dangling"), root) && !linkAt(join(root, "threads", "real"), root));
   check("a link outside the install folder (a project folder) isn't this check's business", !linkAt(join(root, "threads", "planted"), join(root, "jobs-elsewhere")));
+  const root2 = realpathSync(mkdtempSync(join(tmpdir(), "linked-root-")));
+  symlinkSync(join(root2, "nowhere"), join(root2, "jobs"));
+  check("a jobs folder that is a link to nothing is caught by the parent check (stranger 15, finding 2)", linkAt(dirname(join(root2, "jobs", "j1")), root2) && !linkedInRoot(dirname(join(root2, "jobs", "j1")), root2));
+  rmSync(root2, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true }); rmSync(away, { recursive: true, force: true });
 }
 const workerSrc = readFileSync(join(ROOT, "worker", "worker.mjs"), "utf8");
 check("the worker checks the job folder and the folder Claude runs in for links before it runs anything",
   /mkdirSync\(dir, \{ recursive: true \}\);\n  if \(linkedInRoot\(dir\)\) return refuseLinked\(job\);/.test(workerSrc) && /mkdirSync\(plan\.cwd, \{ recursive: true \}\);\n  if \(linkedInRoot\(plan\.cwd\)\) return refuseLinked\(job\);/.test(workerSrc));
 check("the worker checks the jobs folder and a thread's parent folder before it makes anything in them",
-  /if \(linkedInRoot\(dirname\(dir\)\) \|\| linkAt\(dir\)\) return refuseLinked\(job\);\n  mkdirSync\(dir,/.test(workerSrc) && /if \(linkedInRoot\(dirname\(plan\.cwd\)\) \|\| linkAt\(plan\.cwd\)\) return refuseLinked\(job\);\n  mkdirSync\(plan\.cwd,/.test(workerSrc));
+  /if \(linkedInRoot\(dirname\(dir\)\) \|\| linkAt\(dirname\(dir\)\) \|\| linkAt\(dir\)\) return refuseLinked\(job\);\n  mkdirSync\(dir,/.test(workerSrc) && /if \(linkedInRoot\(dirname\(plan\.cwd\)\) \|\| linkAt\(dirname\(plan\.cwd\)\) \|\| linkAt\(plan\.cwd\)\) return refuseLinked\(job\);\n  mkdirSync\(plan\.cwd,/.test(workerSrc));
 const sched = planRun({ id: "s1", title: "x", details: "do it", origin: "agent tester's schedule (not X's) \"x\"", created_by: "agent tester", mode: "code" }, "/tmp/x");
 check("an agent's scheduled run is not called the owner's approval", !/approval for exactly what it says/.test(sched.rules) && /agent tester set it up, not/.test(sched.rules), sched.rules.slice(-400));
 const own = planRun({ id: "s2", title: "x", details: "do it", origin: "X's schedule \"x\"", mode: "code" }, "/tmp/x");
@@ -437,6 +441,35 @@ const hello = await (await connector.fetch(new Request("https://test.invalid/k/m
 const said = hello.result?.instructions || "";
 check("Claude's instructions don't promise jobs can't send, post, spend or delete, and say it's an instruction outside the built-in tools",
   !/cannot send|can't send|on their own;/.test(said) && /told to stop and ask/.test(said) && /hold those in code/.test(said) && /not a guarantee/.test(said) && /never tell \S+ a job can't do those things/.test(said), said.slice(0, 600));
+
+// ---- the daily digest with phone notifications off (the default) and on: no reply promises a push that won't come ----
+const PUSH = /pushed to \S+ phone|phone push/;
+for (const bell of ["off", "on"]) {
+  env.PHONE_BELL = bell;
+  const set = await call(OWNER_IP, "daily_digest", { time: "7 am" });
+  check(`bell ${bell}: setting the digest time says ${bell === "on" ? "it is pushed" : "it isn't pushed, and how to hear it"}`, !set.isError && (bell === "on"
+    ? /will be pushed to \S+ phone every day at 7/.test(set.text) && /start of the next chat/.test(set.text)
+    : /will be ready every day at 7/.test(set.text) && /Phone notifications are off/.test(set.text) && /won't be pushed/.test(set.text) && /start of the next chat/.test(set.text) && !/will be pushed/.test(set.text)), set.text);
+  const now = await call(OWNER_IP, "daily_digest", {});
+  check(`bell ${bell}: asking for the digest says where it goes`, !now.isError && (bell === "on" ? /pushed to \S+ phone/.test(now.text) : /isn't pushed/.test(now.text) && !/Daily at .*: pushed/.test(now.text)), now.text.slice(-200));
+  const ls = await call(OWNER_IP, "list_schedules", {});
+  check(`bell ${bell}: list_schedules says where the digest goes`, bell === "on" ? /Daily digest: pushed to \S+ phone/.test(ls.text) : /Daily digest: brought up in the next chat \(phone notifications are off/.test(ls.text), ls.text.slice(-200));
+  const scr = await call(OWNER_IP, "look_at_screen", {});
+  const cu = await call(OWNER_IP, "use_computer", { task: "on my Mac, open Calculator", target: "host" });
+  check(`bell ${bell}: screen and desktop replies ${bell === "on" ? "mention" : "don't promise"} a phone push`, [scr, cu].every((x) => !x.isError && PUSH.test(x.text) === (bell === "on")), `${scr.text} | ${cu.text}`);
+  // The digest comes due: the worker's /api/due makes it (and pushes it only with the bell on); check_updates brings it up once either way.
+  DB.raw.prepare("UPDATE schedules SET next_run_at=?1 WHERE id='digest'").run(new Date(Date.now() - 60_000).toISOString());
+  const due = await conn.fireDue(env, Date.now(), true);
+  check(`bell ${bell}: the digest is made when due`, !!due.digest?.line, JSON.stringify(due));
+  const cu1 = await call(OWNER_IP, "check_updates", {}), cu2 = await call(OWNER_IP, "check_updates", {});
+  check(`bell ${bell}: check_updates brings up the new digest once`, /Daily digest \(.+\): Daily digest: \d+ done/.test(cu1.text) && !/Daily digest \(/.test(cu2.text), `${cu1.text.slice(-300)} | ${cu2.text.slice(-200)}`);
+}
+const offd = await call(OWNER_IP, "daily_digest", { off: true });
+check("turning the digest off says it can still be asked for, with no push wording", /off/.test(offd.text) && /any time/.test(offd.text) && !PUSH.test(offd.text), offd.text);
+const descs = JSON.stringify((await (await connector.fetch(new Request("https://test.invalid/k/mcp", { method: "POST", headers: { "Content-Type": "application/json", ...OWNER_IP },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) }), env)).json()).result.tools.filter((t) => ["daily_digest", "look_at_screen", "use_computer"].includes(t.name)).map((t) => t.description));
+check("tool descriptions say a push needs phone notifications on", (descs.match(/phone push|pushed to \S+ phone/g) || []).length === (descs.match(/(phone push|pushed to \S+ phone) when phone notifications are on/g) || []).length && /when phone notifications are on/.test(descs), descs.slice(0, 400));
+delete env.PHONE_BELL;
 
 console.log(`sender: ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
