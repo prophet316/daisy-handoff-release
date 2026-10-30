@@ -144,7 +144,7 @@ else {
   const st = run(claudeBin, ["auth", "status"]);
   let auth = null;
   try { auth = JSON.parse(st.stdout); } catch {}
-  if (auth?.loggedIn !== true) check("fail", "Claude Code is signed out", "Run claude, type /login, and sign in with your Claude Pro or Max account.", "Claude Code isn't installed or signed out");
+  if (auth?.loggedIn !== true) check("fail", "Claude Code is signed out", "Run claude, type /login, and sign in with your Claude Pro, Max or Ultra account.", "Claude Code isn't installed or signed out");
   else {
     const method = String(auth.authMethod || auth.auth_method || "");
     const apiKey = /api.?key|console/i.test(method) || process.env.ANTHROPIC_API_KEY;

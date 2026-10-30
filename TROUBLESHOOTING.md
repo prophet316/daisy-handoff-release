@@ -19,7 +19,7 @@ The installer checks Node and Claude Code itself and stops if one is missing. Wi
 - A Mac on macOS 13 (Ventura) or newer. Check: Apple menu > About This Mac.
 - An administrator password for the Mac, or someone who has it. The Node and Command Line Tools installers ask for it.
 - Apple's Command Line Tools, if you want phone notifications or the blue glow. Install them with `xcode-select --install`. Jobs, stop everything and force kill work without them.
-- A Claude Pro or Max plan. On Team and Enterprise, an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
+- A Claude Pro, Max or Ultra plan. On Team and Enterprise, an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
 - A free Cloudflare account with a verified email address.
 - The Claude app on your phone, signed in to the same Claude account.
 
@@ -112,7 +112,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 - **Turned on for this chat.** Anthropic says to turn a connector on for each conversation: tap **+** at the lower left of the chat (or type /), choose **Connectors**, and turn **Nuff Said** on ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)).
 - **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + Add > Add custom connector**, click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Choose **No sign in** under **Authentication**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
-- **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
+- **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro, Max or Ultra account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.
 - **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account; Anthropic says one "will be available to use the next time you log in to your account on Claude for iOS or Android" ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)). Close and reopen the app.
 - Run `node doctor.mjs`. It tests your connector from your Mac without showing the URL.

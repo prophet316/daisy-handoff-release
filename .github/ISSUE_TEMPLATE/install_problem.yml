@@ -43,7 +43,7 @@ body:
     id: plan
     attributes:
       label: Claude plan
-      description: Pro or Max. Team and Enterprise aren't supported yet (see the README).
+      description: Pro, Max or Ultra. Team and Enterprise aren't supported yet (see the README).
   - type: checkboxes
     id: safe
     attributes:
