@@ -156,7 +156,10 @@ if (process.argv.includes("--shell-selftest")) {
   process.env.DAISY_SELFTEST_SECRET_KEY = SECRET; // must never reach the command's environment
   let runs = 0;
   const run = (command, extra = {}) => { runs++; return runShell({ command, ...extra }, { secrets: [SECRET], logFile }); };
-  const alive = (pat) => { try { return execFileSync("/usr/bin/pgrep", ["-f", pat]).toString().trim().length > 0; } catch { return false; } };
+  // This run's sleeps carry its pid as a fraction ("sleep 61.4242"), so another self-test running at the same time can't be
+  // taken for this one's leftovers, or this one's for its.
+  const S = (n) => `${n}.${process.pid}`, mark = (n) => `sleep ${n}\\.${process.pid}([^0-9]|$)`;
+  const alive = (n) => { try { return execFileSync("/usr/bin/pgrep", ["-f", mark(n)]).toString().trim().length > 0; } catch { return false; } };
   let pass = 0, fail = 0;
   const check = (name, good, detail = "") => { good ? pass++ : fail++; console.log(`${good ? "PASS" : "FAIL"}  ${name}${good ? "" : `  -> ${detail}`}`); };
 
@@ -166,15 +169,15 @@ if (process.argv.includes("--shell-selftest")) {
   check("reports the exit code and stderr", !r.ok && r.code === 3 && r.stderr.includes("oops") && /exit code 3/.test(r.text), JSON.stringify(r));
   r = await run("cat");
   check("no stdin: an interactive command ends at once", r.ok && r.secs < 3, JSON.stringify(r));
-  r = await run("sleep 61 & sleep 62", { timeout_seconds: 2 });
+  r = await run(`sleep ${S(61)} & sleep ${S(62)}`, { timeout_seconds: 2 });
   await new Promise((s) => setTimeout(s, 500));
-  check("time limit kills the command and its children", r.timed_out && r.secs < 6 && !alive("sleep 61") && !alive("sleep 62"), `${JSON.stringify(r)} alive61=${alive("sleep 61")} alive62=${alive("sleep 62")}`);
-  r = await run("trap '' TERM; sleep 63", { timeout_seconds: 2 });
+  check("time limit kills the command and its children", r.timed_out && r.secs < 6 && !alive(61) && !alive(62), `${JSON.stringify(r)} alive61=${alive(61)} alive62=${alive(62)}`);
+  r = await run(`trap '' TERM; sleep ${S(63)}`, { timeout_seconds: 2 });
   await new Promise((s) => setTimeout(s, 500));
-  check("a command that ignores SIGTERM still dies (SIGKILL)", r.timed_out && r.secs < 7 && !alive("sleep 63"), `${JSON.stringify(r)} alive=${alive("sleep 63")}`);
-  r = await run("nohup sleep 64 >/dev/null 2>&1 & echo started");
-  const bg = alive("sleep 64");
-  try { execFileSync("/usr/bin/pkill", ["-f", "sleep 64"]); } catch {}
+  check("a command that ignores SIGTERM still dies (SIGKILL)", r.timed_out && r.secs < 7 && !alive(63), `${JSON.stringify(r)} alive=${alive(63)}`);
+  r = await run(`nohup sleep ${S(64)} >/dev/null 2>&1 & echo started`);
+  const bg = alive(64);
+  try { execFileSync("/usr/bin/pkill", ["-f", mark(64)]); } catch {}
   check("a job put in the background on purpose keeps running", r.ok && r.stdout.includes("started") && r.secs < 3 && bg, `${JSON.stringify(r)} bg=${bg}`);
   r = await run("yes x | head -n 200000");
   check("huge output is cut to its start and end", r.ok && r.cut > 0 && r.stdout.length < HEAD + TAIL + 100 && r.stdout.includes("characters cut"), `cut=${r.cut} len=${r.stdout.length}`);
