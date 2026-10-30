@@ -134,6 +134,25 @@ syncBuiltinESMExports();\n`);
   fs.rmSync(path.join(dir, "jobs", "keep-me"), { recursive: true, force: true });
 }
 
+// Ctrl-C in the window between moving the old folder aside and writing the keys puts the old folder back, like any other stop.
+{
+  const before = fs.readFileSync(path.join(dir, ".connector-key"), "utf8");
+  const ctrlc = path.join(home, "ctrl-c-after-move.mjs");
+  fs.writeFileSync(ctrlc, `import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
+const orig = fs.copyFileSync;
+fs.copyFileSync = function (a, b, ...rest) { if (String(b).endsWith("doctor.mjs")) process.kill(process.pid, "SIGINT"); return orig.call(this, a, b, ...rest); };
+syncBuiltinESMExports();\n`);
+  r = install(["--dry-run", "--update"], { pre: ["--import", pathToFileURL(ctrlc).href] });
+  const failedC = fs.readdirSync(path.dirname(dir)).filter((n) => n.startsWith(`${path.basename(dir)}.failed-`));
+  check(r.status === 1 && /the update failed partway \(you pressed Ctrl-C\.\)\. Your old install folder is back at/.test(r.stderr) &&
+    fs.readFileSync(path.join(dir, ".connector-key"), "utf8") === before && fs.existsSync(path.join(dir, "worker", "config.json")) && failedC.length === 1,
+    "Ctrl-C during an update puts the old folder back with the same keys", `${r.status} ${r.stderr.slice(-400)}`);
+  r = install(["--dry-run", "--update"]);
+  check(r.status === 0 && fs.readFileSync(path.join(dir, ".connector-key"), "utf8") === before, "the next update after a Ctrl-C works and keeps the same keys", r.stderr.slice(-400));
+  const projects = path.dirname(dir);
+  fs.readdirSync(projects).filter((n) => n.startsWith(`${path.basename(dir)}.failed-`)).forEach((n) => fs.rmSync(path.join(projects, n), { recursive: true, force: true }));
+}
+
 // Claude Code loads the .claude settings (hooks included) of the folder a thread or job runs in. Nuff Said never makes one,
 // so the update moves any it carries over into the old install's folder and says so.
 {
@@ -141,12 +160,44 @@ syncBuiltinESMExports();\n`);
   const plant = (rel) => { fs.mkdirSync(path.join(dir, rel, ".claude"), { recursive: true }); fs.writeFileSync(path.join(dir, rel, ".claude", "settings.json"), JSON.stringify(hook)); };
   plant(path.join("threads", "t1")); plant(path.join("jobs", "j1")); plant("threads");
   fs.writeFileSync(path.join(dir, "threads", "t1", "notes.md"), "keep me");
+  fs.writeFileSync(path.join(dir, "threads", "CLAUDE.md"), "planted for every thread");
+  fs.writeFileSync(path.join(dir, "threads", "t1", "CLAUDE.md"), "the thread's own");
   r = install(["--dry-run", "--update"]);
   const left = ["threads/t1", "jobs/j1", "threads"].filter((rel) => fs.existsSync(path.join(dir, rel, ".claude")));
+  check(!fs.existsSync(path.join(dir, "threads", "CLAUDE.md")) && fs.readFileSync(path.join(dir, "threads", "t1", "CLAUDE.md"), "utf8") === "the thread's own",
+    "an update moves a CLAUDE.md planted directly in threads, and keeps one inside a thread folder", r.stdout.slice(-600));
   const projects = path.dirname(dir), bak = fs.readdirSync(projects).filter((n) => n.startsWith(`${path.basename(dir)}.bak`)).map((n) => path.join(projects, n)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
   check(r.status === 0 && !left.length && fs.readFileSync(path.join(dir, "threads", "t1", "notes.md"), "utf8") === "keep me", "an update moves planted .claude folders out of thread and job folders and keeps the rest", `${left} ${r.stderr.slice(-300)}`);
   check(!!bak && fs.existsSync(path.join(bak, "claude-folders", "threads", "t1", ".claude", "settings.json")), "the moved folders are kept in the old install's folder", bak);
-  check(/moved 3 Claude Code settings folder\(s\)/.test(r.stdout), "the update says what it moved and where", r.stdout.slice(-1500));
+  check(/moved 4 Claude Code settings folder\(s\), CLAUDE\.md file\(s\) or link\(s\)/.test(r.stdout), "the update says what it moved and where", r.stdout.slice(-1500));
+}
+
+// A thread or job folder, or the whole jobs folder, swapped for a link would have Claude Code load the .claude settings where the
+// link leads, and the sweep above never looks through a link. Nuff Said never makes links there, so the update moves each link
+// itself (never what it leads to) into the old install's folder and says so.
+{
+  const outside = fs.mkdtempSync(path.join(home, "outside-"));
+  const hook = { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "/tmp/planted-hook" }] }] } };
+  for (const n of ["thread", "jobs"]) {
+    fs.mkdirSync(path.join(outside, n, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(outside, n, ".claude", "settings.json"), JSON.stringify(hook));
+  }
+  fs.mkdirSync(path.join(outside, "jobs", "j2", ".claude"), { recursive: true });
+  fs.rmSync(path.join(dir, "threads", "t2"), { recursive: true, force: true });
+  fs.symlinkSync(path.join(outside, "thread"), path.join(dir, "threads", "t2"));
+  fs.rmSync(path.join(dir, "jobs"), { recursive: true, force: true });
+  fs.symlinkSync(path.join(outside, "jobs"), path.join(dir, "jobs"));
+  r = install(["--dry-run", "--update"]);
+  const projects = path.dirname(dir), bak = fs.readdirSync(projects).filter((n) => n.startsWith(`${path.basename(dir)}.bak`)).map((n) => path.join(projects, n)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
+  check(r.status === 0 && !fs.existsSync(path.join(dir, "threads", "t2")) && !isLink(path.join(dir, "jobs")) && fs.lstatSync(path.join(dir, "jobs")).isDirectory() && !fs.readdirSync(path.join(dir, "jobs")).length,
+    "an update moves a linked thread folder and a linked jobs folder out, and leaves a real, empty jobs folder", r.stderr.slice(-300));
+  check(!!bak && isLink(path.join(bak, "claude-folders", "threads", "t2")) && isLink(path.join(bak, "claude-folders", "jobs")) &&
+    fs.existsSync(path.join(outside, "thread", ".claude", "settings.json")) && fs.existsSync(path.join(outside, "jobs", "j2", ".claude")),
+    "the links are kept in the old install's folder, and what they led to is left as it was", bak);
+  check(/moved 2 Claude Code settings folder\(s\), CLAUDE\.md file\(s\) or link\(s\) out of your job and thread folders: jobs \(a link to [^)]*\/jobs\), threads\/t2 \(a link to [^)]*\/thread\)/.test(r.stdout),
+    "the update names each link and where it led", (r.stdout.match(/moved [^\n]*/) || [""])[0]);
+  fs.rmSync(outside, { recursive: true, force: true });
 }
 
 // The phone bell is off unless you say yes (Mac only): --yes leaves it off, an update never turns it on by itself, and it can
@@ -319,6 +370,9 @@ if (process.platform === "darwin") {
   for (const f of unOthers) fs.renameSync(path.join(path.dirname(mplist), f), path.join(unDir, f));
   const mdoc3 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
   check(/was uninstalled/.test(mdoc3.stdout) && /README's Uninstall steps/.test(mdoc3.stdout) && !/--update again/.test(mdoc3.stdout), "after --uninstall, the doctor points to the Uninstall steps, not to --update", mdoc3.stdout.slice(-400));
+  // Not offline too: the live check is skipped (a manual install has only the example address), and says the same.
+  const mdoc4 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+  check(/skipped the live connector check/.test(mdoc4.stdout) && /was uninstalled/.test(mdoc4.stdout) && !/Finish the Cloudflare step/.test(mdoc4.stdout), "after --uninstall, the skipped live check doesn't say to finish the Cloudflare step", mdoc4.stdout.slice(-600));
   for (const f of fs.readdirSync(unDir)) fs.renameSync(path.join(unDir, f), path.join(path.dirname(mplist), f));
 }
 

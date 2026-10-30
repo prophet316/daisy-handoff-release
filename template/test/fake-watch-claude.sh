@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stand-in for Claude Code in watch-test.sh (job 94c3a255). Plays one scenario, named in the job's details as SCENARIO=<name>,
+# Stand-in for Claude Code in watch-test.sh. Plays one scenario, named in the job's details as SCENARIO=<name>,
 # and reports every step through the real job hook (worker/job-hook.mjs), exactly as Claude Code's hooks would:
 #   long      novel steps for over two simulated hours, then done        (check-ins, no recovery)
 #   frozen    a few steps, then a command that hangs and ignores SIGTERM  (killed and resumed; the resumed run finishes)

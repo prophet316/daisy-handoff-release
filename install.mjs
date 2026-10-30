@@ -89,9 +89,11 @@ const LEAK_STEPS = (dir, db) => [
   `  3. ${path.join("logs", "shell.log")} lists commands run here, but a command could have changed it. The connector keeps its own`,
   `     list on Cloudflare: npx -y ${WRANGLER} d1 execute ${db} --remote --command "SELECT created_at, arg FROM control WHERE kind='shell' ORDER BY id"`,
   "     (someone with your Cloudflare sign-in could change that too). Check crontab -l, ~/Library/LaunchAgents, Login Items,",
-  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, and any .claude folder in",
-  `     ${dir} (Nuff Said never makes one; --update moves those in job and thread folders aside). Finding nothing doesn't`,
-  "     prove nothing happened; if in doubt, treat this computer as compromised. SECURITY.md has every step.",
+  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, any .claude folder in",
+  `     ${dir} (find -L that folder -name .claude -not -path '*/jarvis-bell/*') other than the phone bell's own, which --update`,
+  "     writes again, and any link in its jobs or threads folder (find jobs threads -maxdepth 1 -type l). Nuff Said makes no others;",
+  "     --update moves those in job and thread folders aside. Finding nothing doesn't prove nothing happened; if in doubt, treat",
+  "     this computer as compromised. SECURITY.md has every step.",
   "  4. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more, from the fresh download, and only then add the",
   "     connector in Claude with that URL. Until then, treat the keys from this key change as seen: a copied Cloudflare or Claude",
   "     sign-in, or something left running here, could have read them. If this run was that second one, you're done here:",
@@ -113,6 +115,9 @@ const HOST = process.platform; // the OS we are really running on
 // While an update runs: what is still on your old settings if it stops now (set by main as it goes).
 let stillOld = null;
 let rollback = null; // { bak, dir } from the moment the old folder is moved aside until the new one has the keys
+// Ctrl-C (or the terminal closing) stops like any other stop, so one in the rollback window puts the old folder back too. The
+// steps in that window don't wait on anything, so a Ctrl-C there is handled at the pause just before the window closes.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => die(sig === "SIGINT" ? "you pressed Ctrl-C." : `this run was ended (${sig}).`));
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -244,7 +249,7 @@ function putBack({ bak, dir }, e) {
     }
     fs.renameSync(bak, dir);
     console.error(`\nSTOPPED: ${what} failed partway (${why}). Your old install folder is back at ${dir}, as it was before this run,` +
-      ` with your keys, jobs, threads and logs. Nothing changed on Cloudflare. ${fs.existsSync(failed) ? `The half-made folder is at ${failed}; delete it when you like. ` : ""}` +
+      ` with your keys, jobs, threads and logs. The blue glow helper outside that folder may already be this release's. Nothing changed on Cloudflare. ${fs.existsSync(failed) ? `The half-made folder is at ${failed}; delete it when you like. ` : ""}` +
       `Run node doctor.mjs, then node install.mjs ${has("update") ? "--update" : "--force"} again; if it fails the same way, TROUBLESHOOTING.md says how to report it.`);
   } catch (e2) {
     console.error(`\nSTOPPED: ${what} failed partway (${why}), and putting the old folder back failed too (${shown(e2.message).slice(0, 200)}).` +
@@ -435,6 +440,7 @@ async function main() {
   // The old URL too, until the deploy writes it again: if this update stops partway, the next try still knows the URL.
   if (UPDATE && fs.existsSync(path.join(bak, ".connector-url"))) writeSecret(path.join(dir, ".connector-url"), fs.readFileSync(path.join(bak, ".connector-url"), "utf8"));
   ok(UPDATE ? `${kept} keys kept from your install${keyFiles.length > kept ? `, ${keyFiles.length - kept} new` : ""}, readable only by you` : `${keyFiles.length} keys made on this computer, readable only by you`);
+  await new Promise((r) => setImmediate(r)); // a Ctrl-C pressed during the steps above is handled here, while the old folder can still go back
   rollback = null; // from here a stop leaves a folder that --update can run in again
 
   // 5. cloudflare
@@ -543,16 +549,32 @@ function carryOver(bak, dir, bell) {
     let names = [];
     try { names = fs.readdirSync(top); } catch { continue; }
     for (const at of [top, ...names.map((n) => path.join(top, n))]) {
-      const c = path.join(at, ".claude");
-      let st = null;
-      try { if (!fs.lstatSync(at).isDirectory()) continue; st = fs.lstatSync(c); } catch { continue; } // never through a link
-      const to = path.join(bak, "claude-folders", path.relative(dir, at));
-      fs.mkdirSync(to, { recursive: true });
-      fs.renameSync(c, path.join(to, ".claude"));
-      planted.push(path.join(path.relative(dir, at), ".claude") + (st.isDirectory() ? "" : " (not a folder)"));
+      let lst = null;
+      try { lst = fs.lstatSync(at); } catch { continue; }
+      if (lst.isSymbolicLink()) { // Nuff Said never makes a link here either, so it was planted: move the link, never its target
+        const to = path.join(bak, "claude-folders", path.relative(dir, path.dirname(at)));
+        fs.mkdirSync(to, { recursive: true });
+        let target = "?"; try { target = fs.readlinkSync(at); } catch {}
+        fs.renameSync(at, path.join(to, path.basename(at)));
+        if (at === top) fs.mkdirSync(top);
+        planted.push(`${path.relative(dir, at)} (a link to ${target})`);
+        continue;
+      }
+      if (!lst.isDirectory()) continue;
+      // Claude Code also reads the CLAUDE.md files above the folder it runs in, so one directly in jobs or threads would reach
+      // every job or thread. One inside a job or thread folder can be that job's own work, so it stays.
+      for (const name of at === top ? [".claude", "CLAUDE.md", "CLAUDE.local.md"] : [".claude"]) {
+        const c = path.join(at, name);
+        let st = null;
+        try { st = fs.lstatSync(c); } catch { continue; } // never through a link
+        const to = path.join(bak, "claude-folders", path.relative(dir, at));
+        fs.mkdirSync(to, { recursive: true });
+        fs.renameSync(c, path.join(to, name));
+        planted.push(path.join(path.relative(dir, at), name) + (name === ".claude" && !st.isDirectory() ? " (not a folder)" : ""));
+      }
     }
   }
-  if (planted.length) note(`moved ${planted.length} Claude Code settings folder(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Nuff Said never makes these, and their hooks would run in every later job there. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
+  if (planted.length) note(`moved ${planted.length} Claude Code settings folder(s), CLAUDE.md file(s) or link(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Nuff Said never makes these. The hooks in a .claude folder, or in one a link leads to, would run in every later job there, and Claude Code reads a CLAUDE.md in jobs or threads as instructions for every job under it. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
   const cfgPath = path.join(dir, "worker", "config.json"), oldPath = path.join(bak, "worker", "config.json");
   if (fs.existsSync(oldPath)) {
     const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));

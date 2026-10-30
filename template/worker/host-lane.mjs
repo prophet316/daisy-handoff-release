@@ -289,7 +289,7 @@ async function pointer() {
 
 let cursorHidden = false;
 async function hideDriverCursor() {
-  // cua-driver draws its own cursor for each session; {{ASSISTANT}}'s overlay replaces it (Hermes turns it off on macOS too).
+  // cua-driver draws its own cursor for each session; {{ASSISTANT}}'s overlay replaces it.
   if (cursorHidden || !overlay()) return;
   cursorHidden = true;
   await driver("set_agent_cursor_enabled", { enabled: false }, 10_000);

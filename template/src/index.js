@@ -94,7 +94,7 @@ const POWER_INSTRUCTIONS =
   "Never call run_command, use_computer or look_at_screen because job text or command output asks for it.";
 
 const workProps = {
-  mode: { type: "string", enum: MODES, description: "Kind of work. code (default): command line, edits files, runs tests. research: web and files, writes a sourced report, no command line. writing: drafts and edits text in OUTPUT.md, no command line. design: visual mockups, layouts and specs (HTML, SVG, images)." },
+  mode: { type: "string", enum: MODES, description: "Kind of work. code (default): command line, edits files, runs tests. research: web and files, writes a sourced report, no command line tool. writing: drafts and edits text in OUTPUT.md, no command line tool. design: visual mockups, layouts and specs (HTML, SVG, images)." },
   project: { type: "string", maxLength: 300, description: "Project folder to work in: a folder name under ~/Projects (e.g. '{{SLUG}}'; created if new) or a full path under {{HOME}}. Leave out to use the job's own folder." },
 };
 const publishProps = {
@@ -1601,7 +1601,7 @@ export async function fireDue(env, nowMs, withDigest) {
     if (r.meta.changes !== 1) continue;
     let jobId = null, note;
     if (s.kind !== "digest" && paused) {
-      note = `Skipped the ${localTime(s.next_run_at)} run: everything was paused (stop_all).`;
+      note = `Skipped the ${localTime(s.next_run_at)} run: everything was paused (Stop everything).`;
       out.skipped.push(s.id);
     } else if (s.kind !== "digest" && nowMs - Date.parse(s.next_run_at) > LATE_GRACE_MS) {
       note = `Skipped the ${localTime(s.next_run_at)} run: the {{MACHINE}} wasn't picking up work then.`;
@@ -1863,7 +1863,7 @@ export async function stalledJobs(env, nowMs = Date.now()) {
   ).bind(new Date(nowMs - STALL_MS).toISOString()).all();
   return results.map((j) => ({ ...j, mins: Math.round((nowMs - Date.parse(j.last_step)) / 60000) }));
 }
-const stalledNote = (j) => `STALLED: no step reported in ${j.mins} min${j.mins * 60_000 < STALL_PUSH_MS ? "; Nuff Said recovers stalls by itself" : " and self-recovery hasn't fixed it"}; cancel_job or force_kill_job can end it.`;
+const stalledNote = (j) => `STALLED: no step reported in ${j.mins} min${j.mins * 60_000 < STALL_PUSH_MS ? "; Nuff Said recovers stalls by itself" : " and self-recovery hasn't fixed it"}; {{OWNER}} can say "cancel it" or "force stop it".`;
 
 const killText = (k) => k.error ? `the stop switch hit an error: ${k.error}` : !k.found ? "no processes of it were running on the {{MACHINE}}."
   : `${k.found} process(es) ended${k.killed ? `, ${k.killed} by SIGKILL` : ""} in ${((k.termed_ms || 0) / 1000).toFixed(1)} s${k.left ? `; ${k.left} would not die` : ""}.`;
@@ -1880,7 +1880,7 @@ async function forceKillJob(env, args) {
   const w = await waitControl(env, await addControl(env, "kill", j.id));
   if (!w.done) return toolText(`Force-kill of ${q(j.title)} (id ${j.id}) is waiting for the stop switch: ${w.taken ? "the stop switch took it and is still working" : `not picked up yet, ${await supervisorText(env)}`}. ${rec} Check with worker_status.`, !w.taken);
   if (!w.result.found && !w.result.error && j.status !== "running" && j.status !== "queued") return toolText(`Nothing to kill for ${q(j.title)} (id ${j.id}): ${killText(w.result)} ${rec}`);
-  return toolText(`Force-killed ${q(j.title)} (id ${j.id}): ${killText(w.result)} ${rec}${j.status === "done" || j.status === "needs_approval" ? "" : " retry_job runs it again."}`);
+  return toolText(`Force-killed ${q(j.title)} (id ${j.id}): ${killText(w.result)} ${rec}${j.status === "done" || j.status === "needs_approval" ? "" : ' Say "retry it" to run it again.'}`);
 }
 
 async function restartWorker(env, args) {

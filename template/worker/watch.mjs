@@ -1,4 +1,4 @@
-// Job watch: the supervisor's check-ins and self-healing for running jobs (job 94c3a255). Runs inside worker/supervisor.mjs
+// Job watch: the supervisor's check-ins and self-healing for running jobs. Runs inside worker/supervisor.mjs
 // (the emergency lane), never in the agent, so a hung command can't hide a stall and the agent never stops or waits for it.
 // - Heartbeat: the job hook stamps .heartbeat on every step and tool call. Silent for silenceMinutes (12) while the job's
 //   processes use no CPU and change no files = a stall. Silent but busy (CPU or files moving) is given up to busyCapMinutes.

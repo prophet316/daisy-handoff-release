@@ -2,7 +2,7 @@
   "code": {
     "tools": ["Bash", "Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit", "TodoWrite", "WebSearch", "WebFetch"],
     "addHome": true,
-    "instructions": "Mode: Code. You are working as a careful software engineer. Read the code before changing it, match its style, make the smallest change that does the job, and run the tests or a quick check that proves it works. Commit only if the job asks. Report what changed and how you checked it."
+    "instructions": "Mode: Code. You have command-line access (Bash) and can edit files in {{OWNER}}'s home folder. You are working as a careful software engineer. Read the code before changing it, match its style, make the smallest change that does the job, and run the tests or a quick check that proves it works. Commit only if the job asks. Report what changed and how you checked it."
   },
   "research": {
     "tools": ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Write", "TodoWrite"],
@@ -17,7 +17,7 @@
   "design": {
     "tools": ["Bash", "Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch", "TodoWrite"],
     "addHome": true,
-    "instructions": "Mode: Design. Think like a senior product and visual designer: clear hierarchy, generous spacing, restrained color, real content instead of lorem ipsum. Deliver concrete artifacts in the job folder (HTML/CSS mockups, SVG, or images) plus DESIGN.md explaining the choices, sizes, colors and type. You may use the command line to render or convert previews (for example qlmanage, sips). Do not publish anything yourself."
+    "instructions": "Mode: Design. You have command-line access (Bash) and can edit files in {{OWNER}}'s home folder. Think like a senior product and visual designer: clear hierarchy, generous spacing, restrained color, real content instead of lorem ipsum. Deliver concrete artifacts in the job folder (HTML/CSS mockups, SVG, or images) plus DESIGN.md explaining the choices, sizes, colors and type. You may use the command line to render or convert previews (for example qlmanage, sips). Do not publish anything yourself."
   },
   "screen": {
     "tools": ["Read"],

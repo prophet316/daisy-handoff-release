@@ -255,7 +255,7 @@ if (!DIR || !site) {
   const sendable = isDeployed(cfg?.base) && full.startsWith(`${cfg.base}/`) && !/your-subdomain\.workers\.dev/.test(full);
   if (!OFFLINE && live && full && !sendable) {
     check("warn", "skipped the live connector check: no deployed connector address is on record, so your key wasn't sent anywhere",
-      "Finish the Cloudflare step (README, Install, or MANUAL-INSTALL step 3 to 5), then run the doctor again.", "Cloudflare sign-in or deploy failed");
+      UNINSTALLED ? FINISH : "Finish the Cloudflare step (README, Install, or MANUAL-INSTALL step 3 to 5), then run the doctor again.", "Cloudflare sign-in or deploy failed");
   } else if (!OFFLINE && live && full) {
     try {
       const r = await fetch(full, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },

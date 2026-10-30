@@ -1,4 +1,4 @@
--- Phase 5 groundwork (job 885364d3): several machines, ability tags, a named target, parent/child jobs, held lane locks, recipes.
+-- Phase 5 groundwork: several machines, ability tags, a named target, parent/child jobs, held lane locks, recipes.
 -- Additive only. With FLEET off and these columns empty, claiming behaves exactly as before.
 ALTER TABLE jobs ADD COLUMN machine TEXT;      -- run only on this named machine (NULL = any)
 ALTER TABLE jobs ADD COLUMN needs TEXT;        -- JSON array of abilities the machine must have, e.g. ["resolve","gpu"]

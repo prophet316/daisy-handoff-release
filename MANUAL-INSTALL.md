@@ -2,7 +2,7 @@
 
 Use this only if `node install.mjs` keeps stopping at the Cloudflare step and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) didn't help. It does the same things as the installer, one step at a time, so you can see exactly where it fails.
 
-It takes about 20 minutes. Every command runs in Terminal. Copy one block at a time and check that it worked before the next.
+Every command runs in Terminal. Copy one block at a time and check that it worked before the next.
 
 These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below. The names end in `-handoff` from before the project was called Nuff Said, and they stay that way so updates keep finding your install.
 
