@@ -199,6 +199,9 @@ function uninstall() {
       ok(`${DRY ? "would stop" : "stopped"} ${title}`); n++;
     }
   }
+  // With nothing to move, a note goes there instead, so the doctor knows this install was uninstalled and doesn't say to
+  // finish it with --update.
+  if (!n && !DRY) { fs.mkdirSync(bak, { recursive: true }); fs.writeFileSync(path.join(bak, "UNINSTALLED.txt"), "node install.mjs --uninstall ran here and found no startup entries to move.\n"); }
   if (!n) say(DRY && !val("home") ? "  no Nuff Said worker in this dry run's practice folder (a dry run doesn't look at your real install; add --home to point it at one)" : "  no Nuff Said worker found for this user");
   else if (!DRY) say(`\nStartup entries moved to ${bak} (not deleted).`);
   // The database name, when there's exactly one install to name it from.
@@ -208,7 +211,7 @@ function uninstall() {
   // An install that never reached Cloudflare (a manual install before its deploy step, or one that stopped) has nothing there to delete.
   let base = null;
   try { if (installs.length === 1) base = JSON.parse(fs.readFileSync(path.join(projects, installs[0], "worker", "config.json"), "utf8")).base; } catch {}
-  const deployed = installs.length !== 1 || (/^https:\/\/[a-z0-9.-]+\.workers\.dev$/.test(base || "") && !/your-subdomain\.workers\.dev$/.test(base));
+  const deployed = installs.length !== 1 || deployedBase(base);
   if (!deployed) {
     say("Your install folder is untouched. It was never deployed to Cloudflare, so there's nothing to delete there. To remove");
     say("everything, delete the install folder, and remove the connector in Claude under Customize > Connectors if you added it.");
@@ -318,7 +321,7 @@ async function main() {
   if (MAC && bell && !SIM && !MANUAL && !pythonReady()) {
     const why = "Phone notifications need /usr/bin/python3, which comes with Apple's free Command Line Tools, and it doesn't run on this Mac.";
     if (DRY) note(`${why} A real install stops here. Install the tools first (xcode-select --install), or answer no to phone notifications.`);
-    else die(`${why} In Terminal run xcode-select --install, click Install and wait for it to finish, then run node install.mjs again. Or install without phone notifications: add --no-bell. Nothing was changed.`);
+    else die(`${why} In Terminal run xcode-select --install, click Install and wait for it to finish, then run node install.mjs${UPDATE ? " --update" : ""} again. Or install without phone notifications: add --no-bell. Nothing was changed.`);
   }
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
   const prevLead = prev ? ("leadAgent" in prev.receipt ? prev.receipt.leadAgent : /^LEAD_AGENT = "([^"]*)"$/m.exec(prev.toml)?.[1]) : null;
@@ -378,7 +381,9 @@ async function main() {
     // An earlier run that never finished isn't an old setting: there's nothing live from it, unless it was itself an update.
     ...(UPDATE ? { updatedFrom: (prev.receipt.unfinished ? prev.receipt.updatedFrom : prev.receipt.installer || prev.site.installer) || null } : {}) }, null, 2) + "\n");
   ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
-  if (UPDATE && !DRY) stillOld = "Nothing changed on Cloudflare or in the running worker: they still use your old settings, including the command line switch, until the update finishes. Run node install.mjs --update again.";
+  // An earlier install that never reached Cloudflare left nothing live, so there are no old settings to warn about.
+  if (UPDATE && !DRY) stillOld = !deployedBase(prev.config.base) ? "Nothing was deployed yet. Run node install.mjs --update again when you're ready."
+    : "Nothing changed on Cloudflare or in the running worker: they still use your old settings, including the command line switch, until the update finishes. Run node install.mjs --update again.";
   if (MAC) {
     const nodeBin = (!SIM && which("node")) || process.execPath;
     const nb = path.join(HOME, dotdir, "node", "bin");
@@ -490,7 +495,7 @@ function findInstall() {
   return { dir, site: read("site.json"), receipt: read("install-receipt.json"), config: read(path.join("worker", "config.json")), toml };
 }
 
-// An update keeps what the old install made while it ran: job and thread folders, logs, and settings in worker/config.json.
+// An update keeps what the old install made while it ran: job and thread folders, logs, and your choices in worker/config.json.
 function carryOver(bak, dir, bell) {
   let moved = 0;
   for (const d of ["jobs", "threads", "logs"]) {
@@ -505,11 +510,62 @@ function carryOver(bak, dir, bell) {
     const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
     let old = {};
     try { old = JSON.parse(fs.readFileSync(oldPath, "utf8")); } catch { note("couldn't read the old worker/config.json; using the new defaults"); }
-    // Your settings win, except the ones this run decides: the command line switch, the bell when it's off, and where the
-    // connector is (set after deploy). A bell turned back on gets its setting from your old config if it had one.
-    fs.writeFileSync(cfgPath, JSON.stringify({ ...fresh, ...old, powerLanes: fresh.powerLanes, base: fresh.base, bell: bell ? old.bell || fresh.bell : null }, null, 2) + "\n");
+    const { cfg, dropped } = keptSettings(fresh, old);
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
+    if (dropped.length) note(`worker/config.json was rebuilt from this release. Not kept from the old one: ${dropped.map(shown).join(", ")}. The old file is in ${path.join(bak, "worker")}.`);
   }
-  ok(`kept your job and thread folders, logs (${moved} folder(s) moved from the old install) and your worker settings`);
+  ok(`kept your job and thread folders, logs (${moved} folder(s) moved from the old install) and your worker settings (numbers, on/off choices and account names)`);
+}
+
+// worker/config.json names the programs the worker runs, their tools and their environment. After a leak, a command run as
+// you could have changed any of that, and SECURITY.md says an update from a fresh download puts back the released code. So
+// the update writes this release's config and copies over only your choices: numbers, on/off switches, the separate
+// desktop's name, the disk to watch and the Composio account names. A Composio program path is kept only if it's the
+// standard one. Everything else from the old file is listed as not kept.
+function keptSettings(fresh, old, home = HOME) {
+  const cfg = JSON.parse(JSON.stringify(fresh)), dropped = [];
+  const num = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  const bool = (v) => typeof v === "boolean";
+  const word = (v) => typeof v === "string" && /^[A-Za-z0-9._ -]{1,80}$/.test(v);
+  const abs = (v) => typeof v === "string" && /^\/[^\0\n]*$/.test(v) && !/(^|\/)\.\.(\/|$)/.test(v);
+  const accounts = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.entries(v).every(([k, x]) => typeof k === "string" && k.length < 200 && typeof x === "string" && x.length < 200 && !/[\0-\x1f]/.test(k + x));
+  const composio = path.posix.join(fwd(home), ".composio", "composio");
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // from: the old settings, to: the new ones (a copy of this release's, which is also what "unchanged" means).
+  const keep = (from, to, rules, where) => {
+    for (const [k, v] of Object.entries(from || {})) {
+      const id = where ? `${where}.${k}` : k, r = rules[k];
+      if (!r) { if (!same(v, to[k])) dropped.push(id); continue; }
+      if (typeof r === "function") { if (r(v)) to[k] = v; else if (!same(v, to[k])) dropped.push(id); continue; }
+      if (v === false && r.mayBeOff) { to[k] = false; continue; }
+      if (!v || typeof v !== "object" || Array.isArray(v)) { if (!same(v, to[k])) dropped.push(id); continue; }
+      if (!to[k] || typeof to[k] !== "object") to[k] = {};
+      keep(v, to[k], r.fields, id);
+    }
+  };
+  const composioBin = (v) => typeof v === "string" && fwd(v) === composio;
+  keep(old, cfg, {
+    pollSeconds: num, runawayHours: num, runawayMinutes: num, maxParallel: num, healthMinutes: num, jobTimeoutMinutes: num,
+    cancelCheckSeconds: num, killGraceSeconds: num, laneCheckSeconds: num, workerId: word,
+    supervisor: { fields: { pollSeconds: num, idlePollSeconds: num, busyHoldSeconds: num, bellHealSeconds: num, workerHealMinutes: num, bellHeal: bool, workerHeal: bool, watchJobs: bool,
+      watch: { fields: Object.fromEntries(["silenceMinutes", "busyCapMinutes", "checkinMinutes", "maxRecoveries", "sampleSeconds", "timeScale", "busyCpuSeconds"].map((k) => [k, num])) } } },
+    host: { fields: { idleSeconds: num, overlay: bool, overlayMotion: word } },
+    cua: { fields: { sandbox: word, suspendAfter: bool } },
+    screen: { fields: { displays: num } },
+    health: { fields: { disk: abs, accounts: (v) => Array.isArray(v) && v.every((x) => typeof x === "string" && x.length < 200), composioBin } },
+    gmail: { fields: { accounts, composioBin } },
+    publish: { mayBeOff: true, fields: { accounts, expectAccount: (v) => v === null || (typeof v === "string" && v.length < 200), driveFolderId: word, timeoutSeconds: num, composioBin } },
+  });
+  // Never copied, so they stay as this run made them: the command line switch, where the connector is, the bell (this
+  // release's address and key file, or off), and every program path, file path, folder list, tool list, command and environment.
+  // The switch, the connector address and the bell turned on or off change on purpose, so they aren't listed as not kept.
+  const onPurpose = (k) => ["powerLanes", "base", "workerTag"].includes(k) || (k === "bell" && (!old.bell || !fresh.bell));
+  return { cfg, dropped: dropped.filter((k) => !onPurpose(k)) };
+}
+
+// A worker config's connector address is a real one only after a deploy (the manual guide's example address doesn't count).
+function deployedBase(base) {
+  return typeof base === "string" && /^https:\/\/[a-z0-9.-]+\.workers\.dev$/.test(base) && !/your-subdomain\.workers\.dev$/.test(base);
 }
 
 function wranglerIn(dir) { return (args, o = {}) => run(HOST === "win32" ? "npx.cmd" : "npx", ["-y", WRANGLER, ...args], { cwd: dir, ...o }); }
@@ -711,6 +767,9 @@ function clean(s) {
 // control works without it (no glow, CuaDriver's own cursor), so a build that fails is a note, never a stop.
 function buildOverlay(dir, out) {
   if (SIM || MANUAL || (DRY && !has("build-overlay"))) return skip(`building the blue glow and the assistant's cursor (${SIM ? "files for another computer" : MANUAL ? "manual install: MANUAL-INSTALL.md has the step" : "dry run"})`);
+  // An app already there is removed first, so if this build doesn't happen or fails, the worker finds no helper rather than an
+  // old one that a command run as you could have replaced.
+  fs.rmSync(path.join(out, "DaisyOverlay.app"), { recursive: true, force: true });
   const tools = run("xcrun", ["--find", "swiftc"]);
   if (tools.status !== 0) return note("desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing (xcode-select --install, then node install.mjs --update). If a window asks to install the tools, you can click Install. See TROUBLESHOOTING.md.");
   const r = run("bash", [path.join(dir, "worker", "overlay", "build.sh"), out]);
@@ -793,7 +852,7 @@ function cloudflareSignIn(W, stopped) {
   ok("signed in to Cloudflare");
   // Which account: whoever can change it can run jobs on this computer. Printed only, never saved in the install receipt.
   const acct = cloudflareAccounts(W(["whoami"]).stdout || "");
-  if (acct) say(`        Cloudflare account: ${shown(acct)}. If that isn't an account only you control, see SECURITY.md before you use it.`);
+  if (acct) say(`        Cloudflare account: ${shown(acct)}. If that isn't an account only you control, stop now with Ctrl-C, or afterwards run node install.mjs --uninstall and see SECURITY.md.`);
 }
 
 function deploy(dir, slug, lead, dropLead) {
@@ -825,7 +884,8 @@ function deploy(dir, slug, lead, dropLead) {
     die(`deploy failed: ${tail(dep)}`);
   }
   ok("connector deployed");
-  if (stillOld) stillOld = "Your connector on Cloudflare has the new settings, but the running worker still uses the old ones, including the command line switch, until the update finishes. Run node install.mjs --update again.";
+  if (stillOld && /^Nothing was deployed yet/.test(stillOld)) stillOld = "Your connector is on Cloudflare now, but the worker on this computer isn't running yet. Run node install.mjs --update again.";
+  else if (stillOld) stillOld = "Your connector on Cloudflare has the new settings, but the running worker still uses the old ones, including the command line switch, until the update finishes. Run node install.mjs --update again.";
   for (const [name, file] of [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"], ...(lead ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])]) {
     const r = W(["secret", "put", name], { input: fs.readFileSync(path.join(dir, file), "utf8") });
     if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}`);

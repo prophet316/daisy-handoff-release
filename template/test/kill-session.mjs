@@ -1,5 +1,6 @@
 // Stop and force kill find a job's processes by session without Python: a process that cleared its environment (no tags) and
-// whose parent is gone (not in the process tree) is still found through the session the worker recorded, and killed.
+// whose parent is gone (not in the process tree) is still found through the session the worker recorded, or through a session
+// one of the job's processes leads (Claude Code's Bash shell), and killed.
 // Usage: node test/kill-session.mjs   (run by ./test.sh gate; macOS)
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -37,6 +38,24 @@ const r = await hardKill({ jobDir }, { graceMs: 3000 });
 await sleep(200);
 check("hardKill stops it", r.found >= 1 && !alive(orphan), JSON.stringify(r));
 if (alive(orphan)) try { process.kill(orphan, "SIGKILL"); } catch {}
+
+// Force kill, the way Claude Code runs a Bash command: the job's process starts a shell that leads its own session, and the
+// command double-forks an untagged sleep, so the sleep's parent is launchd and its session is the shell's, not the job's.
+const pidFile = join(jobDir, "orphan.pid");
+const script = `( env -i /bin/sleep 120 & echo $! > '${pidFile}' ); exec /bin/sleep 120`;
+const root = spawn(process.execPath, ["-e", `require("child_process").spawn("/bin/sh", ["-c", ${JSON.stringify(script)}], { detached: true, stdio: "ignore" }); setInterval(() => {}, 1e9);`],
+  { detached: true, stdio: "ignore" });
+writeFileSync(join(jobDir, ".run.json"), JSON.stringify({ pid: root.pid, sid: root.pid, worker_tag: "kill-test" }));
+let forked = 0;
+for (let i = 0; i < 50 && !forked; i++) { await sleep(100); try { forked = Number(readFileSync(pidFile, "utf8").trim()); } catch {} }
+await sleep(200);
+const t2 = processTable(), f = t2.find((p) => p.pid === forked), shell = t2.find((p) => p.ppid === root.pid);
+check("the double-forked sleep sits in the Bash shell's own session, with no job parent", !!f && !!shell && f.ppid === 1 && shell.sid === shell.pid && f.sid === shell.pid && f.sid !== root.pid, JSON.stringify({ f, shell }));
+check("findProcs finds it through the session the job's shell leads", findProcs({ jobDir }, t2).some((p) => p.pid === forked));
+const r2 = await hardKill({ jobDir }, { graceMs: 0 });
+await sleep(300);
+check("force kill (no grace) stops it along with the job", !alive(forked) && !alive(root.pid), JSON.stringify(r2));
+for (const pid of [forked, root.pid, shell?.pid]) if (pid && alive(pid)) try { process.kill(pid, "SIGKILL"); } catch {}
 rmSync(jobDir, { recursive: true, force: true });
 
 console.log(`kill: ${pass}/${pass + fail} passed`);

@@ -58,6 +58,33 @@ check(fs.readFileSync(path.join(dir, ".connector-url"), "utf8") === url, "the co
 r = install(["--dry-run", "--update"]);
 check(r.status === 0 && json("install-receipt.json").leadAgent === null, "the next update keeps it off");
 
+// After a leak, a command run as you could have changed worker/config.json. The update rebuilds it from the release and keeps
+// only your choices, so a planted program path, command, tool list or environment doesn't survive it.
+{
+  const P = "/tmp/planted-by-someone";
+  const c = json(path.join("worker", "config.json")), composio = path.join(home, ".composio", "composio");
+  fs.writeFileSync(path.join(dir, "worker", "config.json"), JSON.stringify({ ...c,
+    claudeBin: `${P}/claude`, keyFile: `${P}/key`, aliveFile: `${P}/alive`, logFile: `${P}/log`, modesFile: `${P}/modes.json`, runsDir: `${P}/runs`,
+    approved: { tools: "Bash", mcpConfig: `${P}/mcp.json` }, addDirs: ["/"], workerTag: "someone-else",
+    host: { ...c.host, driverBin: `${P}/driver`, overlayBin: `${P}/overlay`, app: `${P}/App.app`, statusCmd: [`${P}/status`], notifyCmd: `${P}/notify`, env: { NODE_OPTIONS: `--require ${P}/x.js` }, idleSeconds: 25 },
+    supervisor: { ...c.supervisor, bellHealthUrl: `http://evil.example/${P}`, idlePollSeconds: 30 },
+    cua: { bin: `${P}/cua`, sandbox: "my-vm", suspendAfter: true }, screen: { displays: 3, captureBin: `${P}/capture` },
+    gmail: { composioBin: `${P}/composio`, accounts: { "me@example.org": "gmail_me" } },
+    publish: { composioBin: composio, accounts: { googledocs: "docs_me" }, expectAccount: "me@example.org" },
+    health: { composioBin: `${P}/composio`, disk: "/", accounts: ["gmail_me"] },
+    maxParallel: 5, pollSeconds: 30, healthMinutes: 10, surprise: `${P}/surprise` }, null, 2));
+  r = install(["--dry-run", "--update"]);
+  const raw = fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8"), n = JSON.parse(raw);
+  check(r.status === 0 && !raw.includes(P) && !raw.includes("evil.example"), "an update removes every planted program path, command, environment and address from worker/config.json", raw);
+  check(n.claudeBin === c.claudeBin && n.keyFile === c.keyFile && n.workerTag === c.workerTag && JSON.stringify(n.addDirs) === JSON.stringify(c.addDirs) && n.host.driverBin === c.host.driverBin && n.host.overlayBin === c.host.overlayBin, "claude, the key file, the folders and the desktop control programs come from the release", raw);
+  check(!("approved" in n) && !("modesFile" in n) && !("runsDir" in n) && !("logFile" in n) && !("statusCmd" in n.host) && !("notifyCmd" in n.host) && !("env" in n.host) && !("app" in n.host) && !("bin" in n.cua) && !("captureBin" in n.screen) && !("surprise" in n), "tool lists, commands and environment settings the release doesn't set are gone", raw);
+  check(n.maxParallel === 5 && n.pollSeconds === 30 && n.healthMinutes === 10 && n.host.idleSeconds === 25 && n.supervisor.idlePollSeconds === 30 && n.cua.sandbox === "my-vm" && n.cua.suspendAfter === true && n.screen.displays === 3, "your numbers and on/off choices are kept", raw);
+  check(n.gmail.accounts["me@example.org"] === "gmail_me" && !("composioBin" in n.gmail) && n.publish.composioBin === composio && n.publish.expectAccount === "me@example.org" && n.health.disk === "/" && !("composioBin" in n.health), "Composio account names are kept, and a Composio program path only if it's the standard one", raw);
+  check(/worker\/config\.json was rebuilt from this release\. Not kept from the old one: .*claudeBin.*host\.statusCmd.*gmail\.composioBin/s.test(r.stdout) && !/Not kept[^\n]*maxParallel/.test(r.stdout), "the update lists what it didn't keep, and where the old file is", r.stdout.slice(-1500));
+  r = install(["--dry-run", "--update"]);
+  check(r.status === 0 && !/Not kept from the old one/.test(r.stdout), "an update of a config with nothing planted lists nothing", r.stdout.slice(-800));
+}
+
 // The phone bell is off unless you say yes (Mac only): --yes leaves it off, an update never turns it on by itself, and it can
 // be turned on and off again and stays as you left it.
 if (process.platform === "darwin") {
@@ -150,11 +177,38 @@ if (process.platform !== "win32") {
   fs.mkdirSync(bin, { recursive: true }); fs.mkdirSync(cbin, { recursive: true });
   fs.writeFileSync(path.join(bin, "npx"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
   fs.writeFileSync(path.join(cbin, "claude"), "#!/bin/sh\necho '{\"loggedIn\":true}'\n", { mode: 0o755 });
+  // As if the install before it had been deployed (a dry run never is). The made-up host is built from parts, as in
+  // doctor-no-leak.mjs, because the release safety scan flags any real-looking workers.dev host.
+  const dcfg = path.join(dir, "worker", "config.json");
+  fs.writeFileSync(dcfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(dcfg, "utf8")), base: `https://daisy-handoff.tester.${["workers", "dev"].join(".")}` }, null, 2));
   const real = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--update", "--no-power-lanes", "--no-start", "--home", home],
     { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
   check(real.status !== 0 && /sign-in didn't finish/.test(real.stderr) && /still use your old settings, including the command line switch/.test(real.stderr), "a stopped real update says Cloudflare and the running worker keep the old settings", real.stderr.slice(-300));
   const doc = spawnSync(process.execPath, [path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home } });
   check(/off in the new files, but Cloudflare and the running worker may still use your old setting/.test(doc.stdout), "the doctor says the same", doc.stdout.slice(-300));
+  if (process.platform === "darwin") {
+    // Phone notifications turned on by an update on a Mac without the tools: the stop names the command that was run.
+    fs.writeFileSync(path.join(bin, "xcode-select"), "#!/bin/sh\nexit 2\n", { mode: 0o755 });
+    const nb = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--update", "--yes", "--bell", "--no-power-lanes", "--no-start", "--home", home],
+      { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    check(nb.status !== 0 && /then run node install\.mjs --update again\. Or install without phone notifications: add --no-bell\. Nothing was changed\./.test(nb.stderr), "on an update, the Command Line Tools stop says to run node install.mjs --update again", nb.stderr.slice(-500));
+    fs.rmSync(path.join(bin, "xcode-select"));
+  }
+
+  // A first install that stopped at Cloudflare, then an update that stops there too: nothing was ever live, so no "old settings".
+  const fhome = fs.mkdtempSync(path.join(os.tmpdir(), "first-stop-")), fdir = path.join(fhome, "Projects", "daisy-handoff");
+  fs.mkdirSync(path.join(fhome, ".local", "bin"), { recursive: true });
+  fs.copyFileSync(path.join(cbin, "claude"), path.join(fhome, ".local", "bin", "claude")); fs.chmodSync(path.join(fhome, ".local", "bin", "claude"), 0o755);
+  const fenv = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const first = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--yes", "--no-start", "--no-power-lanes", "--name", "Tester", "--assistant", "Daisy", "--home", fhome], { encoding: "utf8", env: fenv });
+  const again = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--update", "--no-start", "--home", fhome], { encoding: "utf8", env: fenv });
+  check(first.status !== 0 && again.status !== 0 && /Nothing was deployed yet\. Run node install\.mjs --update again when you're ready\./.test(again.stderr) && !/old settings/.test(again.stderr),
+    "an update after a first install that never reached Cloudflare says nothing was deployed yet, not that old settings are live", again.stderr.slice(-500));
+  // --uninstall of that install has no startup entries to move; the doctor still knows it was uninstalled.
+  const un2 = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--home", fhome], { encoding: "utf8", env: fenv });
+  const fdoc = spawnSync(process.execPath, [path.join(fdir, "doctor.mjs"), "--dir", fdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: fhome } });
+  check(un2.status === 0 && /was uninstalled/.test(fdoc.stdout) && !/--update again/.test(fdoc.stdout), "after --uninstall of an install that stopped at Cloudflare, the doctor doesn't say to run --update", fdoc.stdout.slice(-600));
+  fs.rmSync(fhome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 // Windows isn't in this release: a real install there is refused before anything happens (a dry run still works).
@@ -259,7 +313,7 @@ log = fs.readFileSync(calls, "utf8").trim().split("\n");
 const at = (re) => log.findIndex((l) => re.test(l));
 check(at(/^deploy/) >= 0 && at(/^deploy/) < at(/^secret list/) && at(/^secret list/) < at(/^secret delete OWNER_CIDRS/) && at(/^secret delete OWNER_CIDRS/) < at(/^secret put CONNECTOR_KEY/),
   "--rotate-keys (real order): deploy the clean code, list secrets, remove OWNER_CIDRS, and only then store the new connector key", log.join(" / "));
-check(/Cloudflare account: Rotate Test's Account\. If that isn't an account only you control/.test(r.stdout) && !/abc123/.test(r.stdout), "after the Cloudflare sign-in it names the account it will use", r.stdout.slice(0, 800));
+check(/Cloudflare account: Rotate Test's Account\. If that isn't an account only you control, stop now with Ctrl-C, or afterwards run node install\.mjs --uninstall/.test(r.stdout) && !/abc123/.test(r.stdout), "after the Cloudflare sign-in it names the account it will use", r.stdout.slice(0, 800));
 check(/removed the secret OWNER_CIDRS/.test(r.stdout) && keyNow() !== k0, "it says it removed the stray secret, and the connector key changed", r.stdout.slice(-500));
 check(log.filter((l) => /^deploy/.test(l)).length === 1 && at(/^deploy/) < at(/^secret put/), "the clean code is deployed once, before any secret is stored", log.join(" / "));
 // Names and titles in the job database can be written by anyone with the old URL. One with escape sequences (cursor up,

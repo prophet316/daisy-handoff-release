@@ -112,7 +112,7 @@ async function waitFor(test, ms, step = 500) {
 async function restartWorker() {
   const t0 = Date.now();
   const before = await agent(WORKER_LABEL);
-  if (!before.loaded) return { error: "not loaded", text: `The worker's launchd agent ${WORKER_LABEL} is not loaded, so it can't be restarted from here. {{OWNER}}'s step: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${WORKER_LABEL}.plist` };
+  if (!before.loaded) return { error: "not loaded", text: `The worker isn't set to start on the {{MACHINE}}, so it can't be restarted from here. {{OWNER}}'s step, a command to type in Terminal on the {{MACHINE}}, not to read aloud: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${WORKER_LABEL}.plist` };
   const p = before.pid ? procState(before.pid) : null;
   const was = !before.pid ? "not running" : frozen(p) ? `frozen (stopped) as pid ${before.pid}` : `running as pid ${before.pid}`;
   // SIGKILL works on a frozen process too; then the jobs it left go (they carry its tag), and launchd starts it now.
@@ -125,7 +125,7 @@ async function restartWorker() {
   const looping = after && await waitFor(() => { try { return statSync(ALIVE_FILE).mtimeMs > t0; } catch { return false; } }, 45_000);
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   const jobs = orphans.found ? ` Ended ${orphans.found} job process(es) it had left running; those jobs go back in the queue unless {{OWNER}} asked to stop them.` : "";
-  if (!after) return { error: "no new pid", was, text: `Tried to restart the worker (it was ${was}) but launchd did not start a new one within 20 seconds${ks.code ? ` (kickstart: ${ks.err.slice(0, 120)})` : ""}.${jobs}` };
+  if (!after) return { error: "no new pid", was, text: `Tried to restart the worker (it was ${was}) but the {{MACHINE}} did not start a new one within 20 seconds${ks.code ? ` (${ks.err.slice(0, 120)})` : ""}.${jobs}` };
   log(`worker restarted: was ${was}, now pid ${after.pid}, ${looping ? "looping" : "not looping yet"} after ${secs} s`);
   return { ok: true, was, pid: after.pid, looping: !!looping, secs: Number(secs), orphans: orphans.found,
     text: `Restarted the worker: it was ${was}; now running as pid ${after.pid}${looping ? `, working again after ${secs} seconds` : ", started but not checking in yet"}.${jobs}` };
@@ -134,7 +134,7 @@ async function restartWorker() {
 async function restartBell() {
   const t0 = Date.now();
   const before = await agent(BELL_LABEL);
-  if (!before.loaded) return { error: "not loaded", text: `The phone bell's launchd agent ${BELL_LABEL} is not loaded. {{OWNER}}'s step: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${BELL_LABEL}.plist` };
+  if (!before.loaded) return { error: "not loaded", text: `The phone bell isn't set to start on the {{MACHINE}}. {{OWNER}}'s step, a command to type in Terminal on the {{MACHINE}}, not to read aloud: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${BELL_LABEL}.plist` };
   const ks = await run("/bin/launchctl", ["kickstart", "-k", `gui/${UID}/${BELL_LABEL}`]);
   const up = await waitFor(() => bellUp(), 60_000, 1000);
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -158,18 +158,18 @@ async function status() {
   const wp = w.pid ? table.find((p) => p.pid === w.pid) : null;
   const age = aliveAge();
   const parts = [];
-  if (!w.loaded) parts.push(`Worker: launchd agent not loaded.`);
-  else if (!w.pid) parts.push(`Worker: not running (launchd state ${w.state}); launchd should start it within 30 seconds.`);
+  if (!w.loaded) parts.push(`Worker: not set to start on the {{MACHINE}}.`);
+  else if (!w.pid) parts.push(`Worker: not running; the {{MACHINE}} should start it again within 30 seconds.`);
   else if (frozen(wp)) parts.push(`Worker: FROZEN (process stopped) as pid ${w.pid}; restart_worker fixes it.`);
   else parts.push(`Worker: running as pid ${w.pid} for ${mins(wp?.age || 0)}${age === null ? "" : age > 120 ? `, but its loop has not run for ${mins(age)} (hung?); restart_worker fixes it` : `, loop ran ${age} s ago`}.`);
   const up = await bellUp();
-  parts.push(`Phone bell: ${!b.loaded ? "launchd agent not loaded" : !b.pid ? "not running" : up ? `answering (pid ${b.pid})` : `running as pid ${b.pid} but not answering`}.`);
+  parts.push(`Phone bell: ${!b.loaded ? "not set to start on the {{MACHINE}}" : !b.pid ? "not running" : up ? `answering (pid ${b.pid})` : `running as pid ${b.pid} but not answering`}.`);
   const jobs = Object.entries(jobsRunning(WORKER_TAG, join(ROOT, "jobs"), table));
   parts.push(jobs.length ? `Job processes running (${jobs.length} job(s)): ${jobs.map(([dir, ps]) => {
     const oldest = Math.max(...ps.map((p) => p.age)), stopped = ps.some(frozen);
     return `${dir.split("/").pop()} (${ps.length} process(es), up ${mins(oldest)}${stopped ? ", some frozen" : ""})`;
   }).join("; ")}.` : "No job processes running.");
-  parts.push(`Emergency lane: supervisor pid ${process.pid}, up ${mins(Math.round((Date.now() - START) / 1000))}.`);
+  parts.push(`Stop switch: running (pid ${process.pid}), up ${mins(Math.round((Date.now() - START) / 1000))}.`);
   return { text: parts.join(" "), worker: { ...w, frozen: frozen(wp), alive_age: age }, bell: { ...b, up }, jobs: jobs.map(([dir, ps]) => ({ id: dir.split("/").pop(), procs: ps.length })) };
 }
 
@@ -182,7 +182,7 @@ async function execute(c) {
     if (off) return { error: "power lanes off", text: off };
     if (c.kind === "shell") return await runShell(c.arg || {}, { secrets: [KEY, bellKey(), ...installSecrets(ROOT), ...envSecrets()], log, ...(SHELL_LOG ? { logFile: SHELL_LOG } : {}) });
     return { error: `unknown command ${c.kind}` };
-  } catch (e) { return { error: String(e.message || e).slice(0, 300), text: `The emergency lane hit an error: ${String(e.message || e).slice(0, 200)}` }; }
+  } catch (e) { return { error: String(e.message || e).slice(0, 300), text: `The stop switch hit an error: ${String(e.message || e).slice(0, 200)}` }; }
 }
 
 // ---- Loop ----

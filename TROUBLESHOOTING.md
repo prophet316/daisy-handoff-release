@@ -14,10 +14,11 @@ Each section below starts with what you see, then what to do.
 
 ## Before you start
 
-You need all of these. The installer checks Node and Claude Code itself and stops if one is missing; the rest it can't check, so have them ready.
+The installer checks Node and Claude Code itself and stops if one is missing. With phone notifications on, it also stops if Apple's Command Line Tools are missing. Have the rest ready.
 
 - A Mac on macOS 13 (Ventura) or newer. Check: Apple menu > About This Mac.
 - An administrator password for the Mac, or someone who has it. The Node and Command Line Tools installers ask for it.
+- Apple's Command Line Tools, if you want phone notifications or the blue glow. Install them with `xcode-select --install`. Jobs, stop everything and force kill work without them.
 - A Claude Pro or Max plan. On Team and Enterprise, an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
 - A free Cloudflare account with a verified email address.
 - The Claude app on your phone, signed in to the same Claude account.
@@ -178,6 +179,14 @@ Don't want desktop control at all? Reinstall with `--no-power-lanes`.
 **You see:** jobs stay queued and the daily digest lists schedules as skipped.
 
 If you or an agent said stop everything, the queue and schedules stay paused until you start them again. Say "start things again" (or "resume everything") in your own Claude chat; Claude calls resume_all. An agent can't do this for you. Jobs that the stop ended stay stopped; say "retry it" for the ones you want.
+
+---
+
+## Something a job started is still running after force kill
+
+**You see:** force kill said the job was killed, but a program it started still shows in Activity Monitor.
+
+Force kill finds a job's processes by the session the worker recorded, the process tree, the job's tags, and any session one of its processes started. A program that starts its own session, clears its environment and loses its parent matches none of those, so nothing finds it, and cancel and stop everything miss it too. To end such a program, quit it in Activity Monitor.
 
 ---
 

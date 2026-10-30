@@ -41,7 +41,7 @@ code() { curl -s -o /dev/null -w "%{http_code}" -H "Content-Type: application/js
 
 echo "1 initialize:"; post '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1"}}}'
 echo "2 initialized notification (expect 202):"; code "$B" '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-echo "3 tools/list names:"; post '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | python3 -c 'import sys,json; print([t["name"] for t in json.load(sys.stdin)["result"]["tools"]])'
+echo "3 tools/list names:"; post '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>console.log(JSON.parse(s).result.tools.map((t)=>t.name)))'
 echo "4 add_job:"; post '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add_job","arguments":{"title":"Smoke test job","details":"Proving the connector stores jobs"}}}'
 echo "5 list_jobs:"; post '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_jobs","arguments":{"limit":3}}}'
 echo "6 add_job missing title (expect isError true):"; post '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"add_job","arguments":{}}}'

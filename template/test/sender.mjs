@@ -93,7 +93,16 @@ for (const [tool, args] of [["run_command", { command: "cat ~/.ssh/id_ed25519" }
   check(`${tool} from an agent naming the lead agent with the wrong key is refused`, r.isError && /Only .* can use/.test(r.text), r.text);
 }
 r = await call(OWNER_IP, "run_command", { command: "echo hi" });
-check("run_command from the owner reaches the emergency lane (here: no supervisor, so not run)", /<job-output>\nNot run:/.test(r.text), r.text);
+check("run_command from the owner reaches the stop switch (here: no supervisor, so not run)", /<job-output>\nNot run:/.test(r.text), r.text);
+check("that reply calls it the stop switch and reads out no internal service name", /the stop switch has never checked in/.test(r.text) && !/emergency lane|supervisor|launchd|com\.daisy/i.test(r.text), r.text);
+{
+  // Replies Claude reads aloud: one name for the stop switch, and no launchd or com.daisy names in them. Comments don't count.
+  const said = (f) => readFileSync(join(ROOT, f), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).map((l) => l.replace(/\s\/\/ .*$/, "")).join("\n");
+  const src = said("src/index.js"), sup = said("worker/supervisor.mjs"), shell = said("worker/shell-lane.mjs");
+  const bad = [src, sup, shell].flatMap((t) => t.split("\n")).filter((l) => /emergency (control )?lane|launchd agent|launchd state|CUA lane|host lane/i.test(l))
+    .concat(src.split("\n").filter((l) => /com\.daisy|launchd/.test(l)));
+  check("no reply or tool text says emergency lane, a launchd agent or a lane's internal name", !bad.length, bad.join(" | "));
+}
 r = await call(LEAD, "run_command", { command: "echo hi" });
 check("run_command from the lead agent is refused too: it may only approve", r.isError && /Only .* can use run_command/.test(r.text), r.text);
 r = await call(OWNER_IP, "look_at_screen", { question: "what's up" });

@@ -68,11 +68,13 @@ const MANUAL_STEPS = !!(receiptJson?.manual && receiptJson?.dryRun);
 // and there's no worker log yet. FINISH is the fix.
 // After --uninstall: no startup entries left, and the ones it moved aside are in ~/.handoff-uninstalled. Running --update
 // then would put them back, so the fix is the README's Uninstall steps or a fresh start.
+// --uninstall's note when it found no startup entries to move; an install or update run after it doesn't count as uninstalled.
+const newerThanReceipt = (f) => { try { return fs.statSync(f).mtimeMs >= fs.statSync(path.join(DIR, "install-receipt.json")).mtimeMs; } catch { return false; } };
 const daisyPlists = (d) => { try { return fs.readdirSync(d).filter((f) => /^com\.daisy\..*\.plist$/.test(f)); } catch { return []; } };
 const UNINSTALLED = MAC && !!DIR && !daisyPlists(path.join(HOME, "Library", "LaunchAgents")).length &&
-  (() => { try { return fs.readdirSync(path.join(HOME, ".handoff-uninstalled")).some((s) => daisyPlists(path.join(HOME, ".handoff-uninstalled", s)).length); } catch { return false; } })();
+  (() => { try { return fs.readdirSync(path.join(HOME, ".handoff-uninstalled")).some((s) => daisyPlists(path.join(HOME, ".handoff-uninstalled", s)).length || newerThanReceipt(path.join(HOME, ".handoff-uninstalled", s, "UNINSTALLED.txt"))); } catch { return false; } })();
 const NO_LOGOUT = UNINSTALLED || MANUAL_STEPS || !!receiptJson?.manual || !!(cfg && !isDeployed(cfg.base));
-const FINISH = UNINSTALLED ? "This install was uninstalled (--uninstall moved its startup entries to ~/.handoff-uninstalled). To remove the rest, follow the README's Uninstall steps. To install again, move the install folder aside first, then run the installer (or --manual) again."
+const FINISH = UNINSTALLED ? "This install was uninstalled (--uninstall moved any startup entries it found to ~/.handoff-uninstalled). To remove the rest, follow the README's Uninstall steps. To install again, move the install folder aside first, then run the installer (or --manual) again."
   : MANUAL_STEPS ? "You're installing by hand: carry on with MANUAL-INSTALL.md, steps 2 to 7. Don't run --force; it would make new keys."
   : receiptJson?.unfinished ? "Your last install or update stopped partway. In the release folder run node install.mjs --update again; it keeps your keys and connector URL."
   : !receiptJson ? "If you're installing by hand, carry on with MANUAL-INSTALL.md. Otherwise, in the release folder run node install.mjs --update; it keeps your keys and connector URL."

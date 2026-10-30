@@ -55,16 +55,21 @@ check(/HOST_OVERLAY_BIN: overlayBin\(\)/.test(workerSrc) && /CFG\.host\?\.overla
 ({ r, home } = install(["--build-overlay", "--no-power-lanes"]));
 check(r.status === 0 && !/blue glow/.test(r.stdout) && !fs.existsSync(bin(home)), "with desktop control off, nothing is built", r.stdout);
 
-// 4. Command Line Tools missing: the install finishes and says how to get the glow.
+// 4. Command Line Tools missing: the install finishes and says how to get the glow. A helper already in place (here a planted
+// one, as after a leak) is removed rather than left for the worker to launch.
 const fake = fs.mkdtempSync(path.join(os.tmpdir(), "overlay-fake-")); homes.push(fake);
+const plant = (home) => { fs.mkdirSync(path.dirname(bin(home)), { recursive: true }); fs.writeFileSync(bin(home), "#!/bin/sh\necho planted\n", { mode: 0o755 }); };
+const withPlant = (args, env) => { const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "overlay-build-"))); homes.push(home); plant(home);
+  const r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--name", "Tester", "--assistant", "Daisy", ...args, "--home", home], { encoding: "utf8", env: { ...process.env, ...env } });
+  return { r, home }; };
 fs.writeFileSync(path.join(fake, "xcrun"), "#!/bin/sh\necho 'xcrun: error: invalid active developer path' >&2\nexit 1\n", { mode: 0o755 });
-({ r, home } = install(["--build-overlay"], { PATH: `${fake}:${process.env.PATH}` }));
-check(r.status === 0 && /desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing/.test(r.stdout) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "no Command Line Tools: the install finishes and says what's missing", r.stdout);
+({ r, home } = withPlant(["--build-overlay"], { PATH: `${fake}:${process.env.PATH}` }));
+check(r.status === 0 && /desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing/.test(r.stdout) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "no Command Line Tools: the install finishes, says what's missing and leaves no old helper", r.stdout);
 
-// 5. The build itself fails: the install still finishes.
+// 5. The build itself fails: the install still finishes, and the old helper is gone.
 fs.writeFileSync(path.join(fake, "xcrun"), "#!/bin/sh\n[ \"$1\" = --find ] && { echo /usr/bin/swiftc; exit 0; }\necho 'error: compile failed' >&2\nexit 1\n", { mode: 0o755 });
-({ r, home } = install(["--build-overlay"], { PATH: `${fake}:${process.env.PATH}` }));
-check(r.status === 0 && /desktop control works, but the blue glow and cursor didn't build/.test(r.stdout) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "a failed build: the install finishes and says so", r.stdout);
+({ r, home } = withPlant(["--build-overlay"], { PATH: `${fake}:${process.env.PATH}` }));
+check(r.status === 0 && /desktop control works, but the blue glow and cursor didn't build/.test(r.stdout) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "a failed build: the install finishes, says so and leaves no old helper", r.stdout);
 
 for (const h of homes) fs.rmSync(h, { recursive: true, force: true });
 console.log(fail ? `overlay build: ${fail} FAILED` : "overlay build: all checks passed");

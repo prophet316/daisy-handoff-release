@@ -75,10 +75,14 @@ export function findProcs(match, table = processTable()) {
   const root = match.rootPid && table.find((p) => p.pid === match.rootPid);
   if (root && !keep.has(root.pid)) { mine.add(root.pid); if (root.sid === root.pid) sids.add(root.sid); }
   for (const p of table) if (!keep.has(p.pid) && sids.has(p.sid) && !keepSid.has(p.sid)) mine.add(p.pid);
-  // Children of anything found so far (a process may have cleared its environment or started its own session).
+  // Children of anything found so far (a process may have cleared its environment or started its own session), and every
+  // process in a session one of them leads: Claude Code's Bash tool shell leads its own session, and a command's
+  // double-forked child stays in it after its parent exits, with no parent and, for Apple's binaries, no tags ps can see.
   for (let grew = true; grew;) {
     grew = false;
     for (const p of table) if (!mine.has(p.pid) && !keep.has(p.pid) && mine.has(p.ppid)) { mine.add(p.pid); grew = true; }
+    for (const p of table) if (mine.has(p.pid) && p.sid === p.pid && !keepSid.has(p.sid) && !sids.has(p.sid)) { sids.add(p.sid); grew = true; }
+    for (const p of table) if (!mine.has(p.pid) && !keep.has(p.pid) && sids.has(p.sid) && !keepSid.has(p.sid)) { mine.add(p.pid); grew = true; }
   }
   return table.filter((p) => mine.has(p.pid));
 }
