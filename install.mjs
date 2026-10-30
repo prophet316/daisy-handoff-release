@@ -66,8 +66,8 @@ const POWER_WARNING = [
   "a leaked URL can still reach this computer. Anyone who can change your",
   "Cloudflare account can run jobs here too. These count as you and get these",
   "tools: your own Claude chats, Claude Code on this Mac, and Claude's cloud",
-  "agents. The README says how to keep Nuff Said out of each. Install it only on",
-  "a computer you trust it with. Desktop control is Mac only for now.",
+  "agents. The README says how to keep it out of each. Install it only on a",
+  "computer you trust it with. Desktop control is Mac only for now.",
 ];
 // Says plainly that Enter means on and what on means for a leaked URL. Each question stands on its own: an update or a flag can
 // skip the other one. Short lines, so an 80-column Terminal doesn't break words.
@@ -295,7 +295,7 @@ async function main() {
   if (has("lead-agent") && has("no-lead-agent")) die("use --lead-agent NAME or --no-lead-agent, not both.");
   if (has("power-lanes") && has("no-power-lanes")) die("use --power-lanes or --no-power-lanes, not both.");
   say(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
-  if (!UPDATE) say("Nuff Said is made for Claude. It's an independent project, not made by, affiliated with or endorsed by Anthropic.");
+  if (!UPDATE) say("It works with Claude Code and your own Claude account. It's an independent\nproject, not made by, affiliated with or endorsed by Anthropic.");
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
   if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
     "  node install.mjs --dry-run --yes --home /tmp/nuff-test\n  node install.mjs --update --dry-run --home /tmp/nuff-test\nA dry run never touches your real install.");

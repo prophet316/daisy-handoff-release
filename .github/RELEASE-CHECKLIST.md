@@ -1,6 +1,6 @@
 # Release checklist (maintainers only)
 
-This is for whoever publishes Nuff Said, not for people installing it.
+This is for whoever publishes this project, not for people installing it.
 
 ## Before the repo goes public
 

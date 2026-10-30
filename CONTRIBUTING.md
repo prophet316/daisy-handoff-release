@@ -1,4 +1,4 @@
-# Contributing to Nuff Said
+# Contributing
 
 Not accepting code contributions yet. Thank you for wanting to help.
 

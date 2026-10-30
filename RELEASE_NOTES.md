@@ -1,6 +1,6 @@
 **Talk to Claude. Your computer does the work.**
 
-Nuff Said is made for Claude.
+It works with Claude Code and your own Claude account.
 It's an independent project, not made by, affiliated with or endorsed by Anthropic.
 
 It's one custom connector you add in the Claude app. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, run threads, check progress, approve, retry, schedule, and stop everything.
@@ -9,7 +9,7 @@ It's one custom connector you add in the Claude app. After that, a conversation 
 This release ships with the command line and desktop control **on**, the way I use it.
 - **What a job can do:** anything you can do at your keyboard, like running commands, changing or deleting files, opening apps, and clicking and typing on your desktop, with your logins.
 - **Who can start one:** anyone with your connector URL, through their own Claude or the Claude API, and anyone who can change your connector on your Cloudflare account. A prompt injection in a web page or email can steer a job too.
-- **Who counts as you:** your own Claude chats, Claude Code on this Mac, and Claude's cloud agents (scheduled tasks, Projects threads, Duet). They all get Nuff Said's tools, and Nuff Said treats their calls as yours (untested for Claude Code, so assume it). The README's "Before you install" says how to keep it out of each.
+- **Who counts as you:** your own Claude chats, Claude Code on this Mac, and Claude's cloud agents (scheduled tasks, Projects threads, Duet). They all get its tools, and their calls count as yours (untested for Claude Code, so assume it). The README's "Before you install" says how to keep it out of each.
 - **What waits for your yes:** sends, posts, spending, deletes and access changes, unless you asked for them. The built-in desktop, email and publishing tools hold them in code. Everything else is an instruction to Claude. That lowers the risk but doesn't remove it.
 - **How the desktop check decides:** by the name of what's clicked, the keys pressed and what the job says it's doing. In a browser or chat app, Return, Space and typed Tabs can send, so they're held except in a search box or address bar, and typing more than one line into a web page waits for your yes too. A job with a command line can reach those apps another way. SECURITY.md has the details.
 - **The off switch:** answer no to the installer's question, or run `node install.mjs --no-power-lanes`. It's not a sandbox: code and design jobs still run Claude Code with its own command line and can read and change any file in your home folder.
