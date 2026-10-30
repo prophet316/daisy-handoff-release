@@ -42,7 +42,7 @@ const runs = join(tmp, "runs");
 writeFileSync(join(cfgDir, "config.json"), JSON.stringify({ base: "http://127.0.0.1:9", keyFile: relative(ROOT, join(cfgDir, "key")), claudeBin: "/usr/bin/false", runsDir: runs }));
 process.env.DAISY_NO_MAIN = "1";
 process.argv.push("--config", join(cfgDir, "config.json"));
-const { planRun, runDir, holdCard, retirePurchase, finalFiles, resetRunState, requestWords, holdDraft, cuaAllow, purchaseLine, agentRerunRefusal } = await import(join(ROOT, "worker", "worker.mjs"));
+const { planRun, runDir, holdCard, retirePurchase, finalFiles, resetRunState, requestWords, holdDraft, cuaAllow, purchaseLine, agentRerunRefusal, laneNoImply } = await import(join(ROOT, "worker", "worker.mjs"));
 const { draftHash } = await import(join(ROOT, "worker", "email.mjs"));
 const { makeRedactor } = await import(join(ROOT, "worker", "redact.mjs"));
 const OWNER = JSON.parse(readFileSync(join(ROOT, "site.json"), "utf8")).owner;
@@ -113,6 +113,8 @@ const byOwner = cuaAllow(job, oldDir, true, leadRun).allow;
 check("the owner's approval unlocks what the gate held", ["send", "post", "delete", "charge"].every((k) => byOwner.includes(k)), JSON.stringify(byOwner));
 
 // 2b3b. An agent's reply or retry of a desktop or screen job: the worker refuses it, and the gate keeps nothing allowed.
+check("a lead agent's approved run tells the host lane the request is no yes for send, post or buy", laneNoImply({ ...job, followup_from: "lead agent boss" }) === "send,post,buy");
+check("the owner's own run doesn't", laneNoImply(job) === "");
 check("an agent's retry of a desktop job keeps nothing the owner allowed", cuaAllow({ ...job, allow: JSON.stringify(["send", "post"]), followup_from: "agent x" }, oldDir, false, leadRun).allow.length === 0);
 check("the owner's own reply keeps what the owner allowed", cuaAllow({ ...job, allow: JSON.stringify(["send"]) }, oldDir, false, leadRun).allow.includes("send"));
 check("the worker refuses an agent's rerun of a screen job", !!agentRerunRefusal({ mode: "screen", run_mode: "retry", followup_from: "agent x" }));

@@ -33,7 +33,7 @@ const out = {
     el(4, "AXButton", "Place order"),
     el(5, "AXTextField", "Search", ""),
     el(6, "AXButton", "Post a review"),
-    ...extra.map((e, i) => el(7 + i, e.role, e.label, e.value, e.frame)),
+    ...extra.map((e, i) => ({ ...el(7 + i, e.role, e.label, e.value, e.frame), ...(e.focused ? { focused: true } : {}) })),
   ] },
   get_cursor_position: { x: 1, y: 1 },
 }[tool] || { effect: "confirmed", summary: `fake ${tool}` };

@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let fail = 0;
 const check = (ok, s, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${s}${ok || !extra ? "" : `  (${String(extra).slice(-400)})`}`); if (!ok) fail++; };
+// The installer folds long lines for an 80-column Terminal (continuations indented 8 spaces): read them as one line.
+const unfold = (s) => String(s ?? "").replace(/\n {8,9}(?=\S)/g, " ");
 if (process.platform !== "darwin") { console.log("overlay build: Mac only, skipped"); process.exit(0); }
 if (spawnSync("xcrun", ["--find", "swiftc"], { stdio: "ignore" }).status !== 0) {
   console.log("overlay build: skipped, Apple's Command Line Tools are missing (install them with xcode-select --install, then run this again)"); process.exit(0);
@@ -35,7 +37,7 @@ check(/blue glow and Daisy cursor helper isn't built/.test(doc) && /build\.sh/.t
 // 2. With the tools, it builds for this Mac's chip, where the worker config points.
 ({ r, home } = install(["--build-overlay"]));
 const cfg = JSON.parse(fs.readFileSync(path.join(home, "Projects", "daisy-handoff", "worker", "config.json"), "utf8"));
-check(r.status === 0 && /ok\s+blue glow and cursor built for this Mac/.test(r.stdout) && fs.existsSync(bin(home)), "the installer builds the glow helper", r.stdout + r.stderr);
+check(r.status === 0 && /ok\s+blue glow and cursor built for this Mac/.test(unfold(r.stdout)) && fs.existsSync(bin(home)), "the installer builds the glow helper", r.stdout + r.stderr);
 check(cfg.host.overlayBin === bin(home), "the worker config's overlayBin is the helper it built", cfg.host.overlayBin);
 doc = doctor(home);
 check(/ok\s+blue glow and Daisy cursor helper is built/.test(doc), "the doctor then says it is built", doc);
@@ -64,12 +66,12 @@ const withPlant = (args, env) => { const home = fs.realpathSync(fs.mkdtempSync(p
   return { r, home }; };
 fs.writeFileSync(path.join(fake, "xcrun"), "#!/bin/sh\necho 'xcrun: error: invalid active developer path' >&2\nexit 1\n", { mode: 0o755 });
 ({ r, home } = withPlant(["--build-overlay"], { PATH: `${fake}:${process.env.PATH}` }));
-check(r.status === 0 && /desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing/.test(r.stdout) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "no Command Line Tools: the install finishes, says what's missing and leaves no old helper", r.stdout);
+check(r.status === 0 && /desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing/.test(unfold(r.stdout)) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "no Command Line Tools: the install finishes, says what's missing and leaves no old helper", r.stdout);
 
 // 5. The build itself fails: the install still finishes, and the old helper is gone.
 fs.writeFileSync(path.join(fake, "xcrun"), "#!/bin/sh\n[ \"$1\" = --find ] && { echo /usr/bin/swiftc; exit 0; }\necho 'error: compile failed' >&2\nexit 1\n", { mode: 0o755 });
 ({ r, home } = withPlant(["--build-overlay"], { PATH: `${fake}:${process.env.PATH}` }));
-check(r.status === 0 && /desktop control works, but the blue glow and cursor didn't build/.test(r.stdout) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "a failed build: the install finishes, says so and leaves no old helper", r.stdout);
+check(r.status === 0 && /desktop control works, but the blue glow and cursor didn't build/.test(unfold(r.stdout)) && !fs.existsSync(bin(home)) && /COMPLETE/.test(r.stdout), "a failed build: the install finishes, says so and leaves no old helper", r.stdout);
 
 for (const h of homes) fs.rmSync(h, { recursive: true, force: true });
 console.log(fail ? `overlay build: ${fail} FAILED` : "overlay build: all checks passed");

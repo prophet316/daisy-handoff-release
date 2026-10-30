@@ -181,12 +181,24 @@ const say = (s = "") => console.log(s);
 // Names and titles from the job database could be written by anyone with the connector URL, so they are shown without
 // control characters: an escape sequence in a name could otherwise move the cursor and erase lines of the list.
 const shown = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "?");
-const ok = (s) => { say(`  ok    ${s}`); steps.push(["ok", s]); };
-const note = (s) => { say(`  note  ${s}`); steps.push(["note", s]); };
-const skip = (s) => { say(`  skip  ${s}`); steps.push(["skip", s]); };
-// A long ok or note line, wrapped under its text so an 80-column Terminal doesn't break words. The receipt keeps it whole.
-const wrapped = (tag, s) => { const out = [""]; for (const w of s.split(" ")) { const l = out.length - 1; if (out[l] && out[l].length + w.length >= 72) out.push(w); else out[l] += (out[l] ? " " : "") + w; }
-  say(`  ${tag.padEnd(6)}${out.join(`\n${" ".repeat(8)}`)}`); steps.push([tag, s]); };
+// Text folded so an 80-column Terminal doesn't break words: each later line is indented to `indent`, where the text starts.
+const fold = (s, indent = 8) => { const out = [""]; for (const w of String(s).split(" ")) { const l = out.length - 1; if (out[l] && out[l].length + w.length >= 80 - indent) out.push(w); else out[l] += (out[l] ? " " : "") + w; }
+  return out.join(`\n${" ".repeat(indent)}`); };
+// A long ok or note line, wrapped under its text. The receipt keeps it whole.
+const wrapped = (tag, s) => { say(`  ${tag.padEnd(6)}${fold(s)}`); steps.push([tag, s]); };
+const ok = (s) => wrapped("ok", s), note = (s) => wrapped("note", s), skip = (s) => wrapped("skip", s);
+// Hand-wrapped lines ("  2. ...", "     - ...", and their continuations) joined back into paragraphs and folded at 80 columns.
+// A line with a command on it (--command "...") is printed whole, and the commands inside the text aren't broken, so each still
+// copies as one command.
+const COMMANDS = /find -L that folder .*?'\*\/jarvis-bell\/\*'|find jobs threads -maxdepth 1 -type l 2>\/dev\/null|npx -y \S+ log(?:in|out)|node install\.mjs --[\w-]+|crontab -l/g;
+const reflow = (lines) => { const out = []; let cur = null;
+  for (const l of lines) {
+    const [, ind, mark = "", text] = l.match(/^( *)((?:\d+\.|-) )?(.*)$/);
+    if (/--command "/.test(l)) { out.push({ whole: l }); cur = null; continue; }
+    if (cur && !mark && ind.length === cur.hang) cur.text += ` ${text}`;
+    else out.push(cur = { prefix: ind + mark, hang: (ind + mark).length, text });
+  }
+  return out.map((p) => p.whole ?? p.prefix + fold(p.text.replace(COMMANDS, (c) => c.replace(/ /g, "\u0000")), p.hang).replace(/\u0000/g, " ")); };
 function die(s) {
   if (rollback) putBack(rollback, s);
   // Said once: when the line under the stop already says nothing was deployed and to run --update again, the stop doesn't.
@@ -253,8 +265,7 @@ function uninstall() {
   try { if (installs.length === 1) base = JSON.parse(fs.readFileSync(path.join(projects, installs[0], "worker", "config.json"), "utf8")).base; } catch {}
   const deployed = installs.length !== 1 || deployedBase(base);
   if (!deployed) {
-    say("Your install folder is untouched. It was never deployed to Cloudflare, so there's nothing to delete there. To remove");
-    say("everything, delete the install folder, and remove the connector in Claude under Customize > Connectors if you added it.");
+    say(fold("Your install folder is untouched. It was never deployed to Cloudflare, so there's nothing to delete there. To remove everything, delete the install folder, and remove the connector in Claude under Customize > Connectors if you added it.", 0));
     return;
   }
   say("Your install folder and Cloudflare connector are untouched. To remove everything, follow the README's Uninstall");
@@ -276,12 +287,12 @@ function putBack({ bak, dir }, e) {
       fs.renameSync(dir, failed);
     }
     fs.renameSync(bak, dir);
-    console.error(`\nSTOPPED: ${stoppedBy ? `${stoppedBy} partway through ${what}.` : `${what} failed partway (${why}).`} Your old install folder is back at ${dir}, as it was before this run,` +
+    console.error(`\n${fold(`STOPPED: ${stoppedBy ? `${stoppedBy} partway through ${what}.` : `${what} failed partway (${why}).`} Your old install folder is back at ${dir}, as it was before this run,` +
       ` with your keys, jobs, threads and logs. The blue glow helper outside that folder may already be this release's. Nothing changed on Cloudflare. ${fs.existsSync(failed) ? `The half-made folder is at ${failed}; delete it when you like. ` : ""}` +
-      `Run node doctor.mjs, then node install.mjs ${has("update") ? "--update" : "--force"} again; if it fails the same way, TROUBLESHOOTING.md says how to report it.`);
+      `Run node doctor.mjs, then node install.mjs ${has("update") ? "--update" : "--force"} again; if it fails the same way, TROUBLESHOOTING.md says how to report it.`, 9)}`);
   } catch (e2) {
-    console.error(`\nSTOPPED: ${stoppedBy ? `${stoppedBy} partway through ${what}` : `${what} failed partway (${why})`}, and putting the old folder back failed too (${shown(e2.message).slice(0, 200)}).` +
-      ` Your old install is at ${bak}. Rename it to ${dir} by hand${fs.existsSync(dir) ? ` after moving ${dir} aside` : ""}, then run it again.`);
+    console.error(`\n${fold(`STOPPED: ${stoppedBy ? `${stoppedBy} partway through ${what}` : `${what} failed partway (${why})`}, and putting the old folder back failed too (${shown(e2.message).slice(0, 200)}).` +
+      ` Your old install is at ${bak}. Rename it to ${dir} by hand${fs.existsSync(dir) ? ` after moving ${dir} aside` : ""}, then run it again.`, 9)}`);
   }
   process.exit(1);
 }
@@ -294,7 +305,7 @@ async function main() {
   if (has("bell") && has("no-bell")) die("use --bell or --no-bell, not both.");
   if (has("lead-agent") && has("no-lead-agent")) die("use --lead-agent NAME or --no-lead-agent, not both.");
   if (has("power-lanes") && has("no-power-lanes")) die("use --power-lanes or --no-power-lanes, not both.");
-  say(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
+  say(fold(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`, 0));
   if (!UPDATE) say("It works with Claude Code and your own Claude account. It's an independent\nproject, not made by, affiliated with or endorsed by Anthropic.");
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
   if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
@@ -502,9 +513,9 @@ async function main() {
   const urlFile = path.join(dir, ".connector-url");
   if (sameUrl) {
     step("Nothing to do in Claude", TOTAL);
-    say("  Your connector URL didn't change, so the connector you already added in Claude keeps working.");
-    say(DRY || SIM || has("no-start") ? "  The worker wasn't restarted on this run, so nothing that was running was touched."
-      : "  Jobs that were running when the worker restarted go back in the queue and start again.");
+    say(`  ${fold("Your connector URL didn't change, so the connector you already added in Claude keeps working.", 2)}`);
+    say(`  ${fold(DRY || SIM || has("no-start") ? "The worker wasn't restarted on this run, so nothing that was running was touched."
+      : "Jobs that were running when the worker restarted go back in the queue and start again.", 2)}`);
   } else await handOff(dir, urlFile, assistant, bell);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
@@ -521,18 +532,18 @@ async function handOff(dir, urlFile, assistant, bell) {
     const c = HOST === "darwin" ? run("pbcopy", [], { input: fs.readFileSync(urlFile, "utf8"), shell: false }) : run("clip", [], { input: fs.readFileSync(urlFile, "utf8") });
     copied = c.status === 0;
   }
-  say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > + Add > Add custom connector.`);
-  say(`  2. Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue, then Continue again on the screen with the settings Claude detected.`);
-  say(`     Under Authentication choose "No sign in", leave Request headers empty, and click Add.`);
-  say(`  3. On your phone, open the Claude app. If Nuff Said isn't on for the chat, tap + > Connectors and turn it on. Then start voice and say: "Check updates with ${assistant}."`);
+  say(`  1. ${fold(`In Claude (claude.ai or the desktop app): Customize > Connectors > + Add > Add custom connector.`, 5)}`);
+  say(`  2. ${fold(`Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue, then Continue again on the screen with the settings Claude detected.`, 5)}`);
+  say(`     ${fold(`Under Authentication choose "No sign in", leave Request headers empty, and click Add.`, 5)}`);
+  say(`  3. ${fold(`On your phone, open the Claude app. If Nuff Said isn't on for the chat, tap + > Connectors and turn it on. Then start voice and say: "Check updates with ${assistant}."`, 5)}`);
   if (MAC && bell) {
     say(`  For a phone notification when a job finishes (once, about a minute):`);
-    say(`  4. On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`);
-    say(`  5. In Terminal run claude, type /config, turn on "Push when Claude decides", then type /exit.`);
+    say(`  4. ${fold(`On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`, 5)}`);
+    say(`  5. ${fold(`In Terminal run claude, type /config, turn on "Push when Claude decides", then type /exit.`, 5)}`);
   }
-  say(`  If something doesn't work: node "${path.join(dir, "doctor.mjs")}"  (TROUBLESHOOTING.md in the release folder explains each problem)`);
-  say(`  That URL works like a password. Anyone who has it can hand your computer work. Don't post it or share it.`);
-  if (copied) say(`  After you paste it into Claude, copy something else, so the URL isn't left on your clipboard (or in a clipboard history).`);
+  say(`  ${fold(`If something doesn't work: node "${path.join(dir, "doctor.mjs")}" (TROUBLESHOOTING.md in the release folder explains each problem)`, 2)}`);
+  say(`  ${fold(`That URL works like a password. Anyone who has it can hand your computer work. Don't post it or share it.`, 2)}`);
+  if (copied) say(`  ${fold(`After you paste it into Claude, copy something else, so the URL isn't left on your clipboard (or in a clipboard history).`, 2)}`);
 }
 
 // ---------- pieces ----------
@@ -605,7 +616,7 @@ function carryOver(bak, dir, bell) {
       }
     }
   }
-  if (planted.length) note(`moved ${planted.length} Claude Code settings folder(s), CLAUDE.md file(s) or link(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Nuff Said never makes these. The hooks in a .claude folder, or in one a link leads to, would run in every later job there, and Claude Code reads a CLAUDE.md in jobs or threads as instructions for every job under it. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
+  if (planted.length) wrapped("note", `moved ${planted.length} Claude Code settings folder(s), CLAUDE.md file(s) or link(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Nuff Said never makes these. The hooks in a .claude folder, or in one a link leads to, would run in every later job there, and Claude Code reads a CLAUDE.md in jobs or threads as instructions for every job under it. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
   const cfgPath = path.join(dir, "worker", "config.json"), oldPath = path.join(bak, "worker", "config.json");
   if (fs.existsSync(oldPath)) {
     const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
@@ -613,7 +624,7 @@ function carryOver(bak, dir, bell) {
     try { old = JSON.parse(fs.readFileSync(oldPath, "utf8")); } catch { note("couldn't read the old worker/config.json; using the new defaults"); }
     const { cfg, dropped } = keptSettings(fresh, old);
     fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n");
-    if (dropped.length) note(`worker/config.json was rebuilt from this release. Not kept from the old one: ${dropped.map(shown).join(", ")}. The old file is in ${path.join(bak, "worker")}.`);
+    if (dropped.length) wrapped("note", `worker/config.json was rebuilt from this release. Not kept from the old one: ${dropped.map(shown).join(", ")}. The old file is in ${path.join(bak, "worker")}.`);
   }
   ok(`kept your job and thread folders, logs (${moved} folder(s) moved from the old install) and your worker settings (numbers, on/off choices and account names)`);
 }
@@ -684,7 +695,7 @@ async function rotateKeys() {
   if (ROTATE && !DRY && !process.stdin.isTTY && !has("yes") && !has("clear-schedules")) {
     die("--rotate-keys asks a question, and there's no terminal here. Run it in Terminal, or add --yes (keeps schedules) or --clear-schedules. No keys were changed.");
   }
-  say(`Nuff Said ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
+  say(fold(`Nuff Said ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`, 0));
   const W = wranglerIn(dir);
   const db = `${site.slug || path.basename(dir)}-jobs`;
   const STEPS = ROTATE ? 5 : 2;
@@ -693,7 +704,7 @@ async function rotateKeys() {
     die(`${dir} is from an install or update that stopped partway. In the release folder run node install.mjs --update first, then try this again. Nothing was changed.`);
   }
   const oldUrl = fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim();
-  if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
+  if (!DRY) say(`  ${fold("Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.", 2)}`);
   if (!DRY) cloudflareSignIn(W, "no keys were changed");
   if (ROTATE) {
     // Someone who had the URL with the command line on could have used the Cloudflare sign-in saved on this computer to put
@@ -756,7 +767,7 @@ async function rotateKeys() {
   for (const x of rts) { let n = "?"; try { n = JSON.parse(x.steps).length; } catch {} say(`    - "${shown(x.name)}" (${shown(x.id)}), ${n} step(s); ${tag(x)}`); }
   say(waiting.length ? `  Running and waiting jobs (${waiting.length}):` : "  No running jobs, queued jobs or jobs waiting for your yes.");
   for (const x of waiting) say(`    - "${shown(x.title)}" (${shown(x.id)}), ${shown(x.status)}; ${tag(x)}`);
-  say("  Anyone with your old URL could have saved these through Claude, and then they show as \"recorded as you\". Check every one.");
+  say(`  ${fold("Anyone with your old URL could have saved these through Claude, and then they show as \"recorded as you\". Check every one.", 2)}`);
 
   step("Clear them", STEPS);
   const total = sch.length + rts.length + waiting.length;
@@ -818,12 +829,13 @@ async function rotateKeys() {
 
   if (ROTATE) {
     say("\n  Next:");
-    say("  1. In Claude, remove the old connector under Customize > Connectors, and don't add the new URL yet. Whoever had the URL");
-    say("     could queue jobs, and a code job runs Claude Code with its own command line even when the command line switch is off,");
-    say("     so do steps 2 to 4 first, whichever way the switch was set. If this is the step 4 run and steps 2 and 3 are done, add");
-    say("     the connector now with the new URL" +
-      (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`));
-    for (const l of LEAK_STEPS(dir, db)) say(l);
+    for (const l of reflow([
+      "  1. In Claude, remove the old connector under Customize > Connectors, and don't add the new URL yet. Whoever had the URL",
+      "     could queue jobs, and a code job runs Claude Code with its own command line even when the command line switch is off,",
+      "     so do steps 2 to 4 first, whichever way the switch was set. If this is the step 4 run and steps 2 and 3 are done, add",
+      "     the connector now with the new URL" +
+        (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`),
+      ...LEAK_STEPS(dir, db)])) say(l);
   }
   say(`\n${DRY ? "DRY RUN COMPLETE" : "DONE"}  (${dir})`);
 }
@@ -873,10 +885,10 @@ function buildOverlay(dir, out) {
   // old one that a command run as you could have replaced.
   fs.rmSync(path.join(out, "DaisyOverlay.app"), { recursive: true, force: true });
   const tools = run("xcrun", ["--find", "swiftc"]);
-  if (tools.status !== 0) return note("desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing (xcode-select --install, then node install.mjs --update). If a window asks to install the tools, you can click Install. See TROUBLESHOOTING.md.");
+  if (tools.status !== 0) return wrapped("note", "desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing (xcode-select --install, then node install.mjs --update). If a window asks to install the tools, you can click Install. See TROUBLESHOOTING.md.");
   const r = run("bash", [path.join(dir, "worker", "overlay", "build.sh"), out]);
-  if (r.status === 0 && fs.existsSync(path.join(out, "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay"))) return ok(`blue glow and cursor built for this Mac (${path.join(out, "DaisyOverlay.app")})`);
-  note(`desktop control works, but the blue glow and cursor didn't build (${tail(r)}). See TROUBLESHOOTING.md.`);
+  if (r.status === 0 && fs.existsSync(path.join(out, "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay"))) return wrapped("ok", `blue glow and cursor built for this Mac (${path.join(out, "DaisyOverlay.app")})`);
+  wrapped("note", `desktop control works, but the blue glow and cursor didn't build (${tail(r)}). See TROUBLESHOOTING.md.`);
 }
 
 function workerConfig(home, claudeBin, slug, power, bell = false, dotdir = ".daisy") {
@@ -947,20 +959,20 @@ function cloudflareAccounts(out) {
 function cloudflareSignIn(W, stopped) {
   const who = W(["whoami"]);
   if (who.status !== 0 || /not authenticated|not logged in/i.test(`${who.stdout}${who.stderr}`)) {
-    say("  Your browser will open. Sign in to Cloudflare (a free account works) and click Allow.");
+    say(`  ${fold("Your browser will open. Sign in to Cloudflare (a free account works) and click Allow.", 2)}`);
     const again = W(["login"], { stdio: "inherit" }).status === 0 && W(["whoami"]);
     if (!again || again.status !== 0 || /not authenticated|not logged in/i.test(`${again.stdout}${again.stderr}`)) die(`Cloudflare sign-in didn't finish. Run this again when you're ready; ${stopped}.`);
   }
   ok("signed in to Cloudflare");
   // Which account: whoever can change it can run jobs on this computer. Printed only, never saved in the install receipt.
   const acct = cloudflareAccounts(W(["whoami"]).stdout || "");
-  if (acct) say(`        Cloudflare account: ${shown(acct)}. If that isn't an account only you control, stop now with Ctrl-C, or afterwards run node install.mjs --uninstall and see SECURITY.md.`);
+  if (acct) say(`        ${fold(`Cloudflare account: ${shown(acct)}. If that isn't an account only you control, stop now with Ctrl-C, or afterwards run node install.mjs --uninstall and see SECURITY.md.`)}`);
 }
 
 function deploy(dir, slug, lead, dropLead) {
   const npx = HOST === "win32" ? "npx.cmd" : "npx";
   const W = (args, o = {}) => run(npx, ["-y", WRANGLER, ...args], { cwd: dir, ...o });
-  say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
+  say(`  ${fold("Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.", 2)}`);
   cloudflareSignIn(W, "nothing was deployed");
   const db = `${slug}-jobs`;
   const find = () => { const r = W(["d1", "list", "--json"]); try { return (JSON.parse(r.stdout).find((d) => d.name === db) || {}).uuid; } catch { return undefined; } };

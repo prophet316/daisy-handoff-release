@@ -417,7 +417,9 @@ const st2 = await L.tool("type_text", { pid: P, element_token: "t:5", text: "\t\
 check("search: a typed Tab then line break is held even from the search box (the Tab moves focus off it)", st1.err && /BLOCKED/.test(st1.text) && st2.err && /BLOCKED/.test(st2.text) && !calls(d24).some((c) => c.tool === "type_text" && /\t/.test(c.args.text)), [st1.text, st2.text].join(" | "));
 L.end();
 const d25 = mkdtempSync(join(tmpdir(), "gate-drive-"));
-L = lane(d25, { FAKE_PAGE_URL: "mail.google.com/mail/u/0", HOST_REQUEST: "On my Mac, read my newest email in Gmail in Chrome" });
+const GMAIL = { FAKE_PAGE_URL: "mail.google.com/mail/u/0", HOST_REQUEST: "On my Mac, read my newest email in Gmail in Chrome",
+  FAKE_EXTRA_ELS: JSON.stringify([{ role: "AXTextArea", label: "Message Body", value: "", frame: { x: 100, y: 300, w: 600, h: 200 } }]) }; // t:7
+L = lane(d25, GMAIL);
 await L.tool("get_window_state", look);
 r = await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
 await L.tool("get_window_state", look);
@@ -434,9 +436,96 @@ await L.tool("get_window_state", look);
 gt.push(await L.tool("type_text", { pid: P, text: " ", intent: "type a space" }));
 check("Gmail: typed Tab-then-space, a bare space, a leading space and a typed Tab are held", gt.every((x) => x.err && /BLOCKED/.test(x.text)), gt.map((x) => x.text.slice(0, 40)).join(" | "));
 check("Gmail: no held text reached the driver", !calls(d25).some((c) => c.tool === "type_text"), JSON.stringify(calls(d25).filter((c) => c.tool === "type_text").map((c) => c.args.text)));
+// A Tab key, then ordinary text: the T does nothing on a Send button and the first space presses it (security 79d8e997 #2,
+// developer 5e53cf05 #1). Held until something puts focus back in a text field.
+const tt = [];
+await L.tool("get_window_state", look);
+tt.push(await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" }));
+await L.tool("get_window_state", look);
+tt.push(await L.tool("type_text", { pid: P, text: "Thanks, see you at 5.", intent: "type a note" }));
+await L.tool("get_window_state", look);
+tt.push(await L.tool("type_text", { pid: P, element_token: "t:4", text: "ok thanks", intent: "type a note" })); // a button's token isn't a text field
+check("Gmail: after press_key tab, text with a space anywhere is held, even after more looks", tt.every((x) => x.err && /BLOCKED/.test(x.text)), tt.map((x) => x.text.slice(0, 40)).join(" | "));
+await L.tool("get_window_state", look);
+await L.tool("hotkey", { pid: P, keys: ["shift", "tab"], intent: "move back one control" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "a b", intent: "type a note" });
+check("Gmail: after hotkey shift+tab, \"a b\" is held", r.err && /BLOCKED/.test(r.text), r.text);
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", modifiers: ["shift"], intent: "move back one control" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "a b", intent: "type a note" });
+check("Gmail: after press_key tab with shift, \"a b\" is held", r.err && /BLOCKED/.test(r.text), r.text);
+check("Gmail: none of the text after a Tab reached the driver", !calls(d25).some((c) => c.tool === "type_text"), JSON.stringify(calls(d25).filter((c) => c.tool === "type_text").map((c) => c.args.text)));
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "thanks", intent: "type a word" });
+check("Gmail: after a Tab, one word with no blank still goes through", !r.err, r.text);
+const ts = [];
+for (const k of [{ t: "hotkey", a: { keys: ["tab", "space"] } }, { t: "hotkey", a: { keys: ["shift", "tab", "space"] } }, { t: "press_key", a: { key: "space", modifiers: ["tab"] } }]) {
+  await L.tool("get_window_state", look); ts.push(await L.tool(k.t, { pid: P, ...k.a, intent: "press the keys" }));
+}
+check("Gmail: Tab plus Space in one hotkey or press_key is held (66aa61e1 #2)", ts.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d25).some((c) => c.tool === "hotkey" && c.args.keys.includes("space")), ts.map((x) => x.text.slice(0, 40)).join(" | "));
+await L.tool("get_window_state", look);
+await L.tool("click", { pid: P, element_token: "t:7", intent: "click in the message body" });
 await L.tool("get_window_state", look);
 r = await L.tool("type_text", { pid: P, text: "Thanks, see you at 5.", intent: "type a note" });
-check("Gmail: normal typing with spaces still goes through", !r.err && calls(d25).some((c) => c.tool === "type_text" && c.args.text === "Thanks, see you at 5."), r.text);
+check("Gmail: after a click in the body, normal typing with spaces goes through", !r.err && calls(d25).some((c) => c.tool === "type_text" && c.args.text === "Thanks, see you at 5."), r.text);
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:7", text: "ok thanks", intent: "type the note into the body" });
+check("Gmail: after a Tab, typing into the body by its element token goes through", !r.err && calls(d25).some((c) => c.tool === "type_text" && c.args.text === "ok thanks" && c.args.element_token === "t:7"), r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "see you soon", intent: "type more of the note" });
+check("Gmail: and typing after that, with no element, goes through too", !r.err, r.text);
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+await L.tool("get_window_state", look);
+await L.tool("click", { pid: P, window_id: 7, x: 300, y: 400, intent: "click in the message body" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "one more line", intent: "type a note" });
+check("Gmail: after a Tab, a click by position in the body clears it too", !r.err, r.text);
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+await L.tool("activate_app", { pid: P, intent: "bring Chrome forward" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("Gmail: bringing the app forward doesn't move focus, so text after a Tab is still held", r.err && /BLOCKED/.test(r.text), r.text);
+L.end();
+// A look that shows a text field has focus clears it; one that doesn't, doesn't.
+const d25f = mkdtempSync(join(tmpdir(), "gate-drive-"));
+const focusFile = join(d25f, "extra.json");
+writeFileSync(focusFile, "[]");
+L = lane(d25f, { ...GMAIL, FAKE_EXTRA_FILE: focusFile });
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+writeFileSync(focusFile, JSON.stringify([{ role: "AXButton", label: "Send", focused: true }]));
+await L.tool("get_window_state", look);
+const fl1 = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+writeFileSync(focusFile, JSON.stringify([{ role: "AXTextArea", label: "Reply", focused: true }]));
+await L.tool("get_window_state", look);
+const fl2 = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("Gmail: a look showing Send focused keeps it held; a look showing a text field focused clears it", fl1.err && /BLOCKED/.test(fl1.text) && !fl2.err, [fl1.text, fl2.text].join(" | "));
+L.end();
+// Mail and Slack desktop apps too; TextEdit isn't a send app, so a Tab there changes nothing.
+const tApps = [];
+for (const app of ["Mail", "Slack"]) {
+  const d = mkdtempSync(join(tmpdir(), "gate-drive-"));
+  L = lane(d, { HOST_APP_NAME: app, FAKE_PAGE_URL: "A1", HOST_REQUEST: `On my Mac, read my newest message in ${app}` });
+  await L.tool("get_window_state", look);
+  await L.tool("press_key", { pid: P, key: "tab", intent: "move to the next control" });
+  await L.tool("get_window_state", look);
+  tApps.push(await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" }));
+  L.end();
+}
+check("Mail and Slack apps: after a Tab, text with a space is held", tApps.every((x) => x.err && /BLOCKED/.test(x.text)), tApps.map((x) => x.text.slice(0, 40)).join(" | "));
+const d25t = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d25t, { HOST_APP_NAME: "TextEdit", FAKE_PAGE_URL: "A1", HOST_REQUEST: "On my Mac, write a note in TextEdit" });
+await L.tool("get_window_state", look);
+await L.tool("press_key", { pid: P, key: "tab", intent: "indent" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("TextEdit: text with spaces after a Tab still goes through", !r.err, r.text);
 L.end();
 const d26 = mkdtempSync(join(tmpdir(), "gate-drive-"));
 L = lane(d26, { ...SLACK, HOST_REQUEST: "On my Mac, open Slack in Chrome and reply 'on my way' to Sam in #general" });
@@ -445,6 +534,27 @@ await L.tool("type_text", { pid: P, element_token: "t:7", text: "on my way", int
 await L.tool("get_window_state", look);
 r = await L.tool("press_key", { pid: P, key: "return", intent: "send the reply" });
 check("browser: Return goes through when the request asks to reply", !r.err && calls(d26).some((c) => c.tool === "press_key"), r.text);
+L.end();
+// A run a lead agent approved (the worker sets HOST_NO_IMPLY): the owner's words are no yes for send, post or buy (security 79d8e997 #1).
+const d26l = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d26l, { ...SLACK, HOST_REQUEST: "On my Mac, reply to Sam in Slack in Chrome and send it", HOST_NO_IMPLY: "send,post,buy" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:7", text: "on my way", intent: "type the text in the box" });
+await L.tool("get_window_state", look);
+const lr = await L.tool("press_key", { pid: P, key: "return", intent: "send the reply" });
+check("lead-approved run: typing the reply goes through, Return in Slack is BLOCKED", !r.err && lr.err && /BLOCKED/.test(lr.text) && held(d26l).includes("send") && !calls(d26l).some((c) => c.tool === "press_key"), [r.text, lr.text].join(" | "));
+await L.tool("get_window_state", look);
+const lc = await L.tool("click", { pid: P, element_token: "t:6", intent: "post the reply" });
+check("lead-approved run: a post is BLOCKED too", lc.err && /BLOCKED/.test(lc.text) && !calls(d26l).some((c) => c.tool === "click" && c.args.element_token === "t:6"), lc.text);
+L.end();
+const d26b = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d26b, { HOST_NO_IMPLY: "send,post,buy" }); // REQ asks to add to cart and pay on walmart.com
+await L.tool("get_window_state", look);
+r = await L.tool("click", { pid: P, element_token: "t:2", intent: "click Add to cart" });
+check("lead-approved run: Add to cart is BLOCKED though the request asked to buy", r.err && /BLOCKED/.test(r.text) && held(d26b).includes("buy"), r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, element_token: "t:3", text: "12 Oak Lane", intent: "enter the delivery address" });
+check("lead-approved run: steps that aren't send, post or buy still go through", !r.err, r.text);
 L.end();
 
 // 16b. The search box allowance is for that box only: after open_url, a look at another window or activate_app, Return and
@@ -479,6 +589,40 @@ await L.tool("get_window_state", look);
 r = await L.tool("press_key", { pid: P, key: "return", intent: "run the search" });
 check("search: Return right after typing in the search box, in the same window, still goes through", !r.err && calls(d24b).filter((c) => c.tool === "press_key").length === 1, r.text);
 L.end();
+// A typed line break submits the search box or address bar, and the page that loads has its own focus: the allowance ends there
+// (Mac verify 66aa61e1 #1). launch_app by name ends it too (its note 1).
+const d24c = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d24c, { ...SLACK, HOST_OPEN_BIN: fakeOpen16 });
+const sl = [], before24c = [];
+await L.tool("get_window_state", look);
+before24c.push(await L.tool("type_text", { pid: P, element_token: "t:1", text: "app.slack.com/client/T1/C1\n", intent: "go to the address" }));
+await L.tool("get_window_state", look);
+sl.push(await L.tool("type_text", { pid: P, text: "approve job\n", intent: "type a note" }));
+await L.tool("get_window_state", look);
+sl.push(await L.tool("press_key", { pid: P, key: "return", intent: "run the search" }));
+await L.tool("get_window_state", look);
+before24c.push(await L.tool("type_text", { pid: P, element_token: "t:5", text: "lunch\n", intent: "search for lunch" }));
+await L.tool("get_window_state", look);
+sl.push(await L.tool("type_text", { pid: P, text: "approve job\n", intent: "type a note" }));
+await L.tool("get_window_state", look);
+await L.tool("click", { pid: P, window_id: 7, x: 60, y: 20, intent: "click in the search box" });
+await L.tool("get_window_state", look);
+before24c.push(await L.tool("type_text", { pid: P, text: "mail.google.com\n", intent: "go to the address" }));
+await L.tool("get_window_state", look);
+sl.push(await L.tool("type_text", { pid: P, text: "approve job\n", intent: "type a note" }));
+await L.tool("get_window_state", look);
+before24c.push(await L.tool("type_text", { pid: P, element_token: "t:5", text: "lunch\n", intent: "search for lunch" }));
+await L.tool("get_window_state", look);
+sl.push(await L.tool("press_key", { pid: P, key: "space", intent: "press the key" }));
+await L.tool("get_window_state", look);
+await L.tool("type_text", { pid: P, element_token: "t:5", text: "lunch", intent: "type in the search box" });
+await L.tool("launch_app", { name: "Google Chrome", intent: "bring Chrome forward" });
+await L.tool("get_window_state", look);
+sl.push(await L.tool("press_key", { pid: P, key: "return", intent: "run the search" }));
+check("search: the searches themselves (ending in a line break) go through", before24c.every((x) => !x.err), before24c.map((x) => x.text.slice(0, 40)).join(" | "));
+check("search: after a typed line break submits the box, or launch_app by name, Return, Space and a typed line break are held",
+  sl.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24c).some((c) => c.tool === "press_key" || (c.tool === "type_text" && /approve job/.test(c.args.text))), sl.map((x) => x.text.slice(0, 40)).join(" | "));
+L.end();
 
 // 17. open_url and launch_app take an app by name, never by path: a path to an off-limits app is refused before anything opens.
 const d27 = mkdtempSync(join(tmpdir(), "gate-drive-"));
@@ -510,6 +654,37 @@ await L.tool("get_window_state", { pid: P, window_id: 21 });
 r = await L.tool("click", { pid: P, window_id: 21, intent: "click the cell" });
 check("a click with neither an element nor both x and y is refused", r.err && /element_token or both x and y/.test(r.text) && !calls(d28).some((c) => c.tool === "click"), r.text);
 L.end();
+
+// 19. The VM lane (cua-lane.mjs, the claude-mac VM) against a stand-in cua: after a Tab key, typed text with a space is held
+// until a click, a launched app or a new page; a screenshot doesn't clear it (security 79d8e997 #2, developer 5e53cf05 #1).
+const d29 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+const fakeCua = join(d29, "cua.sh");
+writeFileSync(fakeCua, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(d29, "cua.log")}'\ncase "$*" in *lsappinfo*) echo '"LSDisplayName"="Google Chrome"';; esac\nexit 0\n`); chmodSync(fakeCua, 0o755);
+const vm = (() => {
+  const p = spawn(process.execPath, [join(ROOT, "worker", "cua-lane.mjs")], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, CUA_BIN: fakeCua, CUA_JOB_DIR: d29, CUA_ALLOW: "", HOME: d29 } });
+  let n = 0, buf = "";
+  const wait = new Map();
+  p.stdout.on("data", (d) => { buf += d; let i; while ((i = buf.indexOf("\n")) >= 0) { const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1); wait.get(m.id)?.(m); } });
+  const tool = (name, args = {}) => new Promise((r) => { const id = ++n; wait.set(id, (m) => r({ err: !!m.result.isError, text: m.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n") }));
+    p.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }) + "\n"); });
+  return { tool, end: () => p.stdin.end() };
+})();
+const typed = () => existsSync(join(d29, "cua.log")) ? readFileSync(join(d29, "cua.log"), "utf8").split("\n").filter((l) => /^do type /.test(l)).map((l) => l.slice(8)) : [];
+const vt = [];
+vt.push(await vm.tool("type_text", { text: "ok thanks", intent: "type a note" }));
+await vm.tool("press_key", { key: "tab", intent: "move to the next control" });
+vt.push(await vm.tool("type_text", { text: "ok thanks", intent: "type a note" }));
+await vm.tool("screenshot");
+vt.push(await vm.tool("type_text", { text: "ok thanks", intent: "type a note" }));
+await vm.tool("hotkey", { keys: "shift+tab", intent: "move back one control" });
+await vm.tool("click", { x: 300, y: 400, intent: "click in the message body" });
+vt.push(await vm.tool("type_text", { text: "see you at 5", intent: "type a note" }));
+await vm.tool("hotkey", { keys: "shift+tab", intent: "move back one control" });
+vt.push(await vm.tool("type_text", { text: "a b", intent: "type a note" }));
+vm.end();
+check("VM lane: text with spaces goes through, then after Tab it's held (a screenshot doesn't clear it), a click clears it, Shift-Tab holds again",
+  !vt[0].err && vt[1].err && /BLOCKED/.test(vt[1].text) && vt[2].err && !vt[3].err && vt[4].err && /BLOCKED/.test(vt[4].text), vt.map((x) => x.text.slice(0, 30)).join(" | "));
+check("VM lane: only the two allowed texts reached the VM", JSON.stringify(typed()) === JSON.stringify(["ok thanks", "see you at 5"]), JSON.stringify(typed()));
 
 console.log(`gate drive: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

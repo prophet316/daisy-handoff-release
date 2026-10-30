@@ -7,9 +7,6 @@ permissions:
   contents: read
 jobs:
   dry-run:
-    # While the repo is private, GitHub's hosted runners are blocked on this account, so the Windows leg runs on the
-    # maintainer's own self-hosted runner and the Mac is covered by local verify runs. Before the repo goes public, put this
-    # back to [macos-latest, windows-latest] and remove the self-hosted runner: see .github/RELEASE-CHECKLIST.md.
     strategy:
       fail-fast: false
       matrix:

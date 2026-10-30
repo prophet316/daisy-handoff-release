@@ -23,7 +23,7 @@ jobs:
       - name: Build the zip (same file name every release, so the latest-download link never breaks)
         run: |
           mkdir -p dist/nuff-said
-          cp -R install.mjs doctor.mjs template test README.md TROUBLESHOOTING.md MANUAL-INSTALL.md LICENSE SECURITY.md CHANGELOG.md RELEASE_NOTES.md dist/nuff-said/
+          cp -R install.mjs doctor.mjs template test README.md TROUBLESHOOTING.md MANUAL-INSTALL.md LICENSE SECURITY.md CHANGELOG.md RELEASE_NOTES.md CONTRIBUTING.md dist/nuff-said/
           (cd dist && zip -qr nuff-said.zip nuff-said && sha256sum nuff-said.zip > nuff-said.zip.sha256)
       - name: Test the zip exactly as a stranger gets it
         run: |

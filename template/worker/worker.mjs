@@ -244,6 +244,11 @@ export function cuaAllow(job, jobDir, approved, state = jobDir) {
   return { allow: [...new Set([...allow, ...held])], held: [...new Set(held)] };
 }
 
+// The kinds {{OWNER}}'s request words don't count as a yes for in the host lane's gate. On a run with followup_from (a lead
+// agent's approval) the request is still {{HIS}} words from the first run, so on its own it would let the job send, post or buy
+// again: those need {{HIS}} own yes.
+export const laneNoImply = (job) => job.followup_from ? OWNER_ONLY_KINDS.filter((k) => k !== "charge").join(",") : "";
+
 // A screen run by an agent's reply or retry would take a new screenshot for it, and a desktop run would act on {{OWNER}}'s
 // desktop: only {{OWNER}} can ask for those. A lead agent's approval of a held desktop step is checked by cuaAllow instead.
 export function agentRerunRefusal(job) {
@@ -355,7 +360,8 @@ function writeLaneConfig(plan, jobDir, job) {
     ? { "host-lane": { command: process.execPath, args: [join(ROOT, "worker", "host-lane.mjs")],
         env: { CUA_DRIVER_BIN: CFG.host?.driverBin || join(HOME, ".local", "bin", "cua-driver"), CUA_ALLOW: plan.lane.allow.join(","), CUA_JOB_DIR: jobDir, CUA_STATE_DIR: plan.state,
           HOST_REQUEST: String(job.details || "").slice(0, 4000), HOST_IDLE_SECONDS: String(CFG.host?.idleSeconds ?? 10),
-          HOST_OVERLAY_BIN: overlayBin(), HOST_OVERLAY: CFG.host?.overlay === false ? "0" : "1", ...(CFG.host?.overlayMotion ? { HOST_OVERLAY_MOTION: CFG.host.overlayMotion } : {}), ...(CFG.host?.env || {}) } } }
+          HOST_OVERLAY_BIN: overlayBin(), HOST_OVERLAY: CFG.host?.overlay === false ? "0" : "1", ...(CFG.host?.overlayMotion ? { HOST_OVERLAY_MOTION: CFG.host.overlayMotion } : {}), ...(CFG.host?.env || {}),
+          HOST_NO_IMPLY: laneNoImply(job) } } } // after host.env, so a config setting can't drop it
     : { "cua-lane": { command: process.execPath, args: [join(ROOT, "worker", "cua-lane.mjs")],
         env: { CUA_BIN: CFG.cua?.bin || join(HOME, ".local", "bin", "cua"), CUA_SANDBOX: CFG.cua?.sandbox || "claude-mac", CUA_ALLOW: plan.lane.allow.join(","), CUA_JOB_DIR: jobDir, CUA_STATE_DIR: plan.state } } };
   writeFileSync(plan.mcpConfig, JSON.stringify({ mcpServers: server }, null, 1));
