@@ -23,8 +23,8 @@ globalThis.fetch = async (u) => { fs.appendFileSync(${JSON.stringify(log)}, Stri
 
 function doctor() {
   fs.rmSync(log, { force: true });
-  // HOME points at the throwaway home, so the doctor treats this install as the live one and runs its live checks.
-  const r = spawnSync(process.execPath, ["--import", hook, path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home } });
+  // HOME (USERPROFILE on Windows) points at the throwaway home, so the doctor treats this install as the live one and runs its live checks.
+  const r = spawnSync(process.execPath, ["--import", hook, path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } }); // USERPROFILE: Windows' home
   const urls = fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : [];
   return { out: `${r.stdout}${r.stderr}`, urls };
 }
