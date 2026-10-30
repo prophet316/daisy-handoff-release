@@ -108,7 +108,7 @@ check(nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 13) ? "ok" : "fail", `
 check(which(process.platform === "win32" ? "npx.cmd" : "npx") ? "ok" : "fail", "npx (comes with Node)", "Reinstall Node from nodejs.org.", "Node is missing or too old");
 if (MAC) {
   const clt = run("xcode-select", ["-p"]);
-  check(clt.status === 0 ? "ok" : "fail", `Apple's Command Line Tools${clt.status === 0 ? "" : " are missing"} (they provide python3, which the phone bell uses)`,
+  check(clt.status === 0 ? "ok" : "fail", `Apple's Command Line Tools${clt.status === 0 ? "" : " are missing"} (the phone bell's python3 and the blue glow's Swift come with them)`,
     "In Terminal run: xcode-select --install   and click Install. It's free and takes a few minutes.", "Command Line Tools");
 }
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -160,7 +160,7 @@ if (!DIR || !site) {
     const deployed = isDeployed(cfg.base);
     check(deployed ? "ok" : "fail", deployed ? "worker knows its connector" : "the connector was never deployed (this is a dry run, or the install stopped before Cloudflare)",
       receiptJson?.manual && receiptJson?.dryRun ? FINISH : receiptJson?.dryRun ? "A dry run never deploys. Run node install.mjs without --dry-run." : `${FINISH} Finish the Cloudflare sign-in when your browser opens.`, "Cloudflare sign-in or deploy failed");
-    say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}${receiptJson?.unfinished ? " in the new files, but Cloudflare and the running worker may still use your old setting until the update finishes" : ""}`);
+    say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}${receiptJson?.unfinished && receiptJson?.updatedFrom ? " in the new files, but Cloudflare and the running worker may still use your old setting until the update finishes" : ""}`);
   }
 
   // An install made with --home (a test copy) has its services and Claude settings under that folder, not this account's.
@@ -236,7 +236,7 @@ if (!DIR || !site) {
       const ov = cfg.host?.overlayBin || path.join(HOME, site.dotdir || ".daisy", "overlay", "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay");
       const built = fs.existsSync(ov);
       check(built ? "ok" : "warn", `blue glow and ${site.assistant || "assistant"} cursor helper ${built ? "is built" : "isn't built"}`,
-        `Desktop control still works, with CuaDriver's own cursor and no glow. To build it: bash "${path.join(DIR, "worker", "overlay", "build.sh")}" (needs Apple's Command Line Tools: xcode-select --install), or run node install.mjs --update.`, "Desktop control doesn't work");
+        `Desktop control still works, with CuaDriver's own cursor and no glow. To build it: bash "${path.join(DIR, "worker", "overlay", "build.sh")}" (needs Apple's Command Line Tools: xcode-select --install)${receiptJson?.manual ? ", or wait for MANUAL-INSTALL.md step 5, which builds it" : ", or run node install.mjs --update"}.`, "Desktop control doesn't work");
     }
   }
 

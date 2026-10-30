@@ -74,8 +74,9 @@ function yesNo(a) {
 // After --rotate-keys: what a leaked URL with the command line on could reach, and how to take it back. Same substance as
 // SECURITY.md ("If your connector URL or a key leaks") and the README.
 const LEAK_STEPS = (dir, db) => [
-  "  2. If the URL was out while the command line was on, assume someone ran commands as you. They could read anything you",
-  "     can: the Cloudflare sign-in wrangler saved, your Claude Code sign-in, GitHub and other tokens and keys on this computer.",
+  "  2. Assume someone ran commands as you, whether or not the command line was on: a code job has its own command line.",
+  "     They could read anything you can: the Cloudflare sign-in wrangler saved, your Claude Code sign-in, GitHub and other",
+  "     tokens and keys on this computer.",
   `     In ${dir}:`,
   `     - Cloudflare: run npx -y ${WRANGLER} logout, then in the Cloudflare dashboard revoke other sessions (My Profile >`,
   "       Sessions), roll your API tokens (My Profile > API Tokens), and read the Audit Logs for changes you didn't make.",
@@ -272,8 +273,8 @@ async function main() {
   const keepPower = prev && !has("no-power-lanes") && !has("power-lanes") ? prevPower : null;
   if (prev && keepPower === null && !has("no-power-lanes") && !has("power-lanes")) die("couldn't tell whether your install had the command line and desktop control on. Run the update again with --no-power-lanes or --power-lanes. Nothing was changed.");
   if (!has("no-power-lanes") && keepPower !== false) for (const l of POWER_WARNING) say(`  ${l}`);
-  // Enter (or --yes) takes the documented default, on. Only a clear yes turns it on, and a clear no ("no", "nope",
-  // "no thanks") leaves it off. Anything else is asked again, like the bell question, and after three tries it's off.
+  // Enter (or --yes) takes the documented default, on. A clear yes is on, a clear no ("no", "nope", "no thanks") is off.
+  // Anything else is asked again, like the bell question, and after three tries it's off.
   let power = keepPower ?? (has("no-power-lanes") ? false : has("power-lanes") ? true : null);
   for (let i = 0; power === null; i++) {
     const a = String(await ask(i ? "Command line and desktop control? Type yes or no (Enter means yes)" : POWER_QUESTION, "yes")).trim();
@@ -617,7 +618,12 @@ async function rotateKeys() {
       }
       note(clear ? "jobs you chose to stop are cancelled, not started again" : "jobs that were running go back in the queue and start again");
     } else if (!MAC && !DRY) note("restart the worker so it uses the new key: sign out of Windows and back in");
-    else skip(`restarting the worker and supervisor (${DRY ? "dry run" : "--no-start"})`);
+    else if (DRY) skip("restarting the worker and supervisor (dry run)");
+    else {
+      skip("restarting the worker and supervisor (--no-start)");
+      note("restart them yourself so they use the new key (log out and back in, or launchctl kickstart -k gui/$(id -u)/com.daisy.handoff-worker");
+      note("and the same for com.daisy.supervisor). Until then the old worker key is refused and nothing new runs.");
+    }
     if (!DRY) {
       const s = await smokeCheck(fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim());
       (s.ok ? ok : note)(s.ok ? `the new URL answers (${s.tools} tools)` : `the new URL didn't answer yet (${s.why})`);
@@ -629,9 +635,11 @@ async function rotateKeys() {
 
   if (ROTATE) {
     say("\n  Next:");
-    say("  1. In Claude, remove the old connector under Customize > Connectors. If the command line was off while the URL was out,");
-    say("     add it again with the new URL" +
-      (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`) + " If it was on, wait for step 4.");
+    say("  1. In Claude, remove the old connector under Customize > Connectors, and don't add the new URL yet. Whoever had the URL");
+    say("     could queue jobs, and a code job runs Claude Code with its own command line even when the command line switch is off,");
+    say("     so do steps 2 to 4 first, whichever way the switch was set. If this is the step 4 run and steps 2 and 3 are done, add");
+    say("     the connector now with the new URL" +
+      (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`));
     for (const l of LEAK_STEPS(dir, db)) say(l);
   }
   say(`\n${DRY ? "DRY RUN COMPLETE" : "DONE"}  (${dir})`);
@@ -679,7 +687,7 @@ function clean(s) {
 function buildOverlay(dir, out) {
   if (SIM || MANUAL || (DRY && !has("build-overlay"))) return skip(`building the blue glow and the assistant's cursor (${SIM ? "files for another computer" : MANUAL ? "manual install: MANUAL-INSTALL.md has the step" : "dry run"})`);
   const tools = run("xcrun", ["--find", "swiftc"]);
-  if (tools.status !== 0) return note("desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing (xcode-select --install, then node install.mjs --update). See TROUBLESHOOTING.md.");
+  if (tools.status !== 0) return note("desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing (xcode-select --install, then node install.mjs --update). If a window asks to install the tools, you can click Install. See TROUBLESHOOTING.md.");
   const r = run("bash", [path.join(dir, "worker", "overlay", "build.sh"), out]);
   if (r.status === 0 && fs.existsSync(path.join(out, "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay"))) return ok(`blue glow and cursor built for this Mac (${path.join(out, "DaisyOverlay.app")})`);
   note(`desktop control works, but the blue glow and cursor didn't build (${tail(r)}). See TROUBLESHOOTING.md.`);

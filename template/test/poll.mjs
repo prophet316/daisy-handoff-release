@@ -41,7 +41,7 @@ const srv = createServer(async (req, res) => {
 await new Promise((r) => srv.listen(0, "127.0.0.1", r));
 
 // The connector rewrites the supervisor's check-in once it's 10 s old, so with the real 15 s idle poll run_command (which
-// refuses when the check-in is over 30 s old) is never refused on a working Mac. Connector only; the supervisor isn't up yet.
+// refuses when the check-in is over 45 s old) is never refused on a working Mac. Connector only; the supervisor isn't up yet.
 const iso = (agoMs = 0) => new Date(Date.now() - agoMs).toISOString();
 const setCheckin = (ago) => db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('supervisor', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value=?1")
   .run(JSON.stringify({ at: iso(ago), pid: 1, status: null }), iso(ago));
@@ -49,17 +49,17 @@ setCheckin(11_000);
 await connector.fetch(new Request("https://test.invalid/api/control", { method: "POST", headers: { Authorization: `Bearer ${KEY}` }, body: "{}" }), env);
 const at = JSON.parse(db.prepare("SELECT value FROM settings WHERE key='supervisor'").get().value).at;
 check("a poll rewrites a check-in that's 11 s old (the idle poll is 15 s)", Date.now() - Date.parse(at) < 2000, at);
-setCheckin(29_000);
+setCheckin(44_000);
 const pending = connector.fetch(new Request(`https://test.invalid/${env.CONNECTOR_KEY}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "160.79.104.20" },
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "run_command", arguments: { command: "echo hi" } } }) }), env);
 await sleep(300);
 db.prepare("UPDATE control SET taken_at=?1, done_at=?1, result='{\"text\":\"ok\"}' WHERE kind='shell'").run(iso());
 const shellText = (await (await pending).json()).result.content[0].text;
-check("run_command is queued while the check-in is under 30 s old", !/Not run/.test(shellText) && db.prepare("SELECT count(*) AS n FROM control WHERE kind='shell'").get().n === 1, shellText);
-setCheckin(31_000);
+check("run_command is queued while the check-in is under 45 s old", !/Not run/.test(shellText) && db.prepare("SELECT count(*) AS n FROM control WHERE kind='shell'").get().n === 1, shellText);
+setCheckin(46_000);
 const late = (await (await connector.fetch(new Request(`https://test.invalid/${env.CONNECTOR_KEY}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "160.79.104.20" },
   body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "run_command", arguments: { command: "echo hi" } } }) }), env)).json()).result.content[0].text;
-check("and refused, with nothing queued, once it's over 30 s old", /<job-output>\nNot run/.test(late) && db.prepare("SELECT count(*) AS n FROM control WHERE kind='shell'").get().n === 1, late);
+check("and refused, with nothing queued, once it's over 45 s old", /<job-output>\nNot run/.test(late) && db.prepare("SELECT count(*) AS n FROM control WHERE kind='shell'").get().n === 1, late);
 db.prepare("DELETE FROM settings WHERE key='supervisor'").run(); db.prepare("DELETE FROM control").run();
 
 const tag = "polltest", keyFile = `logs/.${tag}-key`, cfg = join(ROOT, "logs", `${tag}-config.json`);

@@ -13,6 +13,9 @@ const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let fail = 0;
 const check = (ok, s, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${s}${ok || !extra ? "" : `  (${String(extra).slice(-400)})`}`); if (!ok) fail++; };
 if (process.platform !== "darwin") { console.log("overlay build: Mac only, skipped"); process.exit(0); }
+if (spawnSync("xcrun", ["--find", "swiftc"], { stdio: "ignore" }).status !== 0) {
+  console.log("overlay build: skipped, Apple's Command Line Tools are missing (install them with xcode-select --install, then run this again)"); process.exit(0);
+}
 const homes = [];
 const install = (args, env = {}) => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "overlay-build-"))); homes.push(home);

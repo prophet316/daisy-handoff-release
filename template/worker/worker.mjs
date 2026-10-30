@@ -211,7 +211,9 @@ export function cuaAllow(job, jobDir, approved, state = jobDir) {
   try { allow = JSON.parse(job.allow || "[]"); } catch {}
   allow = allow.filter((k) => LANE_KINDS.includes(k));
   // An agent's reply or retry (followup_from on a run that isn't an approval) keeps nothing {{OWNER}} allowed the first time.
-  if (job.followup_from && !approved) allow = [];
+  // A lead agent's approval keeps the rest but never send, post, buy or charge, even when {{OWNER}}'s first request allowed
+  // them: after a restart the job may already have sent once, and only {{OWNER}} can say to run it again.
+  if (job.followup_from) allow = approved ? allow.filter((k) => !OWNER_ONLY_KINDS.includes(k)) : [];
   let held = [];
   if (approved) {
     held = heldKinds(state).filter((k) => [...LANE_KINDS, "charge", "personal"].includes(k)); // charge and personal come only from an approved hold

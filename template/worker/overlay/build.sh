@@ -26,7 +26,8 @@ cat > "$TMP/DaisyOverlay.app/Contents/Info.plist" <<'EOF'
   <key>LSMinimumSystemVersion</key><string>13.0</string>
 </dict></plist>
 EOF
-codesign --force --sign - "$TMP/DaisyOverlay.app" >/dev/null
+# The linker already signed it, so codesign says "replacing existing signature": only show what it says when it fails.
+SIGN="$(codesign --force --sign - "$TMP/DaisyOverlay.app" 2>&1)" || { echo "$SIGN" >&2; exit 1; }
 mkdir -p "$OUT"
 rm -rf "$APP.new" && mv "$TMP/DaisyOverlay.app" "$APP.new"
 rm -rf "$APP" && mv "$APP.new" "$APP"

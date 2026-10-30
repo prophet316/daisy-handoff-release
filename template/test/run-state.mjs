@@ -107,6 +107,8 @@ writeFileSync(join(leadRun, ".cua-held.json"), JSON.stringify([{ blocked: ["send
 writeFileSync(join(leadRun, ".purchase-held.json"), "{}");
 const byLead = cuaAllow({ ...job, followup_from: "lead agent boss" }, oldDir, true, leadRun).allow;
 check("a lead agent's approval unlocks no send, post, buy or charge", !["send", "post", "buy", "charge"].some((k) => byLead.includes(k)) && byLead.includes("delete"), JSON.stringify(byLead));
+const leadKeeps = cuaAllow({ ...job, allow: JSON.stringify(["send", "post", "buy", "delete"]), followup_from: "lead agent boss" }, oldDir, true, join(tmp, "no-such-run")).allow;
+check("a lead agent's approval drops the send, post and buy the owner's first request allowed, and keeps the rest", !["send", "post", "buy", "charge"].some((k) => leadKeeps.includes(k)) && leadKeeps.includes("delete"), JSON.stringify(leadKeeps));
 const byOwner = cuaAllow(job, oldDir, true, leadRun).allow;
 check("the owner's approval unlocks what the gate held", ["send", "post", "delete", "charge"].every((k) => byOwner.includes(k)), JSON.stringify(byOwner));
 

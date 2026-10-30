@@ -213,6 +213,8 @@ check(r.status !== 0 && /no terminal here/.test(r.stderr) && /No keys were chang
 r = rinstall(["--dry-run", "--rotate-keys", "--yes"]);
 check(r.status === 0 && /\[1\/5\] Clean connector code[\s\S]*\[2\/5\] New connector key/.test(r.stdout) && /4\. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more/.test(r.stdout),
   "--rotate-keys deploys the clean code before the new connector key, and ends by saying to change the keys again after the Cloudflare sign-out", `${r.status} ${r.stderr.slice(-300)}`);
+check(/don't add the new URL yet/.test(r.stdout) && /whichever way the switch was set/.test(r.stdout) && /Assume someone ran commands as you, whether or not the command line was on/.test(r.stdout) &&
+  !/If the command line was off while the URL was out/.test(r.stdout), "the leak steps say to do the cleanup whether or not the command line was on", r.stdout.slice(-1500));
 // The real (not dry) order, against a stand-in for wrangler that logs each call: the clean code is deployed and a secret
 // Nuff Said never sets is removed before any key is stored. The stand-in fails at the worker key, so nothing goes further.
 const fakeBin = path.join(rhome, "fakebin"), calls = path.join(rhome, "wrangler-calls.txt");
