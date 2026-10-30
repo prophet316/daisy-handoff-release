@@ -10,6 +10,7 @@
 //                --platform darwin|win32 (only with --dry-run: write the other OS's files, for testing)
 //                --no-start (deploy for real, write the startup files, but don't start the worker)
 //                --no-power-lanes (turn off the command line and desktop control, which are on by default)
+//                --lead-agent NAME (let one named agent approve held actions for you; off by default, see the README)
 //
 // Needs Node 20+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
 // It never prints your connector URL or keys. The URL works like a password: it goes to your clipboard
@@ -28,6 +29,16 @@ const WRANGLER = "wrangler@4.151.3";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = path.join(HERE, "template");
 // Shown before the command line and desktop control question. Same substance as README, SECURITY.md and RELEASE_NOTES.md.
+const UPGRADES = [
+  "ALTER TABLE job_messages ADD COLUMN sender TEXT",
+  "ALTER TABLE jobs ADD COLUMN created_by TEXT",
+  "ALTER TABLE jobs ADD COLUMN followup_from TEXT",
+];
+const LEAD_WARNING = (name) => [
+  `lead agent "${name}" can approve held actions for you (sends, posts, spending, deletes). Off unless you ask for it.`,
+  "Every approval it gives is logged as that agent, never as you. It proves itself with .lead-agent-key, but any job on",
+  "this computer can read that file, so a job that was tricked could approve for you too. Turn it on only if you accept that.",
+];
 const POWER_WARNING = [
   "Read this first. This ships with the command line and desktop control turned on, the way the author uses it.",
   "That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps,",
@@ -42,10 +53,10 @@ const HOST = process.platform; // the OS we are really running on
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(`--${f}`);
 const val = (f) => { const i = argv.indexOf(`--${f}`); const v = argv[i + 1]; return i >= 0 && v && !v.startsWith("--") ? v : undefined; };
-const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes"]);
+const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent"]);
 for (const a of argv) if (a.startsWith("--") && !KNOWN.has(a.slice(2))) die(`unknown option ${a} (try --help)`);
 if (has("help")) {
-  const head = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 17);
+  const head = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 18);
   console.log(head.map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(0);
 }
@@ -151,12 +162,17 @@ async function main() {
   const power = !has("no-power-lanes") && (has("power-lanes") ||
     !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes")));
   ask.close();
+  // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
+  const lead = (val("lead-agent") || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
+  if (has("lead-agent") && !lead) die("--lead-agent needs a name, e.g. --lead-agent captain");
   const base = assistant.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "assistant";
   const slug = `${base}-handoff`.slice(0, 50);
   const dotdir = `.${base}`;
   const dir = path.join(HOME, "Projects", slug);
   ok(`${owner}'s assistant ${assistant}, on the ${machine}`);
   ok(`install folder ${dir}`);
+  if (lead) for (const l of LEAD_WARNING(lead)) note(l);
+  else ok("only you can approve held actions, from your own Claude chat; other agents can't (to change that: --lead-agent NAME)");
   (power ? note : ok)(`command line and desktop control ${power ? "on: jobs can run shell commands and use this computer's desktop (turn off: rerun the installer with --no-power-lanes)" : "off (turn on: rerun the installer with --power-lanes, or answer yes)"}`);
 
   const agents = path.join(HOME, "Library", "LaunchAgents");
@@ -182,6 +198,7 @@ async function main() {
     ALARM_TO: "alarm-off@example.invalid", ALARM_FROM: "alarm-off@example.invalid",
     VM_LANE: "off",
     POWER_LANES: power ? "on" : "off",
+    LEAD_AGENT: lead,
     WORKER_CONFIG_JSON: JSON.stringify(worker, null, 2),
   };
   const n = render(TEMPLATE, dir, tokens);
@@ -199,8 +216,9 @@ async function main() {
 
   // 4. keys
   step("Making private keys", TOTAL);
-  for (const f of [".connector-key", ".worker-key", ".bell-key"]) writeSecret(path.join(dir, f), randomBytes(32).toString("hex"));
-  ok("3 keys made on this computer, readable only by you");
+  const keyFiles = [".connector-key", ".worker-key", ".bell-key", ...(lead ? [".lead-agent-key"] : [])];
+  for (const f of keyFiles) writeSecret(path.join(dir, f), randomBytes(32).toString("hex"));
+  ok(`${keyFiles.length} keys made on this computer, readable only by you`);
 
   // 5. cloudflare
   step("Putting your connector on Cloudflare", TOTAL);
@@ -208,7 +226,7 @@ async function main() {
   if (DRY) {
     url = `https://${slug}.your-subdomain.workers.dev`;
     skip(`deploy (dry run). For real: wrangler login, d1 create ${slug}-jobs, d1 execute schema.sql, deploy, 2 secrets`);
-  } else url = deploy(dir, slug);
+  } else url = deploy(dir, slug, lead);
   setWorkerBase(dir, url);
   writeSecret(path.join(dir, ".connector-url"), `${url}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
   ok("worker pointed at the connector; private URL saved in .connector-url");
@@ -236,7 +254,7 @@ async function main() {
   say(`  That URL works like a password. Anyone who has it can hand your computer work. Don't post it or share it.`);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
-    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, steps,
+    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, steps,
   }, null, 2) + "\n");
   say(`\n${DRY ? "DRY RUN COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
 }
@@ -287,7 +305,8 @@ function workerConfig(home, claudeBin, slug, power) {
 }
 
 function render(src, out, tokens) {
-  for (const [k, v] of Object.entries(tokens)) if (typeof v !== "string" || !v) die(`internal: token ${k} has no value`);
+  const MAY_BE_EMPTY = new Set(["LEAD_AGENT"]); // "" means off
+  for (const [k, v] of Object.entries(tokens)) if (typeof v !== "string" || (!v && !MAY_BE_EMPTY.has(k))) die(`internal: token ${k} has no value`);
   const left = [];
   let n = 0;
   const walk = (d) => {
@@ -319,7 +338,7 @@ function setWorkerBase(dir, url) {
   fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
 }
 
-function deploy(dir, slug) {
+function deploy(dir, slug, lead) {
   const npx = HOST === "win32" ? "npx.cmd" : "npx";
   const W = (args, o = {}) => run(npx, ["-y", WRANGLER, ...args], { cwd: dir, ...o });
   const who = W(["whoami"]);
@@ -338,6 +357,11 @@ function deploy(dir, slug) {
   ok(`database ${db}`);
   const ex = W(["d1", "execute", db, "--remote", "--file", "schema.sql", "-y"]);
   if (ex.status !== 0) die(`couldn't create the job table: ${tail(ex)}`);
+  // Columns added after a release: a fresh table already has them, an older one gets them here.
+  for (const sql of UPGRADES) {
+    const r = W(["d1", "execute", db, "--remote", "--command", sql, "-y"]);
+    if (r.status !== 0 && !/duplicate column/i.test(`${r.stdout}${r.stderr}`)) die(`couldn't update the job table: ${tail(r)}`);
+  }
   ok("job table");
   const dep = W(["deploy"]);
   const out = `${dep.stdout}${dep.stderr}`;
@@ -347,7 +371,7 @@ function deploy(dir, slug) {
     die(`deploy failed: ${tail(dep)}`);
   }
   ok("connector deployed");
-  for (const [name, file] of [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"]]) {
+  for (const [name, file] of [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"], ...(lead ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])]) {
     const r = W(["secret", "put", name], { input: fs.readFileSync(path.join(dir, file), "utf8") });
     if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}`);
   }

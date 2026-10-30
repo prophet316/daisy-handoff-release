@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   cancel_at TEXT,
   stall_alerted TEXT,
   checkin TEXT,
-  recoveries TEXT
+  recoveries TEXT,
+  created_by TEXT, -- NULL: the owner; else the agent that added the job
+  followup_from TEXT -- NULL: the owner; else the agent behind the pending reply, retry or approval
 );
 CREATE INDEX IF NOT EXISTS jobs_status_created_v3 ON jobs (status, created_at);
 CREATE TABLE IF NOT EXISTS job_files (
@@ -95,7 +97,8 @@ CREATE TABLE IF NOT EXISTS job_messages (
   job_id TEXT NOT NULL,
   message TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  delivered_at TEXT
+  delivered_at TEXT,
+  sender TEXT -- NULL: the owner; else the agent that sent it
 );
 CREATE INDEX IF NOT EXISTS job_messages_job ON job_messages (job_id, delivered_at);
 CREATE TABLE IF NOT EXISTS settings (

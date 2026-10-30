@@ -552,6 +552,32 @@ async function keyMatches(given, expected) {
   return crypto.subtle.timingSafeEqual(a, b);
 }
 
+// ---- Who is calling ----
+// {{OWNER}}'s own Claude chat reaches this connector from Anthropic's cloud, whose published outbound range is
+// 160.79.104.0/21 (platform.claude.com/docs/en/api/ip-addresses). Cloudflare sets CF-Connecting-IP itself, so a caller
+// can't fake it. Anything else holding the URL (an agent or job on a computer) is an agent, whatever it claims;
+// X-Daisy-Agent only names it. Only {{OWNER}} clears an approval stop, unless he turned on "let my lead agent approve for me":
+// LEAD_AGENT names that agent, and it must also send X-Daisy-Lead-Key matching the LEAD_AGENT_KEY secret.
+const OWNER_CIDRS = "160.79.104.0/21";
+function ipIn(ip, cidrs) {
+  const n = (a) => a.split(".").reduce((x, o) => (x * 256) + Number(o), 0);
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return false;
+  return cidrs.split(",").map((c) => c.trim()).filter(Boolean).some((c) => {
+    const [base, bits = "32"] = c.split("/"); const size = 2 ** (32 - Number(bits));
+    return Math.floor(n(ip) / size) === Math.floor(n(base) / size);
+  });
+}
+async function callerOf(request, env) {
+  const owner = ipIn(request.headers.get("CF-Connecting-IP") || "", String(env.OWNER_CIDRS || OWNER_CIDRS));
+  if (owner) return { owner: true, lead: false, name: "{{OWNER}}", label: "{{OWNER}}" };
+  const name = (request.headers.get("X-Daisy-Agent") || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40) || "unnamed";
+  const lead = !!env.LEAD_AGENT && name === env.LEAD_AGENT && await keyMatches(request.headers.get("X-Daisy-Lead-Key") || "", env.LEAD_AGENT_KEY);
+  return { owner: false, lead, name, label: `agent ${name}` };
+}
+const OWNER_CALLER = { owner: true, lead: false, name: "{{OWNER}}", label: "{{OWNER}}" };
+const whoOf = (env) => env.WHO || OWNER_CALLER;
+const notOwner = (who) => who.owner ? null : who.label;
+
 const noJob = (id) => toolText(`No job with id "${id}". Use list_jobs to see recent ids.`, true);
 const findJob = async (env, id) => (id ? await env.DB.prepare("SELECT * FROM jobs WHERE id = ?1").bind(id).first() : null);
 
@@ -825,13 +851,14 @@ async function getJob(env, args) {
     `Added ${centralTime(j.created_at)}` + (j.started_at ? `, started ${centralTime(j.started_at)}` : "") +
       (j.finished_at ? `, finished ${centralTime(j.finished_at)}` : "") + (mins !== null ? ` (${mins} min)` : "") + ".",
     j.origin ? `From ${j.origin}.` : "",
+    j.created_by ? `Created by ${j.created_by}, not {{OWNER}}.` : "",
     await progressText(env, j),
     watchText(j),
     `Mode: ${j.mode || "code"}.` + (j.mode === "computer" ? ` Runs ${j.target === "host" ? "on {{OWNER}}'s real Mac (host lane)" : "in the CUA lane (claude-mac VM)"}. Allowed: ${j.allow ? JSON.parse(j.allow).join(", ") : "nothing gated"}.` : j.project_dir ? ` Works in ${j.project_dir.replace(HOME, "~")}.` : "") + (j.thread_id ? ` Thread id ${j.thread_id}.` : ""),
     j.publish || j.share_with ? `Publish request:${publishText(j.publish && JSON.parse(j.publish), j.share_with && JSON.parse(j.share_with))}` : "",
     j.published ? `Published: ${publishedText(JSON.parse(j.published)) || "nothing yet"}` : "",
     j.status === "failed" && j.published && JSON.parse(j.published).work_done ? "The work itself finished; only publishing failed. publish_job retries it when {{OWNER}} asks." : "",
-    j.status === "queued" && j.run_mode !== "fresh" ? `Next run: ${j.run_mode}${j.followup ? `, with {{OWNER}}'s note: ${j.followup}` : ""}.` : "",
+    j.status === "queued" && j.run_mode !== "fresh" ? `Next run: ${j.run_mode}${j.followup ? `, with ${j.followup_from ? `a note from ${j.followup_from} (not {{OWNER}})` : "{{OWNER}}'s note"}: ${j.followup}` : ""}.` : "",
     j.result ? `Result: ${j.result}` : "No result yet.",
     j.held && !j.sent ? heldText(JSON.parse(j.held)) : "",
     j.sent ? `Sent: ${sentText(JSON.parse(j.sent))}` : "",
@@ -927,11 +954,11 @@ const modeText = (mode, dir) => ` Mode: ${mode}${dir ? `, in ${dir.replace(HOME,
 const newId = () => crypto.randomUUID().slice(0, 8);
 
 const insertStmt = (env, id, f) => env.DB.prepare(
-  `INSERT INTO jobs (id, title, details, status, created_at, updated_at, run_mode, mode, project_dir, thread_id, publish, share_with, origin, after_job, run_group, allow, target)
-   VALUES (?1, ?2, ?3, 'queued', ?4, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
+  `INSERT INTO jobs (id, title, details, status, created_at, updated_at, run_mode, mode, project_dir, thread_id, publish, share_with, origin, after_job, run_group, allow, target, created_by)
+   VALUES (?1, ?2, ?3, 'queued', ?4, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`
 ).bind(id, f.title, f.details, f.now, f.run_mode || "fresh", f.mode, f.project_dir, f.thread_id || null,
   f.publish ? JSON.stringify(f.publish) : null, f.share ? JSON.stringify(f.share) : null, f.origin || null, f.after_job || null, f.run_group || null,
-  f.allow && f.allow.length ? JSON.stringify(f.allow) : null, f.target || null);
+  f.allow && f.allow.length ? JSON.stringify(f.allow) : null, f.target || null, f.created_by || null);
 
 async function insertJob(env, f) {
   const id = newId();
@@ -950,7 +977,7 @@ async function addJob(env, args) {
   if (pb.err) return toolText(pb.err, true);
   if (pb.share && !pb.publish) return toolText("share_with needs publish_to too: a job can only share what it publishes.", true);
   const now = new Date().toISOString();
-  const id = await insertJob(env, { title, details, now, ...w, ...pb });
+  const id = await insertJob(env, { title, details, now, ...w, ...pb, created_by: notOwner(whoOf(env)) });
   return toolText(`Queued job ${id}: "${title}" (added ${centralTime(now)}).${modeText(w.mode, w.project_dir)}${publishText(pb.publish, pb.share)} The {{MACHINE}} worker usually picks it up within a minute.${await pendingNote(env)}`);
 }
 
@@ -1062,6 +1089,11 @@ async function approveJob(env, args) {
   if (j.status !== "needs_approval") {
     return toolText(`"${j.title}" (id ${id}) is ${j.status}, not waiting for approval, so there is nothing to approve.${j.status === "done" || j.status === "failed" ? " Use reply_to_job to ask for more." : ""}`, true);
   }
+  const who = whoOf(env);
+  if (!who.owner && !who.lead) {
+    return toolText(`Only {{OWNER}} can approve "${j.title}" (id ${id}), from {{HIS}} own Claude chat. This came from ${who.label}, so nothing changed.` +
+      (env.LEAD_AGENT ? "" : " (Letting a lead agent approve for {{HIM}} is turned off.)"), true);
+  }
   const note = typeof args.note === "string" ? args.note.trim().slice(0, 2000) : "";
   const held = j.held ? JSON.parse(j.held) : null;
   if (held && j.sent) return toolText(`"${j.title}" (id ${id}) already sent its email (${sentText(JSON.parse(j.sent))}). It is never sent twice.`, true);
@@ -1069,8 +1101,9 @@ async function approveJob(env, args) {
     return toolText(`"${j.title}" (id ${id}) holds an email that can't be sent as drafted: ${held.problems.join(" ")} Use reply_to_job with {{OWNER}}'s answer; nothing was sent.`, true);
   }
   const now = new Date().toISOString();
-  const history = addHistory(j, now, lastRun(j), `{{OWNER}} approved${note ? `: ${note}` : "."}`);
-  if (!(await requeue(env, j, "needs_approval", "approved", note || null, history, now, ", approved_at=?6"))) {
+  const by = who.owner ? "{{OWNER}} approved" : `Lead agent ${who.name} approved for {{OWNER}} (not {{OWNER}} directly)`;
+  const history = addHistory(j, now, lastRun(j), `${by}${note ? `: ${note}` : "."}`);
+  if (!(await requeue(env, j, "needs_approval", "approved", note || null, history, now, ", approved_at=?6, followup_from=?7", [who.owner ? null : `lead agent ${who.name}`]))) {
     return toolText(`"${j.title}" changed while approving; check it with get_job and try again.`, true);
   }
   // A held email is sent only exactly as drafted. Approval with a note is a normal approved run instead: the draft is dropped, never sent.
@@ -1089,28 +1122,37 @@ async function replyToJob(env, args) {
   if (found.reply) return found.reply;
   const j = found.job, id = j.id;
   const now = new Date().toISOString();
+  const who = whoOf(env), from = notOwner(who), by = who.owner ? "{{OWNER}}" : `${who.label} (not {{OWNER}})`;
   if (j.status === "running") {
-    // Steering: the worker hands the message to the agent at its next step, once.
+    // Steering: the worker hands the message to the agent at its next step, once, labeled with who sent it.
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO job_messages (job_id, message, created_at) VALUES (?1, ?2, ?3)").bind(id, message, now),
-      env.DB.prepare("UPDATE jobs SET history=?2, updated_at=?3 WHERE id=?1").bind(id, addHistory(j, now, `{{OWNER}} said mid-run: ${message}`), now),
+      env.DB.prepare("INSERT INTO job_messages (job_id, message, created_at, sender) VALUES (?1, ?2, ?3, ?4)").bind(id, message, now, from),
+      env.DB.prepare("UPDATE jobs SET history=?2, updated_at=?3 WHERE id=?1").bind(id, addHistory(j, now, `${by} said mid-run: ${message}`), now),
     ]);
-    return toolText(`Passed {{OWNER}}'s message to "${j.title}" (id ${id}) while it runs. The agent gets it at its next step, usually within half a minute; get_job shows what it's doing.`);
+    return toolText(`Passed ${who.owner ? "{{OWNER}}'s" : `${who.label}'s`} message to "${j.title}" (id ${id}) while it runs. The agent gets it at its next step, usually within half a minute; get_job shows what it's doing.`);
   }
   if (j.status === "queued") {
     const followup = j.followup ? `${j.followup}\n${message}` : message;
-    const r = await env.DB.prepare("UPDATE jobs SET followup=?2, history=?3, updated_at=?4 WHERE id=?1 AND status='queued'")
-      .bind(id, followup, addHistory(j, now, `{{OWNER}} added: ${message}`), now).run();
+    const r = await env.DB.prepare("UPDATE jobs SET followup=?2, history=?3, updated_at=?4, followup_from=COALESCE(followup_from, ?5) WHERE id=?1 AND status='queued'")
+      .bind(id, followup, addHistory(j, now, `${by} added: ${message}`), now, from).run();
     if (r.meta.changes !== 1) return toolText(`"${j.title}" just started; reply again once it finishes.`, true);
-    return toolText(`Added {{OWNER}}'s message to "${j.title}" (id ${id}); it hasn't started yet and will see it when it does.`);
+    return toolText(`Added ${who.owner ? "{{OWNER}}'s" : `${who.label}'s`} message to "${j.title}" (id ${id}); it hasn't started yet and will see it when it does.`);
+  }
+  // An approval stop waits for {{OWNER}}. An agent's note is kept for the next run, but it doesn't restart the job.
+  if (j.status === "needs_approval" && !who.owner && !who.lead) {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO job_messages (job_id, message, created_at, sender) VALUES (?1, ?2, ?3, ?4)").bind(id, message, now, from),
+      env.DB.prepare("UPDATE jobs SET history=?2, updated_at=?3 WHERE id=?1").bind(id, addHistory(j, now, `${by} left a note: ${message}`), now),
+    ]);
+    return toolText(`"${j.title}" (id ${id}) is waiting for {{OWNER}}'s yes, and only {{OWNER}} can answer that, from {{HIS}} own Claude chat. Your note is attached for its next run; the job keeps waiting.`, true);
   }
   // A reply to held work is not an approval: the follow-up run still cannot send, post, spend or delete.
   const mode = j.session_id ? "reply" : "retry";
-  const history = addHistory(j, now, lastRun(j), `{{OWNER}} replied: ${message}`);
-  if (!(await requeue(env, j, j.status, mode, message, history, now))) {
+  const history = addHistory(j, now, lastRun(j), `${by} replied: ${message}`);
+  if (!(await requeue(env, j, j.status, mode, message, history, now, ", followup_from=?7", [from]))) {
     return toolText(`"${j.title}" changed while replying; check it with get_job and try again.`, true);
   }
-  return toolText(`Sent {{OWNER}}'s reply to "${j.title}" (id ${id}) and put it back in the queue. The worker usually picks it up within a minute.`);
+  return toolText(`Sent ${who.owner ? "{{OWNER}}'s" : `${who.label}'s`} reply to "${j.title}" (id ${id}) and put it back in the queue. The worker usually picks it up within a minute.`);
 }
 
 async function retryJob(env, args) {
@@ -1122,8 +1164,9 @@ async function retryJob(env, args) {
   }
   const instructions = typeof args.instructions === "string" ? args.instructions.trim().slice(0, 5000) : "";
   const now = new Date().toISOString();
-  const history = addHistory(j, now, lastRun(j), `{{OWNER}} asked to retry${instructions ? `: ${instructions}` : "."}`);
-  if (!(await requeue(env, j, j.status, "retry", instructions || null, history, now))) {
+  const from = notOwner(whoOf(env));
+  const history = addHistory(j, now, lastRun(j), `${from ? `${from} (not {{OWNER}})` : "{{OWNER}}"} asked to retry${instructions ? `: ${instructions}` : "."}`);
+  if (!(await requeue(env, j, j.status, "retry", instructions || null, history, now, ", followup_from=?7", [from]))) {
     return toolText(`"${j.title}" changed while retrying; check it with get_job and try again.`, true);
   }
   return toolText(`Retrying "${j.title}" (id ${id})${instructions ? " with the new instructions" : ""}. The worker usually picks it up within a minute.`);
@@ -1626,7 +1669,9 @@ export async function healthLines(env) {
 
 async function healthCheck(env) {
   const { lines, problems } = await healthLines(env);
-  return toolText(`${problems.length ? `${problems.length} problem(s): ${problems.join(", ")}.` : "Everything is up."}\n${lines.join("\n")}`);
+  const who = whoOf(env);
+  const caller = who.owner ? "This request came from {{HIS}} own Claude chat." : `This request came from ${who.label}, not {{OWNER}}${who.lead ? " ({{HIS}} lead agent, allowed to approve for {{HIM}})" : ""}.`;
+  return toolText(`${problems.length ? `${problems.length} problem(s): ${problems.join(", ")}.` : "Everything is up."}\n${lines.join("\n")}\n${caller}`);
 }
 
 // Email through Resend from a verified sending domain ({{ALARM_FROM}}), with a send-only key kept as a Worker secret.
@@ -1835,11 +1880,11 @@ async function workerApi(route, request, env) {
       await env.DB.prepare("UPDATE jobs SET progress=?2 WHERE id=?1 AND status='running'").bind(id, JSON.stringify(p)).run();
     }
     // {{OWNER}}'s mid-run messages, handed over once.
-    const { results: msgs } = await env.DB.prepare("SELECT id, message, created_at FROM job_messages WHERE job_id=?1 AND delivered_at IS NULL ORDER BY id").bind(id).all();
+    const { results: msgs } = await env.DB.prepare("SELECT id, message, created_at, sender FROM job_messages WHERE job_id=?1 AND delivered_at IS NULL ORDER BY id").bind(id).all();
     if (msgs.length) await env.DB.prepare(`UPDATE job_messages SET delivered_at=?1 WHERE id IN (${msgs.map((m) => m.id).join(",")})`).bind(now).run();
     // live: {{OWNER}} asked to see the job as it is now (read_job_files) and hasn't had a snapshot since.
     const live = j.status === "running" && !!j.live_req && (!j.live_at || j.live_at < j.live_req);
-    return json({ status: j.status, cancel: j.cancel_requested === 1, live, messages: msgs.map((m) => ({ message: m.message, at: m.created_at })) });
+    return json({ status: j.status, cancel: j.cancel_requested === 1, live, messages: msgs.map((m) => ({ message: m.message, at: m.created_at, from: m.sender || null })) });
   }
   if (route === "claim") {
     // One statement, so two workers (or two slots of one worker) can never get the same job.
@@ -1856,7 +1901,7 @@ async function workerApi(route, request, env) {
            AND (q.after_job IS NULL OR EXISTS (SELECT 1 FROM jobs p WHERE p.id = q.after_job AND p.status IN ${FINISHED_SQL}))
          ORDER BY q.updated_at LIMIT 1)
        RETURNING id, title, details, created_at, run_mode, followup, session_id, attempts, history,
-         mode, project_dir, thread_id, publish, share_with, published, origin, allow, target, held, sent`
+         mode, project_dir, thread_id, publish, share_with, published, origin, allow, target, held, sent, created_by, followup_from`
     ).bind(now, String(b.worker || "worker").slice(0, 60)).first();
     if (job && job.thread_id) {
       const t = await env.DB.prepare("SELECT name, session_id FROM threads WHERE id=?1").bind(job.thread_id).first();
@@ -1948,7 +1993,7 @@ async function workerApi(route, request, env) {
     const held = b.held && typeof b.held === "object" ? JSON.stringify(b.held).slice(0, 20000) : null;
     const sent = b.sent && typeof b.sent === "object" ? JSON.stringify(b.sent).slice(0, 4000) : null;
     const r = await env.DB.prepare(
-      `UPDATE jobs SET status=?2, result=?3, finished_at=?4, updated_at=?4, followup=NULL, session_id=COALESCE(?5, session_id), published=COALESCE(?6, published),
+      `UPDATE jobs SET status=?2, result=?3, finished_at=?4, updated_at=?4, followup=NULL, followup_from=NULL, session_id=COALESCE(?5, session_id), published=COALESCE(?6, published),
          held=COALESCE(?7, held), sent=COALESCE(sent, ?8), progress=NULL WHERE id=?1 AND status='running'`
     ).bind(b.id, b.status, result, now, session, published, held, sent).run();
     if (r.meta.changes) await env.DB.prepare("DELETE FROM job_live WHERE job_id=?1").bind(b.id).run();
@@ -2245,11 +2290,12 @@ export default {
       return json(rpcError(null, -32700, "Parse error: body must be JSON"), 400);
     }
 
+    const renv = Object.create(env, { WHO: { value: await callerOf(request, env) } }); // per request, never shared
     if (Array.isArray(body)) {
-      const replies = (await Promise.all(body.map((m) => handleRpc(m, env)))).filter(Boolean);
+      const replies = (await Promise.all(body.map((m) => handleRpc(m, renv)))).filter(Boolean);
       return replies.length ? json(replies) : new Response(null, { status: 202 });
     }
-    const reply = await handleRpc(body, env);
+    const reply = await handleRpc(body, renv);
     return reply ? json(reply) : new Response(null, { status: 202 });
   },
 };

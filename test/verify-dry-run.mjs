@@ -43,6 +43,11 @@ check(cfg.base === `https://${slug}.your-subdomain.workers.dev`, "worker config 
 check(platform === "win32" ? /claude\.exe$/.test(cfg.claudeBin) : /\/claude$/.test(cfg.claudeBin), `worker config has the ${platform} Claude Code path (${cfg.claudeBin})`);
 check(!/\\/.test(JSON.stringify(cfg)), "worker config uses forward slashes only");
 check(cfg.workerTag === slug && cfg.workerTag !== "live", `worker tag is unique to this install (${cfg.workerTag})`);
+const leadToml = fs.readFileSync(path.join(dir, "wrangler.toml"), "utf8");
+const leadKey = fs.existsSync(path.join(dir, ".lead-agent-key"));
+check(/^LEAD_AGENT = ""$/m.test(leadToml) && !leadKey, "only the owner can approve held actions (lead agent off, no lead key)");
+check(/^ALTER TABLE jobs ADD COLUMN created_by TEXT;?$/m.test(fs.readFileSync(path.join(dir, "migrations", "012_sender.sql"), "utf8")) &&
+  /sender TEXT/.test(fs.readFileSync(path.join(dir, "schema.sql"), "utf8")), "the job table records who sent each message");
 check(cfg.powerLanes === (power === "on"), `worker config has command line and desktop control ${power} (powerLanes: ${cfg.powerLanes})`);
 
 // 5. wrangler.toml

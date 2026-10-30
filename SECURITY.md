@@ -23,6 +23,7 @@ Use **Security > Report a vulnerability** on this repo (private to the maintaine
 | Connector key | inside your connector URL | Lets Claude (you) list, add and manage jobs |
 | Worker key | `.worker-key` and Cloudflare secret | Lets your computer pick up jobs |
 | Bell key | `.bell-key` | Lets the worker send your phone a notification |
+| Lead agent key (only with `--lead-agent`) | `.lead-agent-key` and Cloudflare secret | Lets that one agent approve held actions for you |
 
 **The connector URL is the password.** Anyone with it can queue jobs that run on your computer as you. Keep it out of screenshots, chats, issues and screen recordings.
 
@@ -33,7 +34,8 @@ Use **Security > Report a vulnerability** on this repo (private to the maintaine
 - **Turning the command line and desktop control off.** Answer no to the installer's question, or run it with `--no-power-lanes`. That sets `POWER_LANES = "off"` in `wrangler.toml` and `"powerLanes": false` in `worker/config.json`, and `install-receipt.json` records the choice. Off means four tools are gone: run_command and command_result (shell commands on your computer straight from the conversation), look_at_screen (screenshots of your screen) and use_computer (Claude clicks and types on your desktop). Claude doesn't see them, the connector refuses them if called, and the worker and supervisor on your computer refuse those jobs and commands as well. Turning them off is not a sandbox: code and design jobs still run Claude Code with its normal tools, including its own command line, inside the folders you send them to.
 - **Changing it after you install.** Run `node install.mjs --uninstall`, then `node install.mjs --force --no-power-lanes` (or `--power-lanes` to turn them back on). The old install folder is kept as a backup. You get a new connector URL, so add the connector in Claude again and remove the old one.
 - **Prompt injection is real.** A job that reads a web page or an email can meet text written to trick it. The built-in gate stops before sending, posting, sharing, spending, deleting or changing access unless your own request asked for that. It lowers the risk. It doesn't remove it.
-- **Approvals are explicit.** Anything waiting on you shows as needs approval. Nothing goes ahead until you say yes.
+- **Approvals are explicit.** Anything waiting on you shows as needs approval. Nothing goes ahead until you say yes. Only your own Claude chat can say it: requests from anywhere else (an agent or job on your computer, or a script) are labeled as agents, and the connector refuses their approvals. Claude's connector traffic comes from Anthropic's published range, `160.79.104.0/21`, which Cloudflare checks, so a local agent can't pass as you. Someone who has your URL and their own Claude account could, which is one more reason to treat the URL as a password.
+- **Lead agent (off by default).** `--lead-agent NAME` lets one named agent approve for you, logged as that agent, never as you. It uses `.lead-agent-key`, which any job on this computer can read, so a tricked job could approve too. Leave it off unless you need it.
 
 ## If your connector URL leaks
 

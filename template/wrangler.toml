@@ -21,3 +21,6 @@ crons = ["* * * * *"]
 JOB_CARDS = "on"
 # Command line (run_command) and desktop control (look_at_screen, use_computer). Set by the installer: "on" unless --no-power-lanes.
 POWER_LANES = "{{POWER_LANES}}"
+# The one agent allowed to approve held actions for you, or "" (off, the default). Set by the installer's --lead-agent NAME.
+# It must also send the LEAD_AGENT_KEY secret (.lead-agent-key). Everyone else's approvals and replies to a held job are refused.
+LEAD_AGENT = "{{LEAD_AGENT}}"

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Every job message, reply, approval and new job records who sent it: you (your own Claude chat) or a named agent. Agents' messages reach a job marked as coming from an agent, never as you.
+- Only you can approve a held action or answer a job waiting for your yes. Agents can still message each other and keep working.
+- New, off by default: `--lead-agent NAME` lets one named agent approve for you. Its approvals are logged as that agent.
+- Updating an older install adds the new columns to its job table.
+
 ## 0.9.0 (2026-10-29)
 - One installer for macOS and Windows: `node install.mjs`, with `--dry-run` and `--uninstall`.
 - Each install deploys its own Cloudflare connector, database and keys.
