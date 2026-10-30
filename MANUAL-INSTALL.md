@@ -4,7 +4,7 @@ Use this only if `node install.mjs` keeps stopping at the Cloudflare step and [T
 
 It takes about 20 minutes. Every command runs in Terminal. Copy one block at a time and check that it worked before the next.
 
-These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below.
+These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below. The names end in `-handoff` from before the project was called Nuff Said, and they stay that way so updates keep finding your install.
 
 ## 0. Check your Mac
 
@@ -117,7 +117,7 @@ Everything should say ok, apart from the phone notification lines until you fini
 ## 9. Connect Claude and your phone
 
 1. Copy your URL: `pbcopy < .connector-url`
-2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+**, then **Add custom connector**. This is for personal Pro and Max accounts: on Team and Enterprise only an Owner can add one, and the whole organization can then connect to it, so don't add yours there. Name it "Daisy Handoff" and paste.
+2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+**, then **Add custom connector**. This is for personal Pro and Max accounts: on Team and Enterprise only an Owner can add one, and the whole organization can then connect to it, so don't add yours there. Name it "Nuff Said" and paste.
 3. On your phone, sign in to the Claude app with the same account and allow notifications.
 4. In Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`.
 5. Open the Claude app, start voice, and say: **"Daisy, check updates."**

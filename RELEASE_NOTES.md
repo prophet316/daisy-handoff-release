@@ -1,11 +1,12 @@
 **Talk to Claude. Your computer does the work.**
 
-Daisy Handoff is one custom connector you add in the Claude app. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, run threads, check progress, approve, retry, schedule, and stop everything.
+Nuff Said is one custom connector you add in the Claude app. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, run threads, check progress, approve, retry, schedule, and stop everything.
 
 ### Read this first
 This release ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. Daisy's own desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run `node install.mjs --no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
 
 ### What's new in 0.9.1
+- **A new name.** Daisy Handoff is now Nuff Said, and the download is `nuff-said.zip`. Daisy is still the name of the worker on your computer. Your install folder, Cloudflare connector, database and background services keep their names, so `--update` finds your install and your connector URL stays the same.
 - **Agents can't approve for you.** Every job, thread, schedule, routine, message, reply, approval, cancel and stop records who sent it. Your own Claude chat is recognized as you, by the Anthropic address it calls from. Scripts and agents that call the URL directly are labeled as agents: the connector refuses their approvals, publishing and sharing, and its run-command and desktop tools, and what they start (including ordinary jobs with a command line) is marked as theirs, never as your approval. A lead agent you turn on can approve, and nothing more. It's a check on where the call comes from, not a login: anything that reaches your connector through Anthropic, including the Claude API, counts as you, and so could a job that starts its own Claude session with your account's connectors, so the URL stays a password. SECURITY.md has the details.
 - **Update in place.** `node install.mjs --update` keeps your keys, connector URL, Cloudflare connector and database, answers, job folders and settings. Nothing to redo in Claude.
 - **Change every key at once.** `node install.mjs --rotate-keys` changes the connector, worker and lead agent keys, lists every schedule, routine, running job and job waiting to run with who set it up, so you can clear anything planted while the URL was out, then restarts the worker. Jobs you chose to stop stay stopped.
@@ -19,9 +20,9 @@ This release ships with the command line and desktop control turned on, the way 
 - **How to hear about updates.** The README explains how to get told about new releases and security fixes, and how to update.
 
 ### Install (Mac)
-1. Download `daisy-handoff.zip` below and unzip it.
+1. Download `nuff-said.zip` below and unzip it.
 2. In Terminal, in that folder: `node install.mjs`
-3. In Claude, go to Customize > Connectors, click +, choose Add custom connector, and paste the URL it copied.
+3. In Claude, go to Customize > Connectors, click +, choose Add custom connector, name it Nuff Said, and paste the URL it copied.
 4. Start voice and say: "Daisy, check updates."
 
 Needs macOS 13 or newer (14 for desktop control), a Claude Pro or Max plan with Claude Code signed in on this Mac, Node 22.13 or newer, Apple's Command Line Tools, and a free Cloudflare account. The README's What you need section has the details and costs. Try `node install.mjs --dry-run` first if you want to see everything it would do.
@@ -45,7 +46,7 @@ In the new release folder run `node install.mjs --update`. It keeps your keys, s
 - Your connector URL is a password. Read SECURITY.md before you install.
 
 ### Verify your download
-`daisy-handoff.zip.sha256` is attached, and this zip has a signed build provenance attestation:
-`gh attestation verify daisy-handoff.zip --repo prophet316/daisy-handoff-release`
+`nuff-said.zip.sha256` is attached, and this zip has a signed build provenance attestation:
+`gh attestation verify nuff-said.zip --repo prophet316/daisy-handoff-release`
 
-Daisy Handoff is an independent project, not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.
+Nuff Said is an independent project, not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.

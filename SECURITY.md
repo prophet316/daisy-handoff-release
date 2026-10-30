@@ -1,6 +1,6 @@
 # Security
 
-Daisy Handoff lets a voice conversation give work to your computer. Take that seriously. This page says what protects you and what doesn't.
+Nuff Said lets a voice conversation give work to your computer. Take that seriously. This page says what protects you and what doesn't.
 
 ## Report a problem
 
@@ -12,7 +12,7 @@ Use **Security > Report a vulnerability** on this repo (private to the maintaine
 
 ## Hearing about security fixes
 
-Daisy Handoff doesn't check for updates by itself. On this repo's GitHub page, click **Watch > Custom**, tick **Releases** and click **Apply**, and GitHub tells you about every new release. When a release fixes a security problem, its release notes and CHANGELOG.md say so at the top, and the fix is described in a security advisory under this repo's **Security** tab. To update, follow [Updates and security fixes in the README](README.md#updates-and-security-fixes).
+Nuff Said doesn't check for updates by itself. On this repo's GitHub page, click **Watch > Custom**, tick **Releases** and click **Apply**, and GitHub tells you about every new release. When a release fixes a security problem, its release notes and CHANGELOG.md say so at the top, and the fix is described in a security advisory under this repo's **Security** tab. To update, follow [Updates and security fixes in the README](README.md#updates-and-security-fixes).
 
 ## What's yours alone
 

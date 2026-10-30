@@ -1,4 +1,4 @@
-// {{ASSISTANT}} Handoff: a private MCP connector that is the front door to {{OWNER}}'s background jobs.
+// Nuff Said ({{ASSISTANT}}): a private MCP connector that is the front door to {{OWNER}}'s background jobs.
 // Any Claude chat (voice or text) can hand off work, hear what finished, check one job, stop one,
 // approve held work, answer a job, retry one, and read the files a job made.
 // Transport: MCP Streamable HTTP, stateless JSON responses (no SSE stream).

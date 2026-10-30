@@ -25,7 +25,7 @@ function doctor() {
   fs.rmSync(log, { force: true });
   // HOME (USERPROFILE on Windows) points at the throwaway home, so the doctor treats this install as the live one and runs its live checks.
   const r = spawnSync(process.execPath, ["--import", pathToFileURL(hook).href, path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } }); // USERPROFILE: Windows' home
-  if (r.status === null || !/Daisy Handoff doctor/.test(r.stdout || "")) check(false, "the doctor ran", `${r.stderr}`.slice(0, 300)); // a doctor that never ran proves nothing
+  if (r.status === null || !/Nuff Said doctor/.test(r.stdout || "")) check(false, "the doctor ran", `${r.stderr}`.slice(0, 300)); // a doctor that never ran proves nothing
   const urls = fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : [];
   return { out: `${r.stdout}${r.stderr}`, urls };
 }

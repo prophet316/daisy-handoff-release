@@ -53,7 +53,7 @@ The Claude Code installer puts `claude` in a folder Terminal doesn't look in yet
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
-The Daisy Handoff installer finds Claude Code either way; this only matters when you type `claude` yourself.
+The Nuff Said installer finds Claude Code either way; this only matters when you type `claude` yourself.
 
 ---
 
@@ -97,7 +97,7 @@ Give the same answers as before (the same assistant name), so it reuses your Clo
 
 ## Already installed
 
-**You see:** `already exists. Nothing was changed` or `a Handoff worker is already running for this user`.
+**You see:** `already exists. Nothing was changed` or `a Nuff Said worker is already running for this user`.
 
 One install per Mac user account works. To replace it, follow the README's **Update** steps. To remove it, follow **Uninstall**.
 

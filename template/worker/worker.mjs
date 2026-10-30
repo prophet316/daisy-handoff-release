@@ -1,4 +1,4 @@
-// {{ASSISTANT}} Handoff worker: runs on the {{MACHINE}}, picks up queued jobs, runs each with
+// Nuff Said worker for {{ASSISTANT}}: runs on the {{MACHINE}}, picks up queued jobs, runs each with
 // Claude Code in its own folder, and reports a short result back to the connector.
 // It only makes outbound requests to Cloudflare, plus one local request to the {{ASSISTANT}} bell
 // (127.0.0.1) so {{OWNER}} gets a phone notification. Nothing reaches in.

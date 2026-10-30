@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Daisy Handoff installer: one file for macOS and Windows.
+// Nuff Said installer: one file for macOS and Windows.
 //
 //   node install.mjs                install for real (4 questions, one Cloudflare sign-in in your browser)
 //   node install.mjs --dry-run      build a full install in a throwaway folder; deploys nothing, starts nothing
@@ -115,7 +115,7 @@ if (DRY && path.resolve(HOME) === path.resolve(os.homedir())) die("a dry run can
 if (has("rotate-keys") || has("clear-schedules")) { await rotateKeys(); process.exit(0); }
 
 function uninstall() {
-  say(`Daisy Handoff uninstall ${VERSION} | ${MAC ? "macOS" : "Windows"}${DRY ? " | DRY RUN" : ""}`);
+  say(`Nuff Said uninstall ${VERSION} | ${MAC ? "macOS" : "Windows"}${DRY ? " | DRY RUN" : ""}`);
   const bak = path.join(HOME, ".handoff-uninstalled", stamp());
   let n = 0;
   if (MAC) {
@@ -137,7 +137,7 @@ function uninstall() {
       ok(`${DRY ? "would stop" : "stopped"} ${title}`); n++;
     }
   }
-  if (!n) say("  no Handoff worker found for this user");
+  if (!n) say("  no Nuff Said worker found for this user");
   else if (!DRY) say(`\nStartup entries moved to ${bak} (not deleted).`);
   // The database name, when there's exactly one install to name it from.
   const projects = path.join(HOME, "Projects");
@@ -155,7 +155,7 @@ async function main() {
   const TOTAL = 7;
   const UPDATE = has("update");
   if (UPDATE && has("force")) die("use --update or --force, not both. --update keeps your keys and connector URL; --force makes new ones.");
-  say(`Daisy Handoff ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
+  say(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
   if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
     "  node install.mjs --dry-run --yes --home /tmp/daisy-test\n  node install.mjs --update --dry-run --home /tmp/daisy-test\nA dry run never touches your real install.");
@@ -221,12 +221,12 @@ async function main() {
   const agents = path.join(HOME, "Library", "LaunchAgents");
   const taken = MAC && fs.existsSync(path.join(agents, "com.daisy.handoff-worker.plist"));
   if ((fs.existsSync(dir) || taken) && !has("force") && !UPDATE) {
-    die(`${taken ? "a Handoff worker is already installed for this user" : `${dir} already exists`}. Nothing was changed. ` +
+    die(`${taken ? "a Nuff Said worker is already installed for this user" : `${dir} already exists`}. Nothing was changed. ` +
       "Run with --uninstall first, or --force to replace it (the old folder is kept as a backup).");
   }
   if (MAC && !DRY && !SIM && !has("no-start") && !UPDATE) {
     const live = ["com.daisy.handoff-worker", "com.daisy.supervisor"].filter((l) => run("launchctl", ["print", `gui/${process.getuid()}/${l}`]).status === 0);
-    if (live.length) die(`a Handoff worker (${live.join(", ")}) is already running for this user. Starting another would replace it, so nothing was changed. Use --uninstall first, or --no-start to deploy without starting.`);
+    if (live.length) die(`a Nuff Said worker (${live.join(", ")}) is already running for this user. Starting another would replace it, so nothing was changed. Use --uninstall first, or --no-start to deploy without starting.`);
   }
   let bak = null;
   if (fs.existsSync(dir)) {
@@ -327,7 +327,7 @@ async function handOff(dir, urlFile, assistant) {
     copied = c.status === 0;
   }
   say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > Add custom connector.`);
-  say(`  2. Name it "${assistant} Handoff" and paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}).`);
+  say(`  2. Name it "Nuff Said" and paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}).`);
   say(`  3. On your phone, open the Claude app, start voice, and say: "${assistant}, check updates."`);
   if (MAC) {
     say(`  For a phone notification when a job finishes (once, about a minute):`);
@@ -351,7 +351,7 @@ function findInstall() {
   const dirs = val("assistant") ? [path.join(projects, slugOf(clean(val("assistant"))).slug)]
     : (fs.existsSync(projects) ? fs.readdirSync(projects) : []).filter((n) => /-handoff$/.test(n)).map((n) => path.join(projects, n));
   const found = dirs.filter((d) => fs.existsSync(path.join(d, "site.json")));
-  if (!found.length) die(`no Handoff install found in ${projects}${val("assistant") ? ` for assistant ${val("assistant")}` : ""}. Nothing was changed.`);
+  if (!found.length) die(`no Nuff Said install found in ${projects}${val("assistant") ? ` for assistant ${val("assistant")}` : ""}. Nothing was changed.`);
   if (found.length > 1) die(`more than one install in ${projects} (${found.map((d) => path.basename(d)).join(", ")}). Pick one with --assistant NAME. Nothing was changed.`);
   const dir = found[0];
   const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")); } catch { return {}; } };
@@ -388,7 +388,7 @@ function wranglerIn(dir) { return (args, o = {}) => run(HOST === "win32" ? "npx.
 async function rotateKeys() {
   const { dir, site } = findInstall();
   const ROTATE = has("rotate-keys");
-  say(`Daisy Handoff ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
+  say(`Nuff Said ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
   const W = wranglerIn(dir);
   if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   const db = `${site.slug || path.basename(dir)}-jobs`;

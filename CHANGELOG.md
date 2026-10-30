@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- New name: Nuff Said (was Daisy Handoff). The release zip is `nuff-said.zip`, and the installer suggests naming the connector "Nuff Said". Daisy stays the worker's name. The install folder (`~/Projects/NAME-handoff`), Cloudflare Worker and D1 database names, launch agent labels (`com.daisy.*`) and Windows startup file names are unchanged, so `--update`, `--rotate-keys` and `--uninstall` keep working on existing installs.
 - Security: a job's own Claude sessions start with `ENABLE_CLAUDEAI_MCP_SERVERS=false`, so they don't load the connectors in your Claude account, and jobs are refused the usual `cua-driver` commands as well as `composio`. Both are speed bumps a job can get around, and the docs say so: Daisy's own desktop, email and publishing tools are held in code, a job's command line is not.
 - Security: a lead agent can approve and answer jobs waiting for your yes, and nothing more. Before, it could also run commands, use the desktop, publish and share.
 - Security: `--rotate-keys` and `--clear-schedules` list running jobs too, and can stop them. The key change asks before it restarts the worker, so a job you chose to stop is cancelled, not put back in the queue.

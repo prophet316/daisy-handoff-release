@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploys {{OWNER}}'s {{ASSISTANT}} Handoff connector to Cloudflare: its own Worker ({{SLUG}}), its own D1 database and its own secrets.
+# Deploys {{OWNER}}'s Nuff Said connector ({{ASSISTANT}}) to Cloudflare: its own Worker ({{SLUG}}), its own D1 database and its own secrets.
 # Run it from the rendered install folder. Never prints a key or the connector URL.
 set -uo pipefail
 cd "$(dirname "$0")"

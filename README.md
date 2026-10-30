@@ -1,4 +1,4 @@
-# Daisy Handoff
+# Nuff Said
 
 [![Latest release](https://img.shields.io/github/v/release/prophet316/daisy-handoff-release)](https://github.com/prophet316/daisy-handoff-release/releases/latest)
 [![Installer CI](https://github.com/prophet316/daisy-handoff-release/actions/workflows/installer.yml/badge.svg)](https://github.com/prophet316/daisy-handoff-release/actions/workflows/installer.yml)
@@ -6,12 +6,14 @@
 
 **Talk to Claude. Your computer does the work.**
 
-Daisy Handoff works inside the Claude app you already use. It's one custom connector you add in Claude, and an independent project, not made or endorsed by Anthropic. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the worker on your computer that picks up each job.
+Nuff Said works with Claude.
+
+Nuff Said works inside the Claude app you already use. It's one custom connector you add in Claude, and an independent project, not made or endorsed by Anthropic. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the worker on your computer that picks up each job.
 
 Setup takes a Terminal installer and a free Cloudflare account. After that, day to day, you stay in Claude. Mac today; Windows is in testing and isn't in this release.
 
 > [!WARNING]
-> **Read this first.** Daisy Handoff ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage: anyone with the URL can use it through Claude or the Claude API, and with the command line on that includes running commands on your computer and reading the result. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. Daisy's own desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. For everything else a job does, the stop is an instruction to Claude. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run it with `--no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
+> **Read this first.** Nuff Said ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage: anyone with the URL can use it through Claude or the Claude API, and with the command line on that includes running commands on your computer and reading the result. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. Daisy's own desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. For everything else a job does, the stop is an instruction to Claude. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run it with `--no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
 
 <!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request, start to finish." -->
 
@@ -161,7 +163,7 @@ Jobs run while your Mac is on and you're logged in. One install per Mac user acc
 
 **Remote Control** is a Claude Code feature from Anthropic. It links a Claude Code session running on your computer to the Claude app on your phone, so that session can talk to you there. Anthropic explains it on the [Remote Control page](https://code.claude.com/docs/en/remote-control).
 
-Daisy Handoff uses it for one thing: notifications. The installer starts one Claude Code session on your Mac with Remote Control on, and keeps it running. You may see it in the Claude app as "Daisy bell" (or your assistant's name). Leave it running. When a job finishes, the worker tells that session, and the session sends your phone a notification through the Claude app.
+Nuff Said uses it for one thing: notifications. The installer starts one Claude Code session on your Mac with Remote Control on, and keeps it running. You may see it in the Claude app as "Daisy bell" (or your assistant's name). Leave it running. When a job finishes, the worker tells that session, and the session sends your phone a notification through the Claude app.
 
 The bell also uses Claude Code channels, a research preview from Anthropic ([Channels](https://code.claude.com/docs/en/channels)), so the worker can hand the session each finished job. Daisy's channel isn't on Anthropic's approved list, so the bell starts Claude Code with its developer flag for channels, `--dangerously-load-development-channels server:daisy-bell`, and answers that flag's warning for this one session. It also answers Claude Code's question about the bell's own MCP server. Anthropic says channels may change, so a Claude Code update could stop notifications until Daisy is updated. Jobs keep running either way.
 
@@ -193,16 +195,16 @@ Read [SECURITY.md](SECURITY.md) for the details.
 
 ## Install (Mac)
 
-1. Download **[daisy-handoff.zip](https://github.com/prophet316/daisy-handoff-release/releases/latest/download/daisy-handoff.zip)** and unzip it.
+1. Download **[nuff-said.zip](https://github.com/prophet316/daisy-handoff-release/releases/latest/download/nuff-said.zip)** and unzip it.
 2. Open Terminal (Applications > Utilities > Terminal), go to the folder, and run the installer:
    ```bash
-   cd ~/Downloads/daisy-handoff
+   cd ~/Downloads/nuff-said
    node install.mjs
    ```
    It checks Node and Claude Code first and tells you exactly what's missing.
 3. Answer four questions (your name, what you call your assistant, what you call this computer, and whether jobs may use the command line and control your desktop; the answer is yes unless you type no).
 4. Sign in to Cloudflare when your browser opens.
-5. In Claude, go to **Customize > Connectors**, click **+**, choose **Add custom connector**, and paste the URL the installer copied for you. Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
+5. In Claude, go to **Customize > Connectors**, click **+**, choose **Add custom connector**, name it **Nuff Said**, and paste the URL the installer copied for you. Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
 6. Open the Claude app, start voice, and say: **"Daisy, check updates."** (or whatever you named your assistant)
 7. For a notification on your phone when a job finishes: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
 
@@ -215,7 +217,7 @@ Something not working? Run `node doctor.mjs` in the same folder. It finds the co
 
 To see everything it would do first, run `node install.mjs --dry-run`. It builds the install in a throwaway folder and deploys nothing.
 
-Your install lives in `~/Projects/daisy-handoff` (the name follows what you call your assistant, so an assistant called Max lives in `~/Projects/max-handoff`). Your connector on Cloudflare has the same name, and its database adds `-jobs` to it.
+Your install lives in `~/Projects/daisy-handoff` (the name follows what you call your assistant, so an assistant called Max lives in `~/Projects/max-handoff`). Your connector on Cloudflare has the same name, and its database adds `-jobs` to it. These names still end in `-handoff`, from before the project was called Nuff Said, so updates keep finding your install.
 
 **Good to know:**
 - Schedules and times use your Mac's time zone, which the installer shows. To use another one, add `--time-zone America/New_York` (or your zone's name).
@@ -229,7 +231,7 @@ Your install lives in `~/Projects/daisy-handoff` (the name follows what you call
 
 ### How you hear about one
 
-Daisy Handoff doesn't check for updates by itself. To hear about new releases, including security fixes:
+Nuff Said doesn't check for updates by itself. To hear about new releases, including security fixes:
 
 1. On this repo's GitHub page, click **Watch**, then **Custom**.
 2. Tick **Releases**, then **Apply**.
@@ -240,7 +242,7 @@ To see which version you have, look at `installer` in `install-receipt.json` in 
 
 ### How to update
 
-1. Download the new **daisy-handoff.zip** and unzip it.
+1. Download the new **nuff-said.zip** and unzip it.
 2. In Terminal, in the new folder: `node install.mjs --update`
 
 That's it. The update keeps your keys, so your connector URL stays the same and there's nothing to redo in Claude. It also keeps your connector and database on Cloudflare, your answers from last time (name, time zone, the command line switch, the lead agent), your job and thread folders, your logs and your worker settings. To change one answer while you update, add its flag, for example `--no-power-lanes` or `--time-zone Europe/London`. Jobs that are running when the worker restarts start again.
@@ -293,9 +295,9 @@ Partly, and that's good. Anthropic keeps adding to this, so check their pages fo
 
 **Dispatch** in Claude Cowork lets you "message Claude from your phone and have it work on your desktop computer", with a push when a task is done or needs your go-ahead. It's Anthropic's own and needs nothing beyond the Claude apps. Today it's "in limited beta on some Pro and Max plans" and "isn't available to new users" ([Assign tasks from anywhere in Claude Cowork](https://support.claude.com/en/articles/13947068-assign-tasks-from-anywhere-in-claude-cowork)). If you have it, try it.
 
-**Claude Code Remote Control** lets you use and start Claude Code sessions on your computer from your phone ([Remote Control](https://code.claude.com/docs/en/remote-control)). Use it. Daisy Handoff uses it too, for the session that sends your phone notifications.
+**Claude Code Remote Control** lets you use and start Claude Code sessions on your computer from your phone ([Remote Control](https://code.claude.com/docs/en/remote-control)). Use it. Nuff Said uses it too, for the session that sends your phone notifications.
 
-**Daisy Handoff** is for handing work to Claude Code on your own computer while you talk: one voice conversation in the Claude app that starts new jobs, checks on all of them, approves the ones waiting on you, and puts work on a schedule, through a connector and database on your own Cloudflare account. The worker is its own background service on your Mac, separate from the Claude desktop app.
+**Nuff Said** is for handing work to Claude Code on your own computer while you talk: one voice conversation in the Claude app that starts new jobs, checks on all of them, approves the ones waiting on you, and puts work on a schedule, through a connector and database on your own Cloudflare account. The worker is its own background service on your Mac, separate from the Claude desktop app. It's the only tool I know of that lets you talk to Claude in the phone app's live voice mode while your own computer runs the jobs.
 
 When Anthropic ships all of this natively, use theirs.
 
@@ -307,7 +309,7 @@ Claude's voice mode is the best place I've found to think out loud. But it could
 
 So every time a thought turned into a task, I had to stop talking, open the laptop, find the right session, type it all out, and come back later. The typing wasn't the problem. Losing the thread was.
 
-Daisy Handoff removes that switch. The idea stays in the conversation and the work goes to the computer.
+Nuff Said removes that switch. The idea stays in the conversation and the work goes to the computer.
 
 ---
 
@@ -353,7 +355,7 @@ Built by Jonathan Gibson, on top of Claude, Claude Code and Remote Control from 
 
 Other people have built voice tools for Claude Code too, and they are worth a look: [VoiceMode](https://github.com/mbailey/voicemode) and [claude-code-voice-skill](https://github.com/abracadabra50/claude-code-voice-skill). Desktop control uses [CuaDriver](https://github.com/trycua/cua) from trycua.
 
-Daisy Handoff is an independent project. It is not affiliated with, made by or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic.
+Nuff Said is an independent project. It is not affiliated with, made by or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic.
 
 ## License
 

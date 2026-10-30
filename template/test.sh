@@ -1,5 +1,5 @@
 #!/bin/bash
-# Smoke test for the {{ASSISTANT}} Handoff connector.
+# Smoke test for the Nuff Said connector ({{ASSISTANT}}).
 # Usage: ./test.sh                 (local dev server)
 #        ./test.sh deployed        (reads the private URL from .connector-url, never prints it)
 #        ./test.sh gate            (the computer-use safety gate, the power-lanes switch and who-sent-it, offline: no desktop, no connector)
