@@ -291,7 +291,7 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
   check(r.status === 0 && nrec().bell === false && !/I didn't understand/.test(unfold(r.stdout)), "\"no thanks\" at the bell question is a no, not asked again", r.stdout.slice(-300));
   r = await tty("on", "on");
   check(r.status === 0 && nrec().bell === true && nrec().powerLanes === true && !/I didn't understand/.test(unfold(r.stdout)), "\"on\" is a yes at both questions, the way \"off\" is a no", r.stdout.slice(-300));
-}
+} else console.log("skip  the phone bell is off unless you say yes, and the yes or no answers in a real terminal (Mac only: the bell and a real terminal)");
 
 // A real update that stops at the Cloudflare sign-in says the old settings are still live (fake claude and npx; not on Windows).
 if (process.platform !== "win32") {
@@ -332,7 +332,7 @@ if (process.platform !== "win32") {
   const fdoc = spawnSync(process.execPath, [path.join(fdir, "doctor.mjs"), "--dir", fdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: fhome } }); fdoc.stdout = unfold(fdoc.stdout);
   check(un2.status === 0 && /was uninstalled/.test(fdoc.stdout) && !/--update again|Finish the Cloudflare sign-in|install is incomplete/.test(fdoc.stdout), "after --uninstall of an install that stopped at Cloudflare, the doctor doesn't say to run --update, finish the sign-in, or that the install is incomplete", fdoc.stdout.slice(-600));
   fs.rmSync(fhome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-}
+} else console.log("skip  a real update that stops at the Cloudflare sign-in, and a first install that stopped there (not on Windows: the installer refuses real runs there)");
 
 // --uninstall takes back the bell folder's trust entry in ~/.claude.json and leaves every other entry alone.
 if (process.platform === "darwin") {
@@ -361,7 +361,7 @@ if (process.platform === "darwin") {
   check(linked.status === 0 && fs.lstatSync(cj).isSymbolicLink() && !Object.hasOwn(inDots.projects, path.join(udir, "jarvis-bell")) && inDots.projects["/tmp/another-project"] &&
     fs.readdirSync(dots).length === 1, "--uninstall keeps a linked ~/.claude.json a link and takes the entry out of the file it points to", linked.stdout.slice(-400));
   fs.rmSync(uhome, { recursive: true, force: true });
-}
+} else console.log("skip  --uninstall takes the bell folder's trust entry out of ~/.claude.json (Mac only: the bell)");
 
 // Windows isn't in this release: a real install there is refused before anything happens (a dry run still works).
 const winHook = path.join(home, "as-windows.mjs");
@@ -410,7 +410,7 @@ if (process.platform === "darwin") {
   const mdoc4 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } }); mdoc4.stdout = unfold(mdoc4.stdout);
   check(/skipped the live connector check/.test(mdoc4.stdout) && /was uninstalled/.test(mdoc4.stdout) && !/Finish the Cloudflare step/.test(mdoc4.stdout), "after --uninstall, the skipped live check doesn't say to finish the Cloudflare step", mdoc4.stdout.slice(-600));
   for (const f of fs.readdirSync(unDir)) fs.renameSync(path.join(unDir, f), path.join(path.dirname(mplist), f));
-}
+} else console.log("skip  after --uninstall, a fresh --manual and the doctor say the install was uninstalled (Mac only: needs its launchd startup entries)");
 
 // --rotate-keys with no terminal (a script, or Claude Code running it) stops before it changes a key, and says so. A fresh
 // practice install of its own, so nothing above changes what it sees.
@@ -427,7 +427,7 @@ const keyBefore = fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
 // A run that isn't a dry run can't happen on Windows yet (the installer refuses it there), so these key-change checks, and the
 // real-order ones below that use a shell-script stand-in for wrangler, run on the Mac and Linux only.
 const realRuns = process.platform !== "win32";
-if (!realRuns) console.log("skip  --rotate-keys real runs (the installer only does dry runs on Windows)");
+if (!realRuns) console.log("skip  --rotate-keys and --clear-schedules real runs (the installer only does dry runs on Windows)");
 if (realRuns) r = rinstall(["--rotate-keys"]);
 if (realRuns) check(r.status !== 0 && /no terminal here/.test(unfold(r.stderr)) && /No keys were changed/.test(unfold(r.stderr)) && !/Nothing was changed/.test(r.stderr + r.stdout) &&
   fs.readFileSync(path.join(rdir, ".connector-key"), "utf8") === keyBefore, "--rotate-keys with no terminal stops before changing a key and says no keys were changed", r.stderr.slice(-300));
@@ -509,7 +509,7 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
     { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ANSWERS: "yes please|yes." }, timeout: 120_000 });
   check(/I didn't understand "yes please"/.test(cr.stdout) && /Clear them all\? Type yes or no/.test(cr.stdout) && /turned off 1 schedule\(s\)/.test(cr.stdout) && !/Kept them/.test(cr.stdout),
     "the Clear them question asks again on \"yes please\" and clears on \"yes.\"", cr.stdout.slice(-600));
-}
+} else console.log("skip  the Clear them question in a real terminal asks again on \"yes please\" (Mac only: needs a real terminal and a real --rotate-keys run)");
 fs.rmSync(rhome, { recursive: true, force: true });
 
 // Phone notifications need /usr/bin/python3 from Apple's Command Line Tools. With the tools missing (a stand-in xcode-select
@@ -539,7 +539,7 @@ if (process.platform === "darwin") {
   check(/^  WARN  Apple's Command Line Tools are missing\. Only phone notifications and the blue glow need them; jobs, stop and force kill work without them\./m.test(d.stdout), "with neither in use, it's a warning that says stop and force kill work without them", d.stdout.slice(0, 1500));
   if (tools) { d = doc(process.env); check(/^  ok    Apple's Command Line Tools and \/usr\/bin\/python3/m.test(d.stdout), "with the tools, the doctor checks /usr/bin/python3 runs", d.stdout.slice(0, 1500)); }
   fs.rmSync(chome, { recursive: true, force: true }); fs.rmSync(noTools, { recursive: true, force: true });
-}
+} else console.log("skip  with no Command Line Tools, turning the bell on is stopped and the doctor says what the tools are for (Mac only: the bell and the blue glow)");
 
 // A first install that stopped before it finished, then an update that stops too: there's no old setting to warn about.
 fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ ...json("install-receipt.json"), unfinished: true, updatedFrom: undefined }));
