@@ -134,7 +134,8 @@ if (!DIR || !site) {
   check(missing.length ? "fail" : "ok", missing.length ? `missing ${missing.join(", ")}` : "keys and connector URL are in place",
     "The install is incomplete. Run node install.mjs --uninstall, then node install.mjs --force.", "Install stopped partway");
   if (process.platform !== "win32") {
-    const open = [".connector-key", ".worker-key", ".bell-key", ".connector-url"].filter((f) => { try { return (fs.statSync(path.join(DIR, f)).mode & 0o077) !== 0; } catch { return false; } });
+    // Every key file the installer makes, the lead agent key too when it's turned on. A missing file isn't "open".
+    const open = [".connector-key", ".worker-key", ".bell-key", ".connector-url", ".lead-agent-key"].filter((f) => { try { return (fs.statSync(path.join(DIR, f)).mode & 0o077) !== 0; } catch { return false; } });
     check(open.length ? "warn" : "ok", open.length ? `others on this Mac can read ${open.join(", ")}` : "keys are readable only by you",
       `In the install folder run: chmod 600 ${open.join(" ")}`);
   }

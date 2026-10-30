@@ -5,6 +5,12 @@
 //   node install.mjs --dry-run      build a full install in a throwaway folder; deploys nothing, starts nothing
 //   node install.mjs --uninstall    stop the background worker and remove its startup entry (your files stay)
 //   node install.mjs --doctor       check this computer and your install, and save a report with secrets removed
+//   node install.mjs --update       update an install in place: same keys, same connector URL, same Worker and database,
+//                                   same answers as last time (change one with its flag, e.g. --no-power-lanes)
+//   node install.mjs --rotate-keys  if your URL or a key leaked: new connector, worker and lead agent keys, the worker
+//                                   restarted, then a list of schedules, routines and waiting jobs to check
+//   node install.mjs --clear-schedules  turn off every schedule, delete every routine, cancel waiting jobs (alone or
+//                                   with --rotate-keys)
 //
 //   Other flags: --name NAME  --assistant NAME  --machine NAME  --yes (take the defaults)
 //                --time-zone ZONE (schedules use this computer's time zone; e.g. --time-zone America/New_York to pick another)
@@ -26,7 +32,7 @@ import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 
-const VERSION = "0.9.0";
+const VERSION = "0.9.1";
 const WRANGLER = "wrangler@4.151.3";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = path.join(HERE, "template");
@@ -61,7 +67,8 @@ if (has("doctor")) { // the doctor lives in its own file, so the installer copie
   const d = spawnSync(process.execPath, [path.join(HERE, "doctor.mjs"), ...argv.filter((a) => a !== "--doctor")], { stdio: "inherit" });
   process.exit(d.status ?? 1);
 }
-const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "time-zone"]);
+const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "time-zone",
+  "update", "rotate-keys", "clear-schedules"]);
 for (const a of argv) if (a.startsWith("--") && !KNOWN.has(a.slice(2))) die(`unknown option ${a} (try --help)`);
 if (has("help")) {
   const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n");
@@ -97,11 +104,13 @@ const bk = (p) => p.replace(/\//g, "\\");
 
 function writeSecret(p, s) {
   fs.writeFileSync(p, s, { mode: 0o600 });
+  if (HOST !== "win32") fs.chmodSync(p, 0o600); // the mode above only applies to a new file
   if (HOST === "win32" && !SIM) run("icacls", [p, "/inheritance:r", "/grant:r", `${os.userInfo().username}:F`]);
 }
 
-// ---------- uninstall ----------
+// ---------- uninstall, key change ----------
 if (has("uninstall")) { uninstall(); process.exit(0); }
+if (has("rotate-keys") || has("clear-schedules")) { await rotateKeys(); process.exit(0); }
 
 function uninstall() {
   say(`Daisy Handoff uninstall ${VERSION} | ${MAC ? "macOS" : "Windows"}${DRY ? " | DRY RUN" : ""}`);
@@ -138,10 +147,14 @@ await main();
 
 async function main() {
   const TOTAL = 7;
-  say(`Daisy Handoff installer ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
+  const UPDATE = has("update");
+  if (UPDATE && has("force")) die("use --update or --force, not both. --update keeps your keys and connector URL; --force makes new ones.");
+  say(`Daisy Handoff ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
   if (!fs.existsSync(TEMPLATE)) die(`no template folder next to install.mjs (looked for ${TEMPLATE}). Unzip the whole release and run it from that folder.`);
+  // An update keeps last time's answers (site.json and install-receipt.json in the install folder) unless a flag changes one.
+  const prev = UPDATE ? findInstall() : null;
   // Schedules and the times Claude reads out use the owner's own time zone: this computer's, or --time-zone.
-  const timeZone = val("time-zone") || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const timeZone = val("time-zone") || prev?.site.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   try { new Intl.DateTimeFormat("en-US", { timeZone }); } catch { die(`"${timeZone}" isn't a time zone name. Use one like America/New_York, Europe/London or Asia/Tokyo.`); }
 
   // 1. preflight
@@ -166,22 +179,23 @@ async function main() {
   // 2. identity
   step("About you", TOTAL);
   const ask = await asker();
-  const owner = clean(val("name") || (await ask("Your first name", os.userInfo().username)));
-  const assistant = clean(val("assistant") || (await ask("What do you call your assistant", "Daisy")));
-  const machine = clean(val("machine") || (await ask("What do you call this computer", MAC ? "Mac" : "PC")));
+  const owner = clean(val("name") || prev?.site.owner || (await ask("Your first name", os.userInfo().username)));
+  const assistant = clean(val("assistant") || prev?.site.assistant || (await ask("What do you call your assistant", "Daisy")));
+  const machine = clean(val("machine") || prev?.site.machine || (await ask("What do you call this computer", MAC ? "Mac" : "PC")));
   // Shell commands and desktop control are on by default, the way the author runs it. --no-power-lanes or a no turns them off.
   // --power-lanes (the old opt-in flag) is still accepted and just means on.
-  if (!has("no-power-lanes")) for (const l of POWER_WARNING) say(`  ${l}`);
-  const power = !has("no-power-lanes") && (has("power-lanes") ||
-    !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes")));
+  const keepPower = prev && !has("no-power-lanes") && !has("power-lanes") ? prev.receipt.powerLanes !== false : null;
+  if (!has("no-power-lanes") && keepPower !== false) for (const l of POWER_WARNING) say(`  ${l}`);
+  const power = keepPower ?? (!has("no-power-lanes") && (has("power-lanes") ||
+    !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes"))));
   ask.close();
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
-  const lead = (val("lead-agent") || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
+  const lead = (val("lead-agent") || (has("lead-agent") ? "" : prev?.receipt.leadAgent) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
   if (has("lead-agent") && !lead) die("--lead-agent needs a name, e.g. --lead-agent captain");
-  const base = assistant.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "assistant";
-  const slug = `${base}-handoff`.slice(0, 50);
+  const { base, slug } = slugOf(assistant);
   const dotdir = `.${base}`;
   const dir = path.join(HOME, "Projects", slug);
+  if (prev && dir !== prev.dir) die(`--update keeps the assistant's name (${prev.site.assistant}); a new name is a new install. Nothing was changed.`);
   ok(`${owner}'s assistant ${assistant}, on the ${machine}`);
   ok(`install folder ${dir}`);
   ok(`schedules use your time zone, ${timeZone} (another one: --time-zone)`);
@@ -191,15 +205,20 @@ async function main() {
 
   const agents = path.join(HOME, "Library", "LaunchAgents");
   const taken = MAC && fs.existsSync(path.join(agents, "com.daisy.handoff-worker.plist"));
-  if ((fs.existsSync(dir) || taken) && !has("force")) {
+  if ((fs.existsSync(dir) || taken) && !has("force") && !UPDATE) {
     die(`${taken ? "a Handoff worker is already installed for this user" : `${dir} already exists`}. Nothing was changed. ` +
       "Run with --uninstall first, or --force to replace it (the old folder is kept as a backup).");
   }
-  if (MAC && !DRY && !SIM && !has("no-start")) {
+  if (MAC && !DRY && !SIM && !has("no-start") && !UPDATE) {
     const live = ["com.daisy.handoff-worker", "com.daisy.supervisor"].filter((l) => run("launchctl", ["print", `gui/${process.getuid()}/${l}`]).status === 0);
     if (live.length) die(`a Handoff worker (${live.join(", ")}) is already running for this user. Starting another would replace it, so nothing was changed. Use --uninstall first, or --no-start to deploy without starting.`);
   }
-  if (fs.existsSync(dir)) { const b = `${dir}.bak-${stamp()}`; fs.renameSync(dir, b); note(`old folder kept at ${b}`); }
+  let bak = null;
+  if (fs.existsSync(dir)) {
+    bak = `${dir}.bak-${stamp()}`;
+    for (let i = 2; fs.existsSync(bak); i++) bak = `${dir}.bak-${stamp()}-${i}`; // two runs in one second
+    fs.renameSync(dir, bak); note(`old folder kept at ${bak}`);
+  }
 
   // 3. render
   step("Building your copy", TOTAL);
@@ -217,6 +236,7 @@ async function main() {
     WORKER_CONFIG_JSON: JSON.stringify(worker, null, 2),
   };
   const n = render(TEMPLATE, dir, tokens);
+  if (UPDATE) carryOver(bak, dir);
   fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
   fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION, timeZone }, null, 2) + "\n");
   fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
@@ -231,10 +251,15 @@ async function main() {
   }
 
   // 4. keys
-  step("Making private keys", TOTAL);
+  step(UPDATE ? "Keeping your private keys" : "Making private keys", TOTAL);
   const keyFiles = [".connector-key", ".worker-key", ".bell-key", ...(lead ? [".lead-agent-key"] : [])];
-  for (const f of keyFiles) writeSecret(path.join(dir, f), randomBytes(32).toString("hex"));
-  ok(`${keyFiles.length} keys made on this computer, readable only by you`);
+  let kept = 0;
+  for (const f of keyFiles) {
+    const old = UPDATE ? path.join(bak, f) : null;
+    if (old && fs.existsSync(old)) { writeSecret(path.join(dir, f), fs.readFileSync(old, "utf8").trim()); kept++; }
+    else writeSecret(path.join(dir, f), randomBytes(32).toString("hex"));
+  }
+  ok(UPDATE ? `${kept} keys kept from your install${keyFiles.length > kept ? `, ${keyFiles.length - kept} new` : ""}, readable only by you` : `${keyFiles.length} keys made on this computer, readable only by you`);
 
   // 5. cloudflare
   step("Putting your connector on Cloudflare", TOTAL);
@@ -246,6 +271,8 @@ async function main() {
   setWorkerBase(dir, url);
   writeSecret(path.join(dir, ".connector-url"), `${url}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
   ok("worker pointed at the connector; private URL saved in .connector-url");
+  const sameUrl = UPDATE && fs.existsSync(path.join(bak, ".connector-url")) && fs.readFileSync(path.join(bak, ".connector-url"), "utf8") === fs.readFileSync(path.join(dir, ".connector-url"), "utf8");
+  if (UPDATE) (sameUrl ? ok : note)(sameUrl ? "your connector URL is the same as before" : "your connector URL changed: add the connector in Claude again with the new URL");
 
   // 6. background worker
   step("Starting the worker at login", TOTAL);
@@ -258,8 +285,22 @@ async function main() {
   }
 
   // 7. hand-off to the person
-  step("Last step is yours (about a minute)", TOTAL);
   const urlFile = path.join(dir, ".connector-url");
+  if (sameUrl) {
+    step("Nothing to do in Claude", TOTAL);
+    say("  Your connector URL didn't change, so the connector you already added in Claude keeps working.");
+    say("  Jobs that were running when the worker restarted go back in the queue and start again.");
+  } else await handOff(dir, urlFile, assistant);
+
+  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
+    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone,
+    ...(UPDATE ? { updatedFrom: prev.receipt.installer || prev.site.installer || null } : {}), steps,
+  }, null, 2) + "\n");
+  say(`\n${DRY ? "DRY RUN COMPLETE" : UPDATE ? "UPDATE COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
+}
+
+async function handOff(dir, urlFile, assistant) {
+  step("Last step is yours (about a minute)", 7);
   let copied = false;
   if (!DRY && !SIM) {
     const c = HOST === "darwin" ? run("pbcopy", [], { input: fs.readFileSync(urlFile, "utf8"), shell: false }) : run("clip", [], { input: fs.readFileSync(urlFile, "utf8") });
@@ -275,14 +316,145 @@ async function main() {
   }
   say(`  If something doesn't work: node "${path.join(dir, "doctor.mjs")}"  (TROUBLESHOOTING.md in the release folder explains each problem)`);
   say(`  That URL works like a password. Anyone who has it can hand your computer work. Don't post it or share it.`);
-
-  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
-    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone, steps,
-  }, null, 2) + "\n");
-  say(`\n${DRY ? "DRY RUN COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
+  if (copied) say(`  After you paste it into Claude, copy something else, so the URL isn't left on your clipboard (or in a clipboard history).`);
 }
 
 // ---------- pieces ----------
+function slugOf(assistant) {
+  const base = assistant.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "assistant";
+  return { base, slug: `${base}-handoff`.slice(0, 50) };
+}
+
+// The install to update or re-key: the one for --assistant NAME, or the only one in ~/Projects.
+function findInstall() {
+  const projects = path.join(HOME, "Projects");
+  const dirs = val("assistant") ? [path.join(projects, slugOf(clean(val("assistant"))).slug)]
+    : (fs.existsSync(projects) ? fs.readdirSync(projects) : []).filter((n) => /-handoff$/.test(n)).map((n) => path.join(projects, n));
+  const found = dirs.filter((d) => fs.existsSync(path.join(d, "site.json")));
+  if (!found.length) die(`no Handoff install found in ${projects}${val("assistant") ? ` for assistant ${val("assistant")}` : ""}. Nothing was changed.`);
+  if (found.length > 1) die(`more than one install in ${projects} (${found.map((d) => path.basename(d)).join(", ")}). Pick one with --assistant NAME. Nothing was changed.`);
+  const dir = found[0];
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")); } catch { return {}; } };
+  return { dir, site: read("site.json"), receipt: read("install-receipt.json") };
+}
+
+// An update keeps what the old install made while it ran: job and thread folders, logs, and settings in worker/config.json.
+function carryOver(bak, dir) {
+  let moved = 0;
+  for (const d of ["jobs", "threads", "logs"]) {
+    const from = path.join(bak, d);
+    if (!fs.existsSync(from)) continue;
+    fs.rmSync(path.join(dir, d), { recursive: true, force: true });
+    fs.renameSync(from, path.join(dir, d));
+    moved++;
+  }
+  const cfgPath = path.join(dir, "worker", "config.json"), oldPath = path.join(bak, "worker", "config.json");
+  if (fs.existsSync(oldPath)) {
+    const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    let old = {};
+    try { old = JSON.parse(fs.readFileSync(oldPath, "utf8")); } catch { note("couldn't read the old worker/config.json; using the new defaults"); }
+    // Your settings win, except the ones this run decides: the command line switch, and where the connector is (set after deploy).
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...fresh, ...old, powerLanes: fresh.powerLanes, base: fresh.base }, null, 2) + "\n");
+  }
+  ok(`kept your job and thread folders, logs (${moved} folder(s) moved from the old install) and your worker settings`);
+}
+
+function wranglerIn(dir) { return (args, o = {}) => run(HOST === "win32" ? "npx.cmd" : "npx", ["-y", WRANGLER, ...args], { cwd: dir, ...o }); }
+
+// If the connector URL or a key leaked: new connector, worker and lead agent keys, pushed to Cloudflare, the worker and
+// supervisor restarted on them, then everything saved that could run later, so a planted schedule doesn't outlive the leak.
+async function rotateKeys() {
+  const { dir, site } = findInstall();
+  const ROTATE = has("rotate-keys");
+  say(`Daisy Handoff ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
+  const W = wranglerIn(dir);
+  const db = `${site.slug || path.basename(dir)}-jobs`;
+  if (ROTATE) {
+    step("New keys", 3);
+    const keys = [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"], ...(fs.existsSync(path.join(dir, ".lead-agent-key")) ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])];
+    const oldUrl = fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim();
+    for (const [name, file] of keys) {
+      const key = randomBytes(32).toString("hex");
+      // Cloudflare first, then the file: if a step fails, every key file still matches what Cloudflare has.
+      if (!DRY) { const r = W(["secret", "put", name], { input: key }); if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}. Keys changed before it are saved; run --rotate-keys again.`); }
+      writeSecret(path.join(dir, file), key);
+      ok(`${name} changed${DRY ? " (dry run: only the file)" : ", on Cloudflare and in " + file}`);
+    }
+    const base = JSON.parse(fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8")).base;
+    writeSecret(path.join(dir, ".connector-url"), `${base}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
+    ok("new private URL saved in .connector-url");
+    note("the bell key (.bell-key) only works from this computer, so it stays");
+    if (MAC && !DRY && !SIM && !has("no-start")) {
+      for (const label of ["com.daisy.handoff-worker", "com.daisy.supervisor"]) {
+        const r = run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${label}`]);
+        (r.status === 0 ? ok : note)(r.status === 0 ? `restarted ${label} on the new key` : `couldn't restart ${label} (${tail(r)}); log out and back in to restart it`);
+      }
+      note("jobs that were running go back in the queue and start again");
+    } else if (!MAC && !DRY) note("restart the worker so it uses the new key: sign out of Windows and back in");
+    else skip(`restarting the worker and supervisor (${DRY ? "dry run" : "--no-start"})`);
+    if (!DRY) {
+      const s = await smokeCheck(fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim());
+      (s.ok ? ok : note)(s.ok ? `the new URL answers (${s.tools} tools)` : `the new URL didn't answer yet (${s.why})`);
+      let gone = 0;
+      for (let i = 0; i < 6 && gone !== 404; i++) { try { gone = (await fetch(oldUrl, { method: "POST", body: "{}" })).status; } catch {} if (gone !== 404) await new Promise((r) => setTimeout(r, 5000)); }
+      (gone === 404 ? ok : note)(gone === 404 ? "the old URL is turned away (HTTP 404)" : `the old URL still answered HTTP ${gone}; check again in a minute`);
+    }
+  }
+
+  step("What could still run later", 3);
+  const q = (sql) => {
+    if (DRY) return [];
+    const r = W(["d1", "execute", db, "--remote", "--json", "--command", sql]);
+    try { return JSON.parse(r.stdout)[0].results || []; } catch { die(`couldn't read the database ${db}: ${tail(r)}`); }
+  };
+  const tag = (x) => x.created_by ? `set up by ${x.created_by}` : "recorded as you";
+  const sch = q("SELECT id, name, repeat, at_time, days, next_run_at, created_by FROM schedules WHERE enabled=1 AND kind<>'digest' ORDER BY next_run_at");
+  const rts = q("SELECT id, name, steps, created_by FROM routines ORDER BY name_key");
+  const waiting = q("SELECT id, title, status, created_by FROM jobs WHERE status IN ('queued','needs_approval') ORDER BY created_at");
+  if (DRY) skip("reading schedules, routines and waiting jobs from Cloudflare (dry run)");
+  say(sch.length ? `  Schedules (${sch.length}):` : "  No schedules.");
+  for (const x of sch) say(`    - "${x.name}" (${x.id}): ${x.repeat} at ${x.at_time}${x.days ? ` on ${x.days}` : ""}, next ${x.next_run_at}; ${tag(x)}`);
+  say(rts.length ? `  Routines (${rts.length}):` : "  No routines.");
+  for (const x of rts) { let n = "?"; try { n = JSON.parse(x.steps).length; } catch {} say(`    - "${x.name}" (${x.id}), ${n} step(s); ${tag(x)}`); }
+  say(waiting.length ? `  Waiting jobs (${waiting.length}):` : "  No queued jobs or jobs waiting for your yes.");
+  for (const x of waiting) say(`    - "${x.title}" (${x.id}), ${x.status}; ${tag(x)}`);
+  say("  Anyone with your old URL could have saved these through Claude, and then they show as \"recorded as you\". Check every one.");
+
+  step("Clear them", 3);
+  const total = sch.length + rts.length + waiting.length;
+  let clear = has("clear-schedules");
+  if (!clear && total) {
+    const ask = await asker();
+    clear = /^y(es)?$/i.test(await ask("Turn off every schedule, delete every routine and cancel every waiting job above? You can set your own up again.", "no"));
+    ask.close();
+  }
+  if (!total && !DRY) ok("nothing to clear");
+  else if (!clear) say("  Kept them. To clear them later: node install.mjs --clear-schedules. Or cancel the ones you don't know in Claude (cancel_schedule, delete_routine, cancel_job).");
+  else if (DRY) skip("clearing (dry run)");
+  else {
+    const now = new Date().toISOString();
+    q(`UPDATE schedules SET enabled=0, next_run_at=NULL, last_note='Turned off by a key change.', updated_at='${now}' WHERE enabled=1 AND kind<>'digest'`);
+    q("DELETE FROM routines");
+    q(`UPDATE jobs SET status='cancelled', result='Cancelled by a key change. Nothing it was waiting to do was done.', finished_at='${now}', updated_at='${now}', reported_at='${now}' WHERE status IN ('queued','needs_approval')`);
+    ok(`turned off ${sch.length} schedule(s), deleted ${rts.length} routine(s), cancelled ${waiting.length} waiting job(s)`);
+  }
+
+  if (ROTATE) {
+    say("\n  Next:");
+    say("  1. In Claude, remove the old connector under Customize > Connectors and add it again with the new URL" +
+      (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`));
+    say("  2. If the URL was out while the command line was on, assume someone could have run commands as you. Read");
+    say(`     ${path.join(dir, "logs", "shell.log")} for commands you didn't run, and check \`crontab -l\` and ~/Library/LaunchAgents`);
+    say("     for anything you don't recognize. If you find any, treat this computer as compromised.");
+  }
+  say(`\n${DRY ? "DRY RUN COMPLETE" : "DONE"}  (${dir})`);
+}
+
+function copyUrl(dir) {
+  const u = fs.readFileSync(path.join(dir, ".connector-url"), "utf8");
+  return (HOST === "darwin" ? run("pbcopy", [], { input: u, shell: false }) : run("clip", [], { input: u })).status === 0;
+}
+
 function findClaude() {
   const exe = WIN ? "claude.exe" : "claude";
   const spots = [path.join(HOME, ".local", "bin", exe)];
