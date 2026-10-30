@@ -65,7 +65,7 @@ jobs:
         run: |
           rm -rf "$HOME/Projects/manual-handoff"
           rm -f "$HOME/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/"*Handoff.cmd
-      - name: MANUAL-INSTALL.md step 1, exactly as written (in the runner's own home)
+      - name: MANUAL-INSTALL.md step 1 (with --yes and set answers, in the runner's own home)
         shell: bash
         run: |
           node install.mjs --manual --yes --name Tester --assistant Manual

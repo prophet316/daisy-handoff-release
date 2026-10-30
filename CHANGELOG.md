@@ -74,8 +74,8 @@ GitHub's own runners were blocked on the account while 0.9.1 was made. `installe
 - New TROUBLESHOOTING.md, MANUAL-INSTALL.md and an "Install problem" issue form. The README lists everything you need and what it costs, how to add the connector in Claude, how phone notifications use Remote Control, how to start things again after Stop everything, how to hear about updates and security fixes, and how Nuff Said compares with what's built into Claude.
 
 ### Tests
-- `./test.sh gate` runs the desktop gate, host lane, command line switch, who-sent-it (`test/sender.mjs`), run state (`test/run-state.mjs`), supervisor poll (`test/poll.mjs`), stop by session (`test/kill-session.mjs`), time zone, shell lane, redaction, bell and bell prompt self-tests. `installer.yml` is set up to run the installer dry run, update and key change, and the time zone, redaction and bell prompt tests on macOS and Windows, plus `./test.sh gate` on macOS.
-- `test/doctor-no-leak.mjs`, `test/update-resume.mjs` and `test/overlay-build.mjs` run from the release folder.
+- `./test.sh gate` runs the desktop gate, host lane, command line switch, who-sent-it (`test/sender.mjs`), run state (`test/run-state.mjs`), supervisor poll (`test/poll.mjs`), stop by session (`test/kill-session.mjs`), time zone, shell lane, redaction, bell and bell prompt self-tests. `installer.yml` runs on one Windows PC of the maintainer's: the installer dry run, update and key change, the manual install, the update-resume and doctor tests, and the time zone, redaction and bell prompt tests. Its `./test.sh gate` step runs only on a Mac, so it doesn't run there.
+- `test/doctor-no-leak.mjs`, `test/update-resume.mjs` and `test/overlay-build.mjs` run from the release folder. On Windows, `test/update-resume.mjs` prints a skip line for each group of checks it doesn't run there.
 
 ## 0.9.0 (2026-10-29)
 - One installer for macOS and Windows: `node install.mjs`, with `--dry-run` and `--uninstall`.
