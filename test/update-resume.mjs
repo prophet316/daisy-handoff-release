@@ -327,6 +327,25 @@ if (process.platform !== "win32") {
   fs.rmSync(fhome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
+// --uninstall takes back the bell folder's trust entry in ~/.claude.json and leaves every other entry alone.
+if (process.platform === "darwin") {
+  const uhome = fs.mkdtempSync(path.join(os.tmpdir(), "untrust-"));
+  const udir = path.join(uhome, "Projects", "daisy-handoff");
+  fs.mkdirSync(path.join(udir, "jarvis-bell"), { recursive: true });
+  fs.writeFileSync(path.join(udir, "site.json"), "{}");
+  const cj = path.join(uhome, ".claude.json");
+  const before = { numStartups: 3, projects: { [path.join(udir, "jarvis-bell")]: { hasTrustDialogAccepted: true }, "/tmp/another-project": { hasTrustDialogAccepted: true, allowedTools: [] } } };
+  fs.writeFileSync(cj, JSON.stringify(before), { mode: 0o600 });
+  const dry = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--dry-run", "--home", uhome], { encoding: "utf8" });
+  check(dry.status === 0 && /would remove Claude Code's trust entry/.test(dry.stdout) && JSON.stringify(JSON.parse(fs.readFileSync(cj, "utf8"))) === JSON.stringify(before), "--uninstall --dry-run says it would remove the bell folder's trust entry and changes nothing", dry.stdout.slice(-400));
+  const real = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--home", uhome], { encoding: "utf8" });
+  const after = JSON.parse(fs.readFileSync(cj, "utf8"));
+  check(real.status === 0 && /removed Claude Code's trust entry/.test(real.stdout) && !Object.hasOwn(after.projects, path.join(udir, "jarvis-bell")) &&
+    after.projects["/tmp/another-project"]?.allowedTools && after.numStartups === 3 && (fs.statSync(cj).mode & 0o777) === 0o600,
+    "--uninstall removes only the bell folder's trust entry, keeps the rest of ~/.claude.json and its permissions", real.stdout.slice(-400));
+  fs.rmSync(uhome, { recursive: true, force: true });
+}
+
 // Windows isn't in this release: a real install there is refused before anything happens (a dry run still works).
 const winHook = path.join(home, "as-windows.mjs");
 fs.writeFileSync(winHook, `Object.defineProperty(process, "platform", { value: "win32" });\n`);

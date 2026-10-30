@@ -448,12 +448,12 @@ for (const bell of ["off", "on"]) {
   env.PHONE_BELL = bell;
   const set = await call(OWNER_IP, "daily_digest", { time: "7 am" });
   check(`bell ${bell}: setting the digest time says ${bell === "on" ? "it is pushed" : "it isn't pushed, and how to hear it"}`, !set.isError && (bell === "on"
-    ? /will be pushed to \S+ phone every day at 7/.test(set.text) && /start of the next chat/.test(set.text)
-    : /will be ready every day at 7/.test(set.text) && /Phone notifications are off/.test(set.text) && /won't be pushed/.test(set.text) && /start of the next chat/.test(set.text) && !/will be pushed/.test(set.text)), set.text);
+    ? /will be pushed to \S+ phone every day at 7/.test(set.text) && /next time \S+ checks for updates/.test(set.text)
+    : /will be ready every day at 7/.test(set.text) && /Phone notifications are off/.test(set.text) && /won't be pushed/.test(set.text) && /next time \S+ checks for updates/.test(set.text) && !/will be pushed/.test(set.text)), set.text);
   const now = await call(OWNER_IP, "daily_digest", {});
   check(`bell ${bell}: asking for the digest says where it goes`, !now.isError && (bell === "on" ? /pushed to \S+ phone/.test(now.text) : /isn't pushed/.test(now.text) && !/Daily at .*: pushed/.test(now.text)), now.text.slice(-200));
   const ls = await call(OWNER_IP, "list_schedules", {});
-  check(`bell ${bell}: list_schedules says where the digest goes`, bell === "on" ? /Daily digest: pushed to \S+ phone/.test(ls.text) : /Daily digest: brought up in the next chat \(phone notifications are off/.test(ls.text), ls.text.slice(-200));
+  check(`bell ${bell}: list_schedules says where the digest goes`, bell === "on" ? /Daily digest: pushed to \S+ phone/.test(ls.text) : /Daily digest: brought up at the next update check \(phone notifications are off/.test(ls.text), ls.text.slice(-200));
   const scr = await call(OWNER_IP, "look_at_screen", {});
   const cu = await call(OWNER_IP, "use_computer", { task: "on my Mac, open Calculator", target: "host" });
   check(`bell ${bell}: screen and desktop replies ${bell === "on" ? "mention" : "don't promise"} a phone push`, [scr, cu].every((x) => !x.isError && PUSH.test(x.text) === (bell === "on")), `${scr.text} | ${cu.text}`);
@@ -461,8 +461,10 @@ for (const bell of ["off", "on"]) {
   DB.raw.prepare("UPDATE schedules SET next_run_at=?1 WHERE id='digest'").run(new Date(Date.now() - 60_000).toISOString());
   const due = await conn.fireDue(env, Date.now(), true);
   check(`bell ${bell}: the digest is made when due`, !!due.digest?.line, JSON.stringify(due));
+  const ag = await call(AGENT, "check_updates", {});
   const cu1 = await call(OWNER_IP, "check_updates", {}), cu2 = await call(OWNER_IP, "check_updates", {});
-  check(`bell ${bell}: check_updates brings up the new digest once`, /Daily digest \(.+\): Daily digest: \d+ done/.test(cu1.text) && !/Daily digest \(/.test(cu2.text), `${cu1.text.slice(-300)} | ${cu2.text.slice(-200)}`);
+  check(`bell ${bell}: an agent's update check shows the digest but leaves it for the owner's next chat`, /Daily digest \(.+\): \d+ done/.test(ag.text) && /Daily digest \(.+\): \d+ done/.test(cu1.text), `${ag.text.slice(-200)} | ${cu1.text.slice(-200)}`);
+  check(`bell ${bell}: check_updates brings up the new digest once, saying "Daily digest" once`, /Daily digest \(.+\): \d+ done/.test(cu1.text) && (cu1.text.match(/Daily digest/g) || []).length === 1 && !/Daily digest \(/.test(cu2.text), `${cu1.text.slice(-300)} | ${cu2.text.slice(-200)}`);
 }
 const offd = await call(OWNER_IP, "daily_digest", { off: true });
 check("turning the digest off says it can still be asked for, with no push wording", /off/.test(offd.text) && /any time/.test(offd.text) && !PUSH.test(offd.text), offd.text);

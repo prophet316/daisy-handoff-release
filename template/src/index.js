@@ -414,7 +414,7 @@ const TOOLS = [
       "Open apps and web pages, click, type, read what is on screen, and report back. " +
       "Returns a job id; call get_job to hear the result (also a phone push when phone notifications are on). On the host it waits while {{OWNER}} is using the mouse or keyboard and never touches " +
       "apps that run commands or scripts (Terminal and other terminals, Script Editor, Automator, Shortcuts, code editors), launchers, apps that change the system, System Settings, " +
-      "Keychain Access, password managers or Claude (the app or a claude.ai tab) unless {{HE}} names them. " +
+      "Keychain Access, password managers or Claude (the app, a claude.ai tab, or Claude in Chrome's side panel) unless {{HE}} names them. " +
       "Pressing Return, searching and opening web pages always go through, in the browser {{HE}} names. {{HIS_CAP}} request is {{HIS}} yes for every step of the task it asks for, " +
       "including the details the task needs on the site {{HE}} named; the only stop is right before money is charged, which comes back as needs_approval with the item, total and delivery address " +
       "for {{HIM}} to approve once. A safety gate still blocks sending, posting, uploading, deleting or access changes {{HE}} didn't ask for, and {{HIS}} details on sites {{HE}} didn't ask to use; " +
@@ -921,8 +921,9 @@ async function checkUpdates(env) {
   // The daily digest made since {{OWNER}} last heard one, once, whether or not phone notifications are on.
   const dg = await env.DB.prepare("SELECT last_run_at, last_note FROM schedules WHERE id='digest' AND last_run_at IS NOT NULL").first();
   if (dg?.last_note && (await getSetting(env, "digest_heard")) !== dg.last_run_at) {
-    parts.push(`Daily digest (${localTime(dg.last_run_at)}): ${dg.last_note} Ask for the digest to hear the details.`);
-    await setSetting(env, "digest_heard", dg.last_run_at);
+    parts.push(`Daily digest (${localTime(dg.last_run_at)}): ${dg.last_note.replace(/^Daily digest:\s*/i, "")} Ask for the digest to hear the details.`);
+    // Only {{OWNER}}'s own chat uses it up: an agent's update check shows it too, but leaves it for {{HIS}} next chat.
+    if (whoOf(env).owner) await setSetting(env, "digest_heard", dg.last_run_at);
   }
   return toolText(parts.join("\n\n"));
 }
@@ -1519,7 +1520,7 @@ async function listSchedules(env) {
 }
 
 // Where the daily digest goes: the phone only with the bell on; check_updates either way.
-const digestWhere = (env) => bellOn(env) ? "pushed to {{OWNER}}'s phone and brought up in the next chat" : "brought up in the next chat (phone notifications are off, so it isn't pushed)";
+const digestWhere = (env) => bellOn(env) ? "pushed to {{OWNER}}'s phone and brought up at the next update check" : "brought up at the next update check (phone notifications are off, so it isn't pushed)";
 
 async function cancelSchedule(env, args) {
   const ref = typeof args.schedule === "string" ? args.schedule.trim() : "";
@@ -1686,8 +1687,8 @@ async function dailyDigest(env, args) {
        ON CONFLICT(id) DO UPDATE SET at_time=?1, next_run_at=?2, enabled=1, updated_at=?3`
     ).bind(at, next, iso).run();
     return toolText(bellOn(env)
-      ? `The daily digest will be pushed to {{OWNER}}'s phone every day at ${spoken(at)}, and brought up at the start of the next chat after that. Next: ${localTime(next)}.`
-      : `The daily digest will be ready every day at ${spoken(at)}, and brought up at the start of the next chat after that. Phone notifications are off on the {{MACHINE}}, so it won't be pushed to {{OWNER}}'s phone; to get it there, {{OWNER}} runs node install.mjs --update --bell on the {{MACHINE}}. Next: ${localTime(next)}.`);
+      ? `The daily digest will be pushed to {{OWNER}}'s phone every day at ${spoken(at)}, and brought up the next time {{OWNER}} checks for updates after that. Next: ${localTime(next)}.`
+      : `The daily digest will be ready every day at ${spoken(at)}, and brought up the next time {{OWNER}} checks for updates after that. Phone notifications are off on the {{MACHINE}}, so it won't be pushed to {{OWNER}}'s phone; to get it there, {{OWNER}} runs node install.mjs --update --bell on the {{MACHINE}}. Next: ${localTime(next)}.`);
   }
   const row = await env.DB.prepare("SELECT * FROM schedules WHERE id='digest'").first();
   const d = await buildDigest(env, now, row?.last_run_at);

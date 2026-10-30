@@ -64,9 +64,11 @@ const POWER_WARNING = [
   "Anyone who can change your Cloudflare account can run jobs here too. Install it only on a computer you trust",
   "it with. Desktop control is Mac only for now.",
 ];
-// Says plainly that Enter means on, and what on means for a leaked URL.
+// Says plainly that Enter means on, what on means for a leaked URL, and why Enter means off at the bell question instead.
 const POWER_QUESTION = "Let jobs use the command line and control this computer's desktop? Anyone with your connector URL could then " +
-  "run commands here. Press Enter or type yes for on (the default), or type no to leave them off";
+  "run commands here. Enter means on because that's how Nuff Said is made to run: Claude can run commands and do desktop jobs for you. (The phone " +
+  "notification question next is the other way round, Enter means off, because the bell answers a Claude Code warning for you.) " +
+  "Press Enter or type yes for on (the default), or type no to leave them off";
 // A clear yes is true, a clear no is false, anything else is null (ask again). Trailing dots and commas don't count.
 function yesNo(a) {
   const w = String(a).toLowerCase().replace(/[.!,]+/g, " ").replace(/\s+/g, " ").trim();
@@ -90,13 +92,14 @@ const LEAK_STEPS = (dir, db) => [
   `  3. ${path.join("logs", "shell.log")} lists commands run here, but a command could have changed it. The connector keeps its own`,
   `     list on Cloudflare: npx -y ${WRANGLER} d1 execute ${db} --remote --command "SELECT created_at, arg FROM control WHERE kind='shell' ORDER BY id"`,
   "     (someone with your Cloudflare sign-in could change that too). Check crontab -l, ~/Library/LaunchAgents, Login Items,",
-  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, any .claude folder, CLAUDE.md or",
-  `     CLAUDE.local.md in ${dir} (find -L that folder \\( -name .claude -o -name CLAUDE.md -o -name CLAUDE.local.md \\)`,
-  "     -not -path '*/jarvis-bell/*'), other than the phone bell's own, which --update writes again, and any link in its jobs",
-  "     or threads folder (find jobs threads -maxdepth 1 -type l 2>/dev/null; a folder that isn't there yet is fine). Nuff Said",
-  "     makes no others; a CLAUDE.md or CLAUDE.local.md inside a job folder can be",
-  "     that job's own work. --update moves the rest in job and thread folders aside. Finding nothing doesn't prove nothing",
-  "     happened; if in doubt, treat this computer as compromised. SECURITY.md has every step.",
+  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, and any .claude folder,",
+  `     CLAUDE.md or CLAUDE.local.md in ${dir}`,
+  "     (find -L that folder \\( -name .claude -o -name CLAUDE.md -o -name CLAUDE.local.md \\) -not -path '*/jarvis-bell/*'),",
+  "     other than the phone bell's own, which --update writes again, and any link in its jobs or threads folder",
+  "     (find jobs threads -maxdepth 1 -type l 2>/dev/null; a folder that isn't there yet is fine). Nuff Said makes no others;",
+  "     a CLAUDE.md or CLAUDE.local.md inside a job folder can be that job's own work. --update moves the rest in job and",
+  "     thread folders aside. Finding nothing doesn't prove nothing happened; if in doubt, treat this computer as compromised.",
+  "     SECURITY.md has every step.",
   "  4. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more, from the fresh download, and only then add the",
   "     connector in Claude with that URL. Until then, treat the keys from this key change as seen: a copied Cloudflare or Claude",
   "     sign-in, or something left running here, could have read them. If this run was that second one, you're done here:",
@@ -113,7 +116,8 @@ const BELL_NOTE = [
 ];
 // The bell question itself carries the one sentence that matters, so nobody turns it on without reading it.
 const BELL_QUESTION = "Turn on phone notifications? The bell uses a Claude Code development channel (a research preview), and Nuff Said " +
-  "answers Claude Code's \"I am using this for local development\" warning for you each time the bell starts. Type yes to turn it on";
+  "answers Claude Code's \"I am using this for local development\" warning for you each time the bell starts. That's why Enter " +
+  "leaves it off here, while Enter turned the command line on: jobs don't need the bell, and only you should give that answer. Type yes to turn it on";
 const HOST = process.platform; // the OS we are really running on
 // While an update runs: what is still on your old settings if it stops now (set by main as it goes).
 let stillOld = null;
@@ -223,6 +227,7 @@ function uninstall() {
   // The database name, when there's exactly one install to name it from.
   const projects = path.join(HOME, "Projects");
   const installs = fs.existsSync(projects) ? fs.readdirSync(projects).filter((n) => /-handoff$/.test(n) && fs.existsSync(path.join(projects, n, "site.json"))) : [];
+  if (MAC) untrustBellFolders(installs.map((n) => path.join(projects, n)));
   const db = installs.length === 1 ? `${installs[0]}-jobs` : "NAME-handoff-jobs";
   // An install that never reached Cloudflare (a manual install before its deploy step, or one that stopped) has nothing there to delete.
   let base = null;
@@ -991,6 +996,26 @@ function trustBellFolder(dir) {
     ok("Claude Code trusts the bell folder, so the phone bell can start");
   } catch (e) {
     note(`couldn't mark the bell folder as trusted in ~/.claude.json (${e.message}); phone notifications won't start until it is. Run doctor.mjs for the fix.`);
+  }
+}
+
+// --uninstall takes back the trust entry trustBellFolder added for each install's bell folder, and leaves the rest of
+// ~/.claude.json as it was.
+function untrustBellFolders(dirs) {
+  const p = path.join(HOME, ".claude.json");
+  let c;
+  try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch { return; }
+  const keys = dirs.map((d) => path.join(d, "jarvis-bell")).filter((k) => c.projects && Object.hasOwn(c.projects, k));
+  if (!keys.length) return;
+  if (DRY) { for (const k of keys) skip(`would remove Claude Code's trust entry for ${k} from ~/.claude.json`); return; }
+  try {
+    for (const k of keys) delete c.projects[k];
+    const tmp = `${p}.handoff-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(c, null, 2), { mode: fs.statSync(p).mode & 0o777 });
+    fs.renameSync(tmp, p);
+    for (const k of keys) ok(`removed Claude Code's trust entry for ${k} from ~/.claude.json`);
+  } catch (e) {
+    note(`couldn't remove the bell folder's trust entry from ~/.claude.json (${e.message}). It's harmless, and you can delete the "${keys[0]}" entry under "projects" yourself.`);
   }
 }
 

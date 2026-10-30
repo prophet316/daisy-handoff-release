@@ -95,7 +95,8 @@ export function siteNamed(site = "", request = "") {
 // Returns null (go ahead) or the categories the action needs and {{OWNER}} has not allowed.
 // request: {{OWNER}}'s words for this job. label: the clicked element's own text. app: the app acted on.
 // site: the page the browser window is showing (from the agent's last look), when the app is a browser.
-export function gate({ action, intent = "", text = "", url = "", keys = "", app = "", request = "", label = "", site = "" }, allow = ALLOW) {
+// browser: whether the app shows web pages, when the caller knows better than the name list (the host lane does).
+export function gate({ action, intent = "", text = "", url = "", keys = "", app = "", request = "", label = "", site = "", browser }, allow = ALLOW) {
   // Opening a web page is never gated; only links that start a message or a call are.
   if (action === "open_url") return /^(mailto|sms|tel|facetime|imessage):/i.test(url) && !allow.has("send") && !allow.has("*") ? ["send"] : null;
   // "Bring Chrome forward to look it up" is about a window, not forwarding a message.
@@ -116,11 +117,12 @@ export function gate({ action, intent = "", text = "", url = "", keys = "", app 
 
   const asked = implied(request);
   // A page {{HE}} didn't ask to use (another site, or one a page redirected to) never gets {{HIS}} details or passwords.
-  const rightPlace = !BROWSERS.test(app) || siteNamed(site, request);
+  const isB = browser ?? BROWSERS.test(app);
+  const rightPlace = !isB || siteNamed(site, request);
   // Signing in on the site {{HE}} asked to use is part of a task like an order there; anywhere else it needs {{HIS}} words.
   const ok = (c) => allow.has(c) || (c === "charge" ? false
     : c === "personal" ? asked.has(c) && rightPlace
-    : c === "credentials" ? (asked.has(c) || (asked.has("personal") && BROWSERS.test(app))) && rightPlace
+    : c === "credentials" ? (asked.has(c) || (asked.has("personal") && isB)) && rightPlace
     : allow.has("*") || asked.has(c));
   if (personal) hits.push("personal");
   const blocked = [...new Set(hits)].filter((c) => !ok(c));
@@ -387,6 +389,8 @@ function selftest() {
     ["site named by name", siteNamed("https://www.biblegateway.com/passage/", "open BibleGateway and look up John 3:16")],
     ["local test shop named by host", siteNamed("127.0.0.1:8765/checkout.html", "the test shop at http://127.0.0.1:8765/") && !siteNamed("127.0.0.2", "the test shop at http://127.0.0.1:8765/")],
     ["site not named", !siteNamed("evil.example.com", "go to walmart.com")],
+    ["a browser the name list doesn't know keeps details on the named site", gate({ action: "type_text", intent: "enter the address", text: "12 Oak Lane", app: "Google Chrome Beta", site: "evil.example.com", request: "order toilet paper on walmart.com and deliver to home", browser: true }, none)?.includes("personal")],
+    ["the browser flag also lets details go to the named site", gate({ action: "type_text", intent: "enter the address", text: "12 Oak Lane", app: "Google Chrome Beta", site: "www.walmart.com", request: "order toilet paper on walmart.com and deliver to home", browser: true }, none) === null],
   ];
   let fail = 0;
   for (const [n, ok] of cases) { console.log(`${ok ? "PASS" : "FAIL"}  gate: ${n}`); if (!ok) fail++; }
