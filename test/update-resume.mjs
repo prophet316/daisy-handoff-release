@@ -176,6 +176,19 @@ const again = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--ma
 check(again.status !== 0 && /already ran step 1 of MANUAL-INSTALL\.md/.test(again.stderr) && !/no terminal|--force/.test(again.stderr), "a second --manual is refused before any question and points back to the guide, not --force", again.stderr.slice(-300));
 const mstop = spawnSync(process.execPath, ["--import", pathToFileURL(hook).href, path.join(REPO, "install.mjs"), "--update", "--dry-run", "--home", mhome], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
 check(mstop.status !== 0 && JSON.parse(fs.readFileSync(path.join(mdir, "install-receipt.json"), "utf8")).manual === true, "a stopped --update on a manual install keeps manual: true", mstop.stderr.slice(-300));
+// A real --update on a manual install that stopped at the Cloudflare sign-in: manual and unfinished, no dryRun.
+const mrec = JSON.parse(fs.readFileSync(path.join(mdir, "install-receipt.json"), "utf8"));
+fs.writeFileSync(path.join(mdir, "install-receipt.json"), JSON.stringify({ ...mrec, dryRun: false, unfinished: true }));
+const mdoc2 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+check(!/Log out and back in/.test(mdoc2.stdout) && !/Look at logs\/worker\.log/.test(mdoc2.stdout) && /--update again/.test(mdoc2.stdout), "after a manual install's --update stopped, the doctor says to run --update again, never to log out", mdoc2.stdout.slice(-400));
+// After --uninstall (startup entries moved aside, folder kept), a fresh --manual says to move the folder, not to carry on.
+if (process.platform === "darwin") {
+  const mplist = path.join(mhome, "Library", "LaunchAgents", "com.daisy.handoff-worker.plist");
+  fs.renameSync(mplist, `${mplist}.aside`);
+  const afterUn = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--manual"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+  check(afterUn.status !== 0 && /then --uninstall/.test(afterUn.stderr) && /move that folder aside/.test(afterUn.stderr) && !/Carry on with the guide/.test(afterUn.stderr), "after --uninstall, a fresh --manual says to move the folder aside first, not to carry on", afterUn.stderr.slice(-300));
+  fs.renameSync(`${mplist}.aside`, mplist);
+}
 
 // An install with no receipt and no answer in its worker config: the update asks for a flag instead of turning things on.
 fs.rmSync(path.join(dir, "install-receipt.json"));

@@ -248,6 +248,8 @@ async function main() {
     const takenEarly = MAC && fs.existsSync(path.join(HOME, "Library", "LaunchAgents", "com.daisy.handoff-worker.plist"));
     const manualDir = existingInstalls().find((d) => { try { return JSON.parse(fs.readFileSync(path.join(d, "install-receipt.json"), "utf8")).manual; } catch { return false; } });
     const named = val("assistant") && path.join(HOME, "Projects", slugOf(clean(val("assistant"))).slug);
+    // After --uninstall the folder stays but its startup entries are gone, so the guide's later steps can't carry on.
+    if (manualDir && MAC && !takenEarly) die(`you ran step 1 of MANUAL-INSTALL.md (${manualDir}) and then --uninstall, so the guide can't carry on from there. Nothing was changed. To start over, move that folder aside (for example mv "${manualDir}" "${manualDir}.old"), then run --manual again.`);
     if (manualDir) die(`you already ran step 1 of MANUAL-INSTALL.md (${manualDir}). Nothing was changed. Carry on with the guide, steps 2 to 7; to start over, run --uninstall and move that folder aside first.`);
     if (takenEarly || (named && fs.existsSync(named))) die(`${takenEarly ? "a Nuff Said worker is already installed for this user" : `${named} already exists`}. Nothing was changed. ` +
       "Run with --uninstall first, or --force to replace it (the old folder is kept as a backup).");
