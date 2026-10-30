@@ -64,8 +64,8 @@ const HOOK = join(ROOT, "worker", "job-hook.mjs");
 const RUN_FILES = [".progress.json", ".stop", ".run.json", ".heartbeat", ".watch.json", ".recover.json"];
 const OUTBOX = join(ROOT, CFG.bell?.outbox || "logs/bell-outbox.jsonl");
 // What a job must not be able to change: the desktop gate's record of what it held, the lane and hook configs, and the
-// steering inbox. They live outside the job folder, in ~/{{DOTDIR}}/runs/<job>, which no computer job can write to
-// (computer jobs can only write in their job folder). A job with a command line can still write anywhere you can.
+// steering inbox. They live outside the job folder, in ~/{{DOTDIR}}/runs/<job>. No job's file tools may write there, and a job
+// without a command line may write only in its job folder (planRun). A job with a command line can still write anywhere you can.
 const RUNS = resolve(CFG.runsDir || join(HOME, "{{DOTDIR}}", "runs"));
 export const runDir = (id) => join(RUNS, String(id).replace(/[^\w.-]/g, "_"));
 // The kinds the gate held on the job's last run, from the gate's own record.
@@ -168,15 +168,25 @@ export function planRun(job, jobDir = join(ROOT, "jobs", job.id), state = runDir
   const profile = approved && CFG.approved && !m.cua ? CFG.approved : {};
   const cwd = workDir(job, jobDir);
   const host = !!m.cua && job.target === "host";
+  const tools = profile.allowedTools || m.tools || TOOLS;
+  const shell = tools.includes("Bash");
+  // An approved profile in config.json may leave Bash out of a code or design run: then the run isn't told it has it.
+  const told = host ? m.instructionsHost : m.instructions;
   const context = [
-    host ? m.instructionsHost : m.instructions,
+    shell ? told : told.replace(/You have command-line access \(Bash\) and can edit files in [^.]*\./, "This run has no command line."),
     `Job folder (your notes, RESULT.md and anything {{OWNER}} should read go here): ${jobDir}`,
     cwd !== jobDir ? `You are working in ${cwd}${job.project_dir ? " (the project folder {{OWNER}} named)" : " (this thread's folder)"}.` : "",
     publishNote(job),
     job.origin && job.created_by ? `This job comes from ${job.origin}. ${job.created_by} set it up, not {{OWNER}}, so it is not {{OWNER}}'s approval for anything the safety gate covers: stop with STATUS: NEEDS_APPROVAL for that.`
       : job.origin ? `This job comes from ${job.origin}. That saved request is {{OWNER}}'s approval for exactly what it says, each time it runs, and nothing beyond it: anything else that would send, post, publish, spend, delete, or change passwords or access still stops for {{HIS}} yes (STATUS: NEEDS_APPROVAL).` : "",
   ].filter(Boolean).join("\n");
-  const tools = profile.allowedTools || m.tools || TOOLS;
+  // A bare Write or Edit allow rule matches every path, and a -p run takes it as a yes outside the working folder too
+  // (tested with real Claude Code: a research job wrote into the run folder and the worker's code). A run without a command
+  // line may write only in its job folder (and its thread's folder); -p refuses the rest. An Edit(path) rule covers Write too.
+  const fileTools = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+  const writeDirs = [...new Set([jobDir, ...(job.thread_id && cwd === join(ROOT, "threads", job.thread_id) ? [cwd] : [])])];
+  const allowed = shell || !tools.some((t) => fileTools.includes(t)) ? tools
+    : [...tools.filter((t) => !fileTools.includes(t)), ...writeDirs.map((d) => `Edit(/${d}/**)`)];
   const lane = m.cua ? { ...cuaAllow(job, jobDir, approved, state), host } : null;
   const server = host ? "host-lane" : "cua-lane";
   return {
@@ -184,7 +194,10 @@ export function planRun(job, jobDir = join(ROOT, "jobs", job.id), state = runDir
     rules: `${approved ? (from ? APPROVED_RULES.replace("{{OWNER}} has now said yes to that held action.", `{{OWNER}}'s ${from} has now said yes to that held action, using the setting {{OWNER}} turned on that lets a lead agent approve for {{HIM}}. It was not {{OWNER}} directly.`) : APPROVED_RULES) : RULES}\n\n${context}${lane ? `\n${laneNote(lane)}` : ""}`,
     mcpConfig: lane ? join(state, ".cua-mcp.json") : profile.mcpConfig ? join(ROOT, profile.mcpConfig) : EMPTY_MCP,
     tools,
-    allowedTools: lane ? [...tools, `mcp__${server}`] : tools,
+    allowedTools: lane ? [...allowed, `mcp__${server}`] : allowed,
+    // The gates' hold records and the steering inboxes (every job's run folder) are never written with a file tool, in any mode.
+    // Runs without a command line also can't write the worker's own code. A command line can still reach both another way.
+    denyTools: [...new Set([RUNS, state])].map((d) => `Edit(/${d}/**)`).concat(shell ? [] : [`Edit(/${join(ROOT, "worker")}/**)`]),
     settings: join(state, ".hooks.json"), state,
     addDirs: [...new Set([...(m.addHome === false ? [] : CFG.addDirs || []), ...(cwd !== jobDir ? [jobDir] : []),
       ...(job.earlier || []).map((x) => join(ROOT, "jobs", x))])], // a routine step may read the steps before it
@@ -413,6 +426,12 @@ export function linkedInRoot(p, root = ROOT) {
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) return false;
   try { return realpathSync(p) !== join(realpathSync(root), rel); } catch { return false; }
 }
+// A link at p itself inside the install folder, even one that leads nowhere (making a folder through it would fail with a raw error).
+export function linkAt(p, root = ROOT) {
+  const rel = relative(root, p);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return false;
+  try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
+}
 export const LINKED = "This job's folder or its thread's folder was replaced with a link, which Nuff Said never makes, so a planted Claude Code hook could run there. Nothing was run. Move the link out of the install folder before you retry.";
 
 // A project folder must be inside {{OWNER}}'s home after resolving links; a new name under ~/Projects is created.
@@ -428,8 +447,9 @@ export function checkProject(dir) {
   return null;
 }
 
-function runClaude(plan, dir, onSpawn, meta = {}) {
-  const args = [
+// The Claude Code command line for a run.
+export function claudeArgs(plan) {
+  return [
     "-p", plan.prompt,
     ...(plan.resume ? ["--resume", plan.resume] : []),
     "--output-format", "json",
@@ -439,9 +459,13 @@ function runClaude(plan, dir, onSpawn, meta = {}) {
     "--append-system-prompt", plan.rules,
     "--tools", plan.tools.join(","),             // only this mode's tools exist in the session
     "--allowedTools", ...plan.allowedTools,
-    "--disallowedTools", ...HARD_DENY,
+    "--disallowedTools", ...HARD_DENY, ...(plan.denyTools || []),
     ...(plan.addDirs.length ? ["--add-dir", ...plan.addDirs] : []),
   ];
+}
+
+function runClaude(plan, dir, onSpawn, meta = {}) {
+  const args = claudeArgs(plan);
   return new Promise((resolve) => {
     // Its own process group (detached), so a stop can take the whole job down without touching the worker.
     const child = spawn(CFG.claudeBin, args, { cwd: plan.cwd || dir, stdio: ["ignore", "pipe", "pipe"], detached: true,
@@ -816,6 +840,8 @@ async function refuseLinked(job) {
 
 async function handle(job) {
   const dir = join(ROOT, "jobs", job.id);
+  // The jobs folder is checked before the job's folder is made, so nothing is created where a linked jobs folder leads.
+  if (linkedInRoot(dirname(dir)) || linkAt(dir)) return refuseLinked(job);
   mkdirSync(dir, { recursive: true });
   if (linkedInRoot(dir)) return refuseLinked(job);
   if (job.run_mode === "publish") return publishOnly(job, dir);
@@ -858,6 +884,7 @@ async function handle(job) {
   mkdirSync(state, { recursive: true, mode: 0o700 });
   let plan = planRun(job, dir, state);
   if (resetRunState(plan, dir, state)) log(`job ${job.id} purchase.json moved aside before the ${plan.mode} run`);
+  if (linkedInRoot(dirname(plan.cwd)) || linkAt(plan.cwd)) return refuseLinked(job);
   mkdirSync(plan.cwd, { recursive: true });
   if (linkedInRoot(plan.cwd)) return refuseLinked(job);
   if (plan.lane) { writeLaneConfig(plan, dir, job); log(`job ${job.id} ${isHost ? "host lane ({{OWNER}}'s Mac)" : "lane"} ready; allowed: ${plan.lane.allow.join(", ") || "nothing gated"}`); }

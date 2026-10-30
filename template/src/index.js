@@ -1486,7 +1486,7 @@ async function scheduleJob(env, args) {
     "INSERT INTO schedules (id, name, kind, repeat, at_time, days, job, routine_id, next_run_at, created_at, updated_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)"
   ).bind(id, title, routine ? "routine" : "job", repeat, atTime, days, job, routine?.id || null, s.next_run_at, iso, notOwner(whoOf(env))).run();
   const what = routine ? ` It runs routine "${routine.name}" (${JSON.parse(routine.steps).length} steps).` : modeText(w.mode, w.project_dir);
-  return toolText(`Scheduled "${title}" (schedule id ${id}): ${whenText(s)}. Next run ${localTime(s.next_run_at)}.${what} Cancel it any time with cancel_schedule.`);
+  return toolText(`Scheduled "${title}" (schedule id ${id}): ${whenText(s)}. Next run ${localTime(s.next_run_at)}.${what} To stop it, say "cancel the ${title} schedule".`);
 }
 
 async function listSchedules(env) {
@@ -1543,7 +1543,7 @@ async function saveRoutine(env, args) {
   if (existing) await env.DB.prepare("UPDATE routines SET name=?2, steps=?3, updated_at=?4, created_by=?5 WHERE id=?1").bind(existing.id, name, JSON.stringify(steps), now, by).run();
   else await env.DB.prepare("INSERT INTO routines (id, name, name_key, steps, created_at, updated_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)")
     .bind(newId(), name, threadKey(name), JSON.stringify(steps), now, by).run();
-  return toolText(`${existing ? "Updated" : "Saved"} routine "${name}" (${steps.length} steps, run one after another): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}. Run it with run_routine "${name}", or put it on a schedule with schedule_job.`);
+  return toolText(`${existing ? "Updated" : "Saved"} routine "${name}" (${steps.length} steps, run one after another): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}. Say "run ${name}" to run it, or ask to put it on a schedule.`);
 }
 
 // createdBy: the agent behind this run (its routine's, its schedule's, or whoever ran it), or null for {{OWNER}}.

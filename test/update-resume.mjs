@@ -144,7 +144,7 @@ fs.copyFileSync = function (a, b, ...rest) { if (String(b).endsWith("doctor.mjs"
 syncBuiltinESMExports();\n`);
   r = install(["--dry-run", "--update"], { pre: ["--import", pathToFileURL(ctrlc).href] });
   const failedC = fs.readdirSync(path.dirname(dir)).filter((n) => n.startsWith(`${path.basename(dir)}.failed-`));
-  check(r.status === 1 && /the update failed partway \(you pressed Ctrl-C\.\)\. Your old install folder is back at/.test(r.stderr) &&
+  check(r.status === 1 && /STOPPED: you pressed Ctrl-C partway through the update\. Your old install folder is back at/.test(r.stderr) &&
     fs.readFileSync(path.join(dir, ".connector-key"), "utf8") === before && fs.existsSync(path.join(dir, "worker", "config.json")) && failedC.length === 1,
     "Ctrl-C during an update puts the old folder back with the same keys", `${r.status} ${r.stderr.slice(-400)}`);
   r = install(["--dry-run", "--update"]);

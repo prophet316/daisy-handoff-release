@@ -59,9 +59,10 @@ const POWER_WARNING = [
   "click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or",
   "email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you",
   "asked for them. That lowers the risk but doesn't remove it. To turn it off, answer no here or rerun the installer",
-  "with --no-power-lanes. Off isn't a sandbox: code jobs still run Claude Code with its own command line, so a leaked URL",
-  "can still reach this computer. Anyone who can change your Cloudflare account can run jobs here too. Install it only",
-  "on a computer you trust it with. Desktop control is Mac only for now.",
+  "with --no-power-lanes. Off isn't a sandbox: code jobs still run Claude Code with its own command line",
+  "and can change any file in your home folder, so a leaked URL can still reach this computer.",
+  "Anyone who can change your Cloudflare account can run jobs here too. Install it only on a computer you trust",
+  "it with. Desktop control is Mac only for now.",
 ];
 // Says plainly that Enter means on, and what on means for a leaked URL.
 const POWER_QUESTION = "Let jobs use the command line and control this computer's desktop? Anyone with your connector URL could then " +
@@ -89,11 +90,12 @@ const LEAK_STEPS = (dir, db) => [
   `  3. ${path.join("logs", "shell.log")} lists commands run here, but a command could have changed it. The connector keeps its own`,
   `     list on Cloudflare: npx -y ${WRANGLER} d1 execute ${db} --remote --command "SELECT created_at, arg FROM control WHERE kind='shell' ORDER BY id"`,
   "     (someone with your Cloudflare sign-in could change that too). Check crontab -l, ~/Library/LaunchAgents, Login Items,",
-  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, any .claude folder in",
-  `     ${dir} (find -L that folder -name .claude -not -path '*/jarvis-bell/*') other than the phone bell's own, which --update`,
-  "     writes again, and any link in its jobs or threads folder (find jobs threads -maxdepth 1 -type l). Nuff Said makes no others;",
-  "     --update moves those in job and thread folders aside. Finding nothing doesn't prove nothing happened; if in doubt, treat",
-  "     this computer as compromised. SECURITY.md has every step.",
+  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, any .claude folder or CLAUDE.md in",
+  `     ${dir} (find -L that folder \\( -name .claude -o -name CLAUDE.md \\) -not -path '*/jarvis-bell/*'), other than the phone`,
+  "     bell's own, which --update writes again, and any link in its jobs or threads folder (find jobs threads -maxdepth 1 -type l",
+  "     2>/dev/null; a folder that isn't there yet is fine). Nuff Said makes no others; a CLAUDE.md inside a job folder can be",
+  "     that job's own work. --update moves the rest in job and thread folders aside. Finding nothing doesn't prove nothing",
+  "     happened; if in doubt, treat this computer as compromised. SECURITY.md has every step.",
   "  4. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more, from the fresh download, and only then add the",
   "     connector in Claude with that URL. Until then, treat the keys from this key change as seen: a copied Cloudflare or Claude",
   "     sign-in, or something left running here, could have read them. If this run was that second one, you're done here:",
@@ -117,7 +119,8 @@ let stillOld = null;
 let rollback = null; // { bak, dir } from the moment the old folder is moved aside until the new one has the keys
 // Ctrl-C (or the terminal closing) stops like any other stop, so one in the rollback window puts the old folder back too. The
 // steps in that window don't wait on anything, so a Ctrl-C there is handled at the pause just before the window closes.
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => die(sig === "SIGINT" ? "you pressed Ctrl-C." : `this run was ended (${sig}).`));
+let stoppedBy = null; // "you pressed Ctrl-C" or "this run was ended (SIGTERM)": a stop, not a failure
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { stoppedBy = sig === "SIGINT" ? "you pressed Ctrl-C" : `this run was ended (${sig})`; die(`${stoppedBy}.`); });
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -248,11 +251,11 @@ function putBack({ bak, dir }, e) {
       fs.renameSync(dir, failed);
     }
     fs.renameSync(bak, dir);
-    console.error(`\nSTOPPED: ${what} failed partway (${why}). Your old install folder is back at ${dir}, as it was before this run,` +
+    console.error(`\nSTOPPED: ${stoppedBy ? `${stoppedBy} partway through ${what}.` : `${what} failed partway (${why}).`} Your old install folder is back at ${dir}, as it was before this run,` +
       ` with your keys, jobs, threads and logs. The blue glow helper outside that folder may already be this release's. Nothing changed on Cloudflare. ${fs.existsSync(failed) ? `The half-made folder is at ${failed}; delete it when you like. ` : ""}` +
       `Run node doctor.mjs, then node install.mjs ${has("update") ? "--update" : "--force"} again; if it fails the same way, TROUBLESHOOTING.md says how to report it.`);
   } catch (e2) {
-    console.error(`\nSTOPPED: ${what} failed partway (${why}), and putting the old folder back failed too (${shown(e2.message).slice(0, 200)}).` +
+    console.error(`\nSTOPPED: ${stoppedBy ? `${stoppedBy} partway through ${what}` : `${what} failed partway (${why})`}, and putting the old folder back failed too (${shown(e2.message).slice(0, 200)}).` +
       ` Your old install is at ${bak}. Rename it to ${dir} by hand${fs.existsSync(dir) ? ` after moving ${dir} aside` : ""}, then run it again.`);
   }
   process.exit(1);
@@ -570,7 +573,8 @@ function carryOver(bak, dir, bell) {
         const to = path.join(bak, "claude-folders", path.relative(dir, at));
         fs.mkdirSync(to, { recursive: true });
         fs.renameSync(c, path.join(to, name));
-        planted.push(path.join(path.relative(dir, at), name) + (name === ".claude" && !st.isDirectory() ? " (not a folder)" : ""));
+        let target = ""; try { if (st.isSymbolicLink()) target = fs.readlinkSync(path.join(to, name)); } catch {}
+        planted.push(path.join(path.relative(dir, at), name) + (target ? ` (a link to ${target})` : name === ".claude" && !st.isDirectory() ? " (not a folder)" : ""));
       }
     }
   }

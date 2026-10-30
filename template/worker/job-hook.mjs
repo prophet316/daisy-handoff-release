@@ -11,7 +11,7 @@ import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 
 const DIR = process.env.DAISY_JOB_DIR;
-// The inbox lives in the job's run folder (~/{{DOTDIR}}/runs/<job>), outside the job folder, so a computer job can't add to it.
+// The inbox lives in the job's run folder (~/{{DOTDIR}}/runs/<job>), which a job without a command line can't write to (worker.mjs planRun).
 const RUN = process.env.DAISY_RUN_DIR || DIR;
 const inbox = () => join(RUN, ".steer-inbox.jsonl");
 const seenFile = () => join(RUN, ".steer-seen");

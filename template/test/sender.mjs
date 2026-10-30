@@ -15,7 +15,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const conn = await import("../src/index.js");
 const connector = conn.default;
 process.env.DAISY_NO_MAIN = "1";
-const { planRun, cuaAllow, linkedInRoot } = await import("../worker/worker.mjs");
+const { planRun, cuaAllow, linkedInRoot, linkAt, claudeArgs, runDir } = await import("../worker/worker.mjs");
 const OWNER = JSON.parse(readFileSync(join(ROOT, "site.json"), "utf8")).owner;
 
 let pass = 0, fail = 0;
@@ -252,6 +252,11 @@ await new Promise((ok) => setTimeout(ok, 50));
 DB.raw.prepare("UPDATE control SET taken_at=?1, done_at=?1, result='{\"found\":1,\"termed_ms\":10}' WHERE kind='kill' AND done_at IS NULL").run(new Date().toISOString());
 r = await killingStalled;
 check("the force-kill reply says how to run it again in the owner's words, with no tool names", /Say "retry it" to run it again\./.test(r.text) && !spoken.test(r.text), r.text);
+const confirmNames = /cancel_schedule|run_routine|schedule_job/;
+r = await call(OWNER_IP, "schedule_job", { title: "spoken sched", details: "x", in_minutes: 30 });
+check("the schedule-saved reply says how to stop it in the owner's words, with no tool names", /To stop it, say "cancel the spoken sched schedule"\./.test(r.text) && !confirmNames.test(r.text), r.text);
+r = await call(OWNER_IP, "save_routine", { name: "spoken routine", steps: [{ title: "a" }] });
+check("the routine-saved reply says how to run it in the owner's words, with no tool names", /Say "run spoken routine" to run it/.test(r.text) && !confirmNames.test(r.text), r.text);
 r = await call(AGENT, "resume_all");
 check("resume_all from an agent is refused and stays paused", r.isError && !!row("SELECT value FROM settings WHERE key='paused' AND value<>'null'"), r.text);
 r = await call(OWNER_IP, "resume_all");
@@ -270,6 +275,23 @@ for (const mode of ["code", "design", "research", "writing", "screen", "computer
 }
 const appr = planRun({ id: "m2", title: "x", details: "x", run_mode: "approved", mode: "research" }, "/tmp/x");
 check("an approved research run isn't told it has the command line", !/command-line access/.test(appr.rules) && !appr.tools.includes("Bash"), appr.rules.slice(0, 300));
+// A bare Write or Edit allow rule matches every path in Claude Code. A job without a command line may write only in its job
+// folder (and its thread's folder), and no job's file tools may write in the run folders (hold records, steering inboxes).
+const fileTools = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+const runsRule = `Edit(/${dirname(runDir("m1"))}/**)`, workerRule = `Edit(/${join(ROOT, "worker")}/**)`;
+for (const mode of ["code", "design", "research", "writing", "screen", "computer"]) for (const target of [undefined, "host"]) for (const run_mode of ["fresh", "approved"]) {
+  const p = planRun({ id: "m1", title: "x", details: "x", run_mode, mode, target }, "/tmp/x");
+  const args = claudeArgs(p), deny = args.slice(args.indexOf("--disallowedTools") + 1);
+  const bare = p.allowedTools.filter((t) => fileTools.includes(t)), scoped = p.allowedTools.filter((t) => /^Edit\(/.test(t));
+  const ok = p.tools.includes("Bash") ? bare.length > 0 && !scoped.length && !deny.includes(workerRule)
+    : !bare.length && deny.includes(workerRule) && JSON.stringify(scoped) === JSON.stringify(p.tools.some((t) => fileTools.includes(t)) ? ["Edit(//tmp/x/**)"] : []);
+  check(`a ${mode}${target ? "/host" : ""} ${run_mode} job writes ${p.tools.includes("Bash") ? "with its normal tools" : "only in its job folder"}, and never in the run folders`, ok && deny.includes(runsRule), JSON.stringify({ allowed: p.allowedTools, deny }));
+}
+const wThread = planRun({ id: "w1", title: "x", details: "x", run_mode: "thread", thread_id: "th1", thread: { name: "t", session_id: "s" }, mode: "writing" }, "/tmp/x");
+check("a writing thread task may write in its job folder and its thread's folder, nowhere else",
+  JSON.stringify(wThread.allowedTools.filter((t) => /^Edit\(/.test(t))) === JSON.stringify(["Edit(//tmp/x/**)", `Edit(/${join(ROOT, "threads", "th1")}/**)`]), JSON.stringify(wThread.allowedTools));
+const wProject = planRun({ id: "w2", title: "x", details: "x", run_mode: "fresh", project_dir: "/tmp/some-project", mode: "research" }, "/tmp/x");
+check("a research job sent to a project folder may still write only in its job folder", JSON.stringify(wProject.allowedTools.filter((t) => /^Edit\(/.test(t))) === JSON.stringify(["Edit(//tmp/x/**)"]), JSON.stringify(wProject.allowedTools));
 
 // A job or thread folder inside the install folder that is a link is refused before Claude Code runs there.
 {
@@ -281,11 +303,16 @@ check("an approved research run isn't told it has the command line", !/command-l
   check("a thread folder that is a link is caught", linkedInRoot(join(root, "threads", "planted"), root));
   check("a folder under a linked jobs folder is caught", linkedInRoot(join(root, "jobs", "real"), root));
   check("a project folder outside the install folder isn't this check's business", !linkedInRoot(away, root) && !linkedInRoot(root, root));
+  symlinkSync(join(root, "nowhere"), join(root, "threads", "dangling"));
+  check("a thread folder that is a link to nothing is caught before anything is made", linkAt(join(root, "threads", "dangling"), root) && !linkAt(join(root, "threads", "real"), root));
+  check("a link outside the install folder (a project folder) isn't this check's business", !linkAt(join(root, "threads", "planted"), join(root, "jobs-elsewhere")));
   rmSync(root, { recursive: true, force: true }); rmSync(away, { recursive: true, force: true });
 }
 const workerSrc = readFileSync(join(ROOT, "worker", "worker.mjs"), "utf8");
 check("the worker checks the job folder and the folder Claude runs in for links before it runs anything",
   /mkdirSync\(dir, \{ recursive: true \}\);\n  if \(linkedInRoot\(dir\)\) return refuseLinked\(job\);/.test(workerSrc) && /mkdirSync\(plan\.cwd, \{ recursive: true \}\);\n  if \(linkedInRoot\(plan\.cwd\)\) return refuseLinked\(job\);/.test(workerSrc));
+check("the worker checks the jobs folder and a thread's parent folder before it makes anything in them",
+  /if \(linkedInRoot\(dirname\(dir\)\) \|\| linkAt\(dir\)\) return refuseLinked\(job\);\n  mkdirSync\(dir,/.test(workerSrc) && /if \(linkedInRoot\(dirname\(plan\.cwd\)\) \|\| linkAt\(plan\.cwd\)\) return refuseLinked\(job\);\n  mkdirSync\(plan\.cwd,/.test(workerSrc));
 const sched = planRun({ id: "s1", title: "x", details: "do it", origin: "agent tester's schedule (not X's) \"x\"", created_by: "agent tester", mode: "code" }, "/tmp/x");
 check("an agent's scheduled run is not called the owner's approval", !/approval for exactly what it says/.test(sched.rules) && /agent tester set it up, not/.test(sched.rules), sched.rules.slice(-400));
 const own = planRun({ id: "s2", title: "x", details: "do it", origin: "X's schedule \"x\"", mode: "code" }, "/tmp/x");
