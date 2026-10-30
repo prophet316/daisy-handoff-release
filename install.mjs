@@ -163,7 +163,7 @@ async function main() {
   if (major < 22) die(`Node ${process.versions.node} is too old. Install Node 22 or newer from nodejs.org, then open a new Terminal window and run this again.`);
   ok(`Node ${process.versions.node}`);
   const claudeBin = findClaude();
-  if (!claudeBin) (DRY ? note : die)("Claude Code isn't installed. Get it at claude.ai/code, sign in, then run this again.");
+  if (!claudeBin) (DRY ? note : die)("Claude Code isn't installed. Install it with the command on code.claude.com/docs/en/setup, sign in, then run this again.");
   else {
     ok(`Claude Code at ${claudeBin}`);
     if (!SIM) {

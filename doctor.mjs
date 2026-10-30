@@ -100,7 +100,7 @@ say(`  info  this computer's time zone: ${tz}`);
 // ---------- 2. Claude Code ----------
 say(`\n2. Claude Code`);
 const claudeBin = [cfg?.claudeBin, path.join(HOME, ".local", "bin", process.platform === "win32" ? "claude.exe" : "claude")].find((p) => p && fs.existsSync(p)) || which("claude");
-if (!claudeBin) check("fail", "Claude Code isn't installed", "Install it from claude.ai/code, then run claude and sign in.", "Claude Code isn't installed or signed out");
+if (!claudeBin) check("fail", "Claude Code isn't installed", "Install it with the command on code.claude.com/docs/en/setup, then run claude and sign in.", "Claude Code isn't installed or signed out");
 else {
   const ver = run(claudeBin, ["--version"]).stdout?.trim() || "?";
   check("ok", `Claude Code ${ver}`);

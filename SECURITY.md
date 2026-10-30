@@ -24,35 +24,57 @@ Daisy Handoff doesn't check for updates by itself. On this repo's GitHub page, c
 
 | Key | Where it lives | What it unlocks |
 | --- | -------------- | --------------- |
-| Connector key | inside your connector URL | Lets Claude (you) list, add and manage jobs |
-| Worker key | `.worker-key` and Cloudflare secret | Lets your computer pick up jobs |
+| Connector key | inside your connector URL | Lets Claude (you) list, add and manage jobs, and, with the command line on, run commands on your computer |
+| Worker key | `.worker-key` and Cloudflare secret | Lets your computer pick up jobs. Anyone holding it could take your jobs and their details off the queue and post results |
 | Bell key | `.bell-key` | Lets the worker send your phone a notification |
 | Lead agent key (only with `--lead-agent`) | `.lead-agent-key` and Cloudflare secret | Lets that one agent approve held actions for you |
 
-**The connector URL is the password.** Anyone with it can queue jobs that run on your computer as you. Keep it out of screenshots, chats, issues and screen recordings.
+**The connector URL is the password.** Anyone with it can queue jobs that run on your computer as you. Through their own Claude or the Claude API they count as you (see below), and with the command line on (the default) they can run any command on your computer and read the result, right away, with no approval step. Keep it out of screenshots, chats, issues and screen recordings.
 
 ## Know before you turn it on
 
 - **It ships with the command line and desktop control turned on, the way the author uses it.** That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. That lowers the risk but doesn't remove it. Install it only on a computer you trust it with. Desktop control is Mac only for now.
-- **Jobs run as your user.** They run Claude Code with your files and your sign-ins.
+- **Jobs run as your user.** They run Claude Code with your files and your sign-ins. Jobs run as you, so a job can read your connector URL and keys in the install folder. A job tricked by a web page or email could use them.
+- **The phone bell uses a research preview.** The bell is a Claude Code session that gets each finished job through Claude Code channels, a research preview from Anthropic ([Channels](https://code.claude.com/docs/en/channels)). Daisy's channel isn't on Anthropic's approved list, so the bell starts Claude Code with `--dangerously-load-development-channels server:daisy-bell` and answers that flag's warning, and the question about its own MCP server, for this one session. The session loads only that channel (`--strict-mcp-config`), none of your other connectors. Anthropic says channels may change, so a Claude Code update could stop notifications until Daisy is updated.
 - **Turning the command line and desktop control off.** Answer no to the installer's question, or run it with `--no-power-lanes`. That sets `POWER_LANES = "off"` in `wrangler.toml` and `"powerLanes": false` in `worker/config.json`, and `install-receipt.json` records the choice. Off means four tools are gone: run_command and command_result (shell commands on your computer straight from the conversation), look_at_screen (screenshots of your screen) and use_computer (Claude clicks and types on your desktop). Claude doesn't see them, the connector refuses them if called, and the worker and supervisor on your computer refuse those jobs and commands as well. Turning them off is not a sandbox: code and design jobs still run Claude Code with its normal tools, including its own command line, inside the folders you send them to.
-- **Changing it after you install.** Run `node install.mjs --uninstall`, then `node install.mjs --force --no-power-lanes` (or `--power-lanes` to turn them back on). The old install folder is kept as a backup. You get a new connector URL, so add the connector in Claude again and remove the old one.
-- **Prompt injection is real.** A job that reads a web page or an email can meet text written to trick it. The built-in gate stops before sending, posting, sharing, spending, deleting or changing access unless your own request asked for that. It lowers the risk. It doesn't remove it.
-- **Approvals are explicit.** Anything waiting on you shows as needs approval. Nothing goes ahead until you say yes. Only your own Claude chat can say it: requests from anywhere else (an agent or job on your computer, or a script) are labeled as agents, and the connector refuses their approvals. Claude's connector traffic comes from Anthropic's published range, `160.79.104.0/21`, which Cloudflare checks, so a local agent can't pass as you. Someone who has your URL and their own Claude account could, which is one more reason to treat the URL as a password.
+- **Changing it after you install.** From the release folder run `node install.mjs --update --no-power-lanes` (or `--update --power-lanes` to turn them back on). Your keys and connector URL stay the same, and the old install folder is kept as a backup.
+- **Prompt injection is real.** A job that reads a web page or an email can meet text written to trick it. Jobs are told to stop before sending, posting, sharing, spending, deleting or changing access unless your own request asked for that. For desktop control, email and publishing, the stop is enforced in code: the job can't do those things itself. For everything else a job does with its command line, the stop is an instruction to Claude, and a well-made trick can get past an instruction. It lowers the risk. It doesn't remove it.
+- **Approvals are explicit.** Anything waiting on you shows as needs approval, and the connector doesn't let it go ahead until a yes comes from your own Claude chat. Requests from anywhere else (an agent or job on your computer, or a script) are labeled as agents. What the connector enforces for them:
+  - It refuses their approvals and their answers to a job waiting for your yes.
+  - It refuses publish and share, run_command and command_result, look_at_screen and use_computer, and resume_all (they can still stop everything, and that stop is recorded as theirs).
+  - Everything they start or change is recorded as theirs: jobs, threads, schedules, routines, replies, retries, cancels and force-kills. A run of a schedule or routine an agent saved is marked as that agent's, never as your saved approval, and the job is told so. An agent replacing one of your routines makes its later runs the agent's too.
+
+  What it can't do: tell you apart from anything else that reaches your connector through Anthropic. Claude's connector traffic comes from Anthropic's published range, `160.79.104.0/21`, and Cloudflare checks it, which stops a script or job on your computer from passing as you by calling the URL directly. It is not proof of identity: someone with your URL and their own Claude account, or a program using the Claude API's MCP connector with any API key, comes from the same range and counts as you. A job on your computer that can read your URL could do that too, with an API key someone gives it. That's one more reason to treat the URL as a password.
 - **Lead agent (off by default).** `--lead-agent NAME` lets one named agent approve for you, logged as that agent, never as you. It uses `.lead-agent-key`, which any job on this computer can read, so a tricked job could approve too. Leave it off unless you need it.
 
-## If your connector URL leaks
+## If your connector URL or a key leaks
 
-Rotate the connector key. In Terminal, in your install folder (`~/Projects/daisy-handoff` unless you named your assistant something else):
+In Terminal, in the release folder you installed from:
+
+```bash
+node install.mjs --rotate-keys
+```
+
+It changes the connector key, the worker key and the lead agent key (if you turned that on), on Cloudflare first and then in the install folder, and restarts the worker and supervisor on the new keys. It checks that the new URL answers and the old one gets HTTP 404. Then it lists every schedule, routine, queued job and job waiting for your yes, with who set each one up, and asks whether to turn them all off. Someone with your old URL could have saved them through Claude, and then they show as yours, so check every one. `node install.mjs --clear-schedules` turns them all off at any time. The bell key stays: it only works from your own computer.
+
+Then in Claude, remove the old connector (Customize > Connectors; on Team and Enterprise, an Owner uses Organization settings > Connectors) and add it again with the new URL, which is now on your clipboard. Copy something else afterwards. Your job history stays.
+
+If the URL was out while the command line was on, assume someone could have run commands as you: read `logs/shell.log` in the install folder for commands you didn't run, and check `crontab -l` and `~/Library/LaunchAgents` for anything you don't recognize. If you find any, treat the Mac as compromised. Changing keys doesn't remove something left running in the background.
+
+By hand, in the install folder (`~/Projects/daisy-handoff` unless you named your assistant something else):
 
 ```bash
 openssl rand -hex 32 | tr -d '\n' > .connector-key
 npx -y wrangler@4.151.3 secret put CONNECTOR_KEY < .connector-key
 printf '%s/%s/mcp' "$(node -p "require('./worker/config.json').base")" "$(cat .connector-key)" > .connector-url
+openssl rand -hex 32 | tr -d '\n' > .worker-key
+npx -y wrangler@4.151.3 secret put WORKER_KEY < .worker-key
+launchctl kickstart -k gui/$(id -u)/com.daisy.handoff-worker
+launchctl kickstart -k gui/$(id -u)/com.daisy.supervisor
 pbcopy < .connector-url
 ```
 
-Then in Claude, remove the old connector (Customize > Connectors; on Team and Enterprise, an Owner uses Organization settings > Connectors) and add it again with the new URL, which is now on your clipboard. The old URL stops working within a few seconds of the new secret being saved. The worker on your computer uses its own key, so it keeps running and your jobs and history stay.
+If you use a lead agent, do the same for `.lead-agent-key` and `LEAD_AGENT_KEY`. Then say "list my schedules" in Claude and cancel any you don't recognize.
 
 ## Removing it
 

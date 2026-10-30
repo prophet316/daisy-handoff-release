@@ -61,7 +61,7 @@ The Daisy Handoff installer finds Claude Code either way; this only matters when
 
 **You see:** `STOPPED: Claude Code isn't installed` or `Claude Code is installed but signed out`.
 
-1. Install Claude Code from [claude.ai/code](https://claude.ai/code). The Mac command is `curl -fsSL https://claude.ai/install.sh | bash`.
+1. Install Claude Code with the command on [Anthropic's setup page](https://code.claude.com/docs/en/setup). The Mac command is `curl -fsSL https://claude.ai/install.sh | bash`.
 2. Run `claude` (see the section above if that says command not found).
 3. Type `/login` and sign in with your Claude account in the browser. Use your Claude plan, not an API key: phone notifications need a claude.ai sign-in.
 4. Type `/exit`, then run `node install.mjs` again.
@@ -172,9 +172,10 @@ Don't want desktop control at all? Reinstall with `--no-power-lanes`.
 Schedules use the time zone your Mac had when you installed. The doctor shows which one. If you moved, or want another zone, update with your zone named:
 
 ```bash
-node install.mjs --uninstall
-node install.mjs --force --time-zone America/New_York
+node install.mjs --update --time-zone America/New_York
 ```
+
+That keeps your connector URL, so there's nothing to redo in Claude.
 
 Use your zone's name from [this list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), like `Europe/London` or `Asia/Tokyo`. Installs from version 0.9.0 always used US Central Time; updating fixes that.
 
@@ -186,4 +187,4 @@ Use your zone's name from [this list](https://en.wikipedia.org/wiki/List_of_tz_d
 2. Open the report and read it. Keys, your connector URL, emails and your user name are already removed, but cut anything else you'd rather keep private.
 3. Open an issue at [github.com/prophet316/daisy-handoff-release/issues](https://github.com/prophet316/daisy-handoff-release/issues), pick **Install problem** or **Something broke**, and paste the report.
 
-Never paste your connector URL or the files `.connector-url`, `.connector-key`, `.worker-key` or `.bell-key`. If one slips out, rotate the key (README, "If your URL leaks").
+Never paste your connector URL or the files `.connector-url`, `.connector-key`, `.worker-key`, `.bell-key` or `.lead-agent-key`. If one slips out, run `node install.mjs --rotate-keys` (README, "If your URL leaks").

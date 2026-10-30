@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Security: the connector now records and enforces the real sender on every tool that starts, schedules, approves, replies, retries, cancels or changes jobs. Agents (anything that isn't your own Claude chat, and isn't a lead agent you turned on) can't publish or share, run commands, look at or use your desktop, or undo stop everything. start_thread, continue_thread, look_at_screen and use_computer record who started the job. Schedules and routines record who saved them, and their runs are marked as that agent's, never as your saved approval. Cancels, force-kills, stops and schedule cancels say who asked. New test: `test/sender.mjs`.
+- Security: `node install.mjs --rotate-keys` changes the connector, worker and lead agent keys, restarts the worker and supervisor, and lists every schedule, routine and waiting job with who set it up; `--clear-schedules` turns them all off.
+- Security: the doctor only sends your key to the connector your install recorded as deployed, never to the dry run's placeholder address (`test/doctor-no-leak.mjs`).
+- Security: desktop control treats the Claude app and claude.ai as off-limits unless your request names them, and holds express checkout buttons ("Buy with 1-Click", "Pay with Link") as the charge step.
+- `node install.mjs --update` updates in place: same keys, same connector URL, same Worker and database, last time's answers, job folders, logs and worker settings.
+- The doctor checks `.lead-agent-key` permissions, says "worker is running" instead of "checked in", and spots Claude Code's first-run screen in the bell session. The installer says so before the first slow wrangler download, and suggests clearing the clipboard after you paste the URL.
+- Docs: what the approval stop enforces in code and what is an instruction to Claude; that Anthropic's address range, including the Claude API, counts as you; that a leaked URL means commands on your computer while the command line is on; that the bell uses Claude Code's research-preview channels with its developer flag; CuaDriver needs macOS 14; Dispatch and the new Claude experience in "Isn't this already built into Claude?"; one Mac line instead of a Windows column.
+- Installer version 0.9.1.
 - Every job message, reply, approval and new job records who sent it: you (your own Claude chat) or a named agent. Agents' messages reach a job marked as coming from an agent, never as you.
 - Only you can approve a held action or answer a job waiting for your yes. Agents can still message each other and keep working.
 - New, off by default: `--lead-agent NAME` lets one named agent approve for you. Its approvals are logged as that agent.
