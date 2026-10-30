@@ -14,8 +14,8 @@ This release ships with the command line and desktop control turned on, the way 
 Needs macOS 13 or newer, a paid Claude plan (Pro or Max) with Claude Code signed in, Node 22 or newer, and a free Cloudflare account. The README's What you need section has the details and costs. Try `node install.mjs --dry-run` first if you want to see everything it would do.
 
 ### What's tested in this release
-- Installer dry run on macOS and Windows (GitHub's clean runners) and on the author's Mac Studio.
-- A real install on the author's Mac Studio from this release's files, to its own new Cloudflare connector: deploy, keys, live check, and real jobs run end to end through the connector by Claude Code. About a minute from unzip to the first finished job, not counting your own steps in Claude and Cloudflare.
+- Installer dry run on macOS and Windows (GitHub's clean runners) and on the author's Mac.
+- A real install on the author's Mac from this release's files, to its own new Cloudflare connector: deploy, keys, live check, and real jobs run end to end through the connector by Claude Code. About a minute from unzip to the first finished job, not counting your own steps in Claude and Cloudflare.
 - The README's key rotation, update and uninstall steps, run on that install. Uninstall left nothing behind on Cloudflare or the Mac.
 
 ### Update and uninstall

@@ -25,7 +25,7 @@ const mtime = (f) => { try { return statSync(f).mtimeMs; } catch { return 0; } }
 const clip = (t, n) => { const s = String(t || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
 // Sign-ins, passwords and permissions only {{OWNER}} can give. Matched against the hung processes and the step that hung.
-const NEEDS_JON = [
+const NEEDS_OWNER = [
   [/\bsudo\b/, "an administrator password (a sudo command was waiting for it)"],
   [/\bgh auth login\b/, "a GitHub sign-in (gh auth login)"],
   [/\b(?:npm|yarn|pnpm) (?:login|adduser)\b/, "an npm sign-in"],
@@ -39,8 +39,8 @@ const NEEDS_JON = [
   [/with administrator privileges/, "an administrator password"],
   [/x-apple\.systempreferences|\btccutil\b/, "a macOS privacy permission"],
 ];
-export function needsJon(texts) {
-  for (const t of texts) for (const [re, what] of NEEDS_JON) if (re.test(String(t || ""))) return what;
+export function needsOwner(texts) {
+  for (const t of texts) for (const [re, what] of NEEDS_OWNER) if (re.test(String(t || ""))) return what;
   return null;
 }
 
@@ -175,24 +175,24 @@ export function makeWatcher(ctx) {
     const prog = readJson(join(dir, ".progress.json")) || {};
     const inFlight = last?.phase === "pre" ? prog.step || last.tool : null;
     const procText = procs.filter((p) => p.pid !== run.pid).map((p) => `${clip(p.text.split(/ [A-Z_][A-Z0-9_]*=/)[0], 110)} (pid ${p.pid}${p.stat.includes("T") ? ", stopped" : ""}, up ${dur(simMs(p.age * 1000))})`);
-    const jon = cause === "silent" ? needsJon([...procs.filter((p) => p.pid !== run.pid).map((p) => p.text.split(/ [A-Z_][A-Z0-9_]*=/)[0]), inFlight]) : null;
+    const owner = cause === "silent" ? needsOwner([...procs.filter((p) => p.pid !== run.pid).map((p) => p.text.split(/ [A-Z_][A-Z0-9_]*=/)[0]), inFlight]) : null;
     const n = (st.recoveries || 0) + 1;
-    const decision = jon ? "needs_jon" : n > cfg.maxRecoveries ? "blocked" : "resume";
+    const decision = owner ? "needs_owner" : n > cfg.maxRecoveries ? "blocked" : "resume";
     const rec = { n, at: new Date().toISOString(), cause, why, step: inFlight || prog.step || null, procs: procText.slice(0, 8), recent: activityLines(dir, 0).slice(-8),
-      decision, needs_jon: jon, max: cfg.maxRecoveries };
+      decision, needs_owner: owner, max: cfg.maxRecoveries };
     writeFileSync(join(dir, ".recover.json"), JSON.stringify(rec, null, 1));
     const action = decision === "resume" ? `Killing the stuck processes and resuming with a different approach (attempt ${n} of ${cfg.maxRecoveries}).`
-      : decision === "needs_jon" ? `It was waiting for ${jon}, which only {{OWNER}} can give: stopping it and asking {{HIM}} once.`
+      : decision === "needs_owner" ? `It was waiting for ${owner}, which only {{OWNER}} can give: stopping it and asking {{HIM}} once.`
       : `Already recovered ${n - 1} time(s) without it sticking: stopping it and marking it blocked.`;
-    appendFileSync(join(dir, "RECOVERIES.md"), `\n## ${decision === "resume" ? `Recovery ${n}` : decision === "needs_jon" ? "Needs {{OWNER}}" : "Blocked"} — ${rec.at}\n` +
+    appendFileSync(join(dir, "RECOVERIES.md"), `\n## ${decision === "resume" ? `Recovery ${n}` : decision === "needs_owner" ? "Needs {{OWNER}}" : "Blocked"} — ${rec.at}\n` +
       `- Why: ${why}\n- Step: ${rec.step || "none reported"}\n${procText.length ? `- Processes: ${procText.slice(0, 8).join("; ")}\n` : ""}` +
       `${rec.recent.length ? `- Last steps: ${rec.recent.slice(-5).map((a) => clip(a, 80)).join(" | ")}\n` : ""}- Action: ${action}\n`);
-    log(`job ${id} STALL (${cause}): ${why} -> ${decision}${jon ? ` (${jon})` : ""}; ${procs.length} process(es)`);
+    log(`job ${id} STALL (${cause}): ${why} -> ${decision}${owner ? ` (${owner})` : ""}; ${procs.length} process(es)`);
     st.recoveries = decision === "resume" ? n : st.recoveries || 0;
     st.no_progress = 0;
     st.recovering = rec.at;
     writeFileSync(join(dir, ".watch.json"), JSON.stringify(st));
-    post({ id, recovery: { n, at: rec.at, cause, why: clip(why, 300), step: clip(rec.step, 160), decision, needs_jon: jon, action } }).catch(() => {});
+    post({ id, recovery: { n, at: rec.at, cause, why: clip(why, 300), step: clip(rec.step, 160), decision, needs_owner: owner, action } }).catch(() => {});
     const k = await hardKill({ jobDir: dir }, { graceMs: 3000, log: (m) => log(`job ${id} ${m}`) });
     // Only now may the worker start the next run: one started during the kill's grace period would be killed with it.
     writeFileSync(join(dir, ".recover.json"), JSON.stringify({ ...rec, killed_at: new Date().toISOString(), killed: k.found }, null, 1));

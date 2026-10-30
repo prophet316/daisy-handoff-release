@@ -838,8 +838,8 @@ async function handle(job) {
 
 // How a job ends when self-recovery can't or mustn't carry on. One short message for {{OWNER}}, saying exactly what is needed.
 export function recoveryOutcome(rec, mode) {
-  if (rec.decision === "needs_jon") return { status: "needs_approval", data: null,
-    summary: `Needs you: ${rec.needs_jon}. {{ASSISTANT}} stopped the step that was waiting for it${rec.step ? ` (${rec.step})` : ""}. Once that's done, reply to this job and it picks up where it left off.` };
+  if (rec.decision === "needs_owner") return { status: "needs_approval", data: null,
+    summary: `Needs you: ${rec.needs_owner}. {{ASSISTANT}} stopped the step that was waiting for it${rec.step ? ` (${rec.step})` : ""}. Once that's done, reply to this job and it picks up where it left off.` };
   if (mode === "approved") return { status: "needs_approval", data: null,
     summary: `The approved action got stuck (${rec.why}) and was stopped; it may be partly done. Check its files before approving again.` };
   return { status: "failed", data: null,

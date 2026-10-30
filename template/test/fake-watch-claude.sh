@@ -4,7 +4,7 @@
 #   long      novel steps for over two simulated hours, then done        (check-ins, no recovery)
 #   frozen    a few steps, then a command that hangs and ignores SIGTERM  (killed and resumed; the resumed run finishes)
 #   spin      the same command over and over, no new files               (caught after two no-progress check-ins, resumed)
-#   needsjon  hangs in "gh auth login"                                   (stopped, {{OWNER}} asked once)
+#   needsowner  hangs in "gh auth login"                                   (stopped, {{OWNER}} asked once)
 #   cap       hangs every time, resumed or not                           (blocked after 3 recoveries)
 # On --resume it continues the scenario's second act. Its own bookkeeping is in dot files, so it never counts as progress.
 [ "$1" = auth ] && { echo '{"loggedIn":true}'; exit 0; } # the worker's health check
@@ -50,7 +50,7 @@ case "$S" in
     finish;;
   frozen) step Read '{"file_path":"/tmp/a.md"}'; step Grep '{"pattern":"needle"}'; hang "curl https://slow.example/hang";;
   spin) while true; do step Bash '{"command":"npm test","description":"npm test"}'; sleep 2; done;;
-  needsjon)
+  needsowner)
     mkdir -p "$D/.bin"; printf '#!/bin/bash\n/bin/sleep 100000\n' > "$D/.bin/gh"; chmod +x "$D/.bin/gh"
     step Read '{"file_path":"/tmp/repo/README.md"}'
     hook PreToolUse Bash '{"command":"gh auth login --web","description":"gh auth login --web"}'

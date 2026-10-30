@@ -795,7 +795,7 @@ export function watchText(j, short = false) {
   if (c) parts.push(short ? ` Check-in ${c.n} at ${centralTime(c.at)}: ${c.progress ? "making progress" : `NO progress${c.no_progress > 1 ? ` (${c.no_progress} in a row)` : ""}`}.` : `Last check-in (${centralTime(c.at)}): ${c.text}`);
   if (rs.length) {
     const last = rs[rs.length - 1];
-    const what = (r) => r.decision === "resume" ? `recovery ${r.n}` : r.decision === "needs_jon" ? "needs {{OWNER}}" : "blocked";
+    const what = (r) => r.decision === "resume" ? `recovery ${r.n}` : r.decision === "needs_owner" ? "needs {{OWNER}}" : "blocked";
     parts.push(short ? ` {{ASSISTANT}} self-recovered it ${rs.filter((r) => r.decision === "resume").length} time(s), last ${centralTime(last.at)} (${what(last)}: ${String(last.why || "").slice(0, 120)}).`
       : `Self-recovery (${rs.length}):\n${rs.map((r) => `- ${centralTime(r.at)} ${what(r)} (${r.cause}): ${r.why}${r.step ? `; step: ${r.step}` : ""}. ${r.action || ""}`.trim()).join("\n")}`);
   }
@@ -1962,7 +1962,7 @@ async function workerApi(route, request, env) {
       if (j) {
         let rs = []; try { rs = JSON.parse(j.recoveries || "[]"); } catch {}
         const r = b.recovery;
-        rs.push(clean({ n: Number(r.n) || 0, at: String(r.at || now), cause: String(r.cause || ""), why: String(r.why || ""), step: r.step ? String(r.step) : null, decision: String(r.decision || ""), needs_jon: r.needs_jon ? String(r.needs_jon) : null, action: String(r.action || "") }, 400));
+        rs.push(clean({ n: Number(r.n) || 0, at: String(r.at || now), cause: String(r.cause || ""), why: String(r.why || ""), step: r.step ? String(r.step) : null, decision: String(r.decision || ""), needs_owner: r.needs_owner ? String(r.needs_owner) : null, action: String(r.action || "") }, 400));
         changes += (await env.DB.prepare("UPDATE jobs SET recoveries=?2 WHERE id=?1 AND status='running'").bind(String(b.id), JSON.stringify(rs.slice(-RECOVERIES_MAX))).run()).meta.changes;
       }
     }
