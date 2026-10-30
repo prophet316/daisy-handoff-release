@@ -29,11 +29,12 @@ const LONG = /(?<![A-Za-z0-9+_=-])(?=[A-Za-z0-9+_=-]*[0-9])(?=[A-Za-z0-9+_=-]*[a
 
 export function makeRedactor(secrets = []) {
   const known = [...new Set(secrets.map((s) => String(s || "").trim()).filter((s) => s.length >= 8))].sort((a, b) => b.length - a.length);
-  return (text, { log = false } = {}) => {
+  // named: false skips the name=value rule, for text a person wrote (an email body), where "secret recipe" is not a secret.
+  return (text, { log = false, named = true } = {}) => {
     let t = String(text ?? "");
     for (const s of known) t = t.split(s).join(MARK);
     for (const p of PATTERNS) t = t.replace(p, MARK);
-    t = t.replace(NAMED, (m, name, value) => (value === MARK ? m : `${name}${MARK}`));
+    if (named) t = t.replace(NAMED, (m, name, value) => (value === MARK ? m : `${name}${MARK}`));
     if (log) t = t.replace(LONG, MARK);
     return t;
   };
@@ -74,6 +75,8 @@ if (process.argv.includes("--selftest")) {
     ["private key block", "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----", (o) => !o.includes("AAAA")],
     ["JWT", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U", (o) => !o.includes("eyJhbGci")],
     ["long random string in a log", "got q8Zr2LkPw0aVtY7nB3mXc5sD1fGh4jK6lQ9eR0tU", (o) => o === "got [redacted]", { log: true }],
+    ["named: false leaves a person's words", "the secret recipe and a token budget", (o) => o === "the secret recipe and a token budget", { named: false }],
+    ["named: false still catches a key", "here: sk-ant-api03-abcdefghijklmnopqrstuvwx", (o) => !o.includes("abcdefghijklmnop"), { named: false }],
     ["plain text untouched", "job 1a2b3c4d started (fresh, code): Write the PROGRESS notes", (o) => o === "job 1a2b3c4d started (fresh, code): Write the PROGRESS notes", { log: true }],
     ["paths and log names untouched", "in {{HOME}}/Projects/demo-testproj logs/demo-test-final2-20261022-120610.log", (o) => !o.includes(MARK), { log: true }],
     ["40 hex digits in a log", "commit 3e172b5c0f9e8d7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c done", (o) => o === "commit [redacted] done", { log: true }],

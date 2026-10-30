@@ -8,7 +8,7 @@
 // Usage: import { runShell } from "./shell-lane.mjs"     Self test: node worker/shell-lane.mjs --shell-selftest
 
 import { spawn, execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, statSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, statSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -184,8 +184,13 @@ if (process.argv.includes("--shell-selftest")) {
   check("secrets in the output are redacted", r.ok && !r.stdout.includes("abcdefghijklmnop") && !r.stdout.includes(SECRET), r.stdout);
   r = await run("env");
   check("clean environment: no keys from the supervisor", r.ok && !r.stdout.includes("DAISY_SELFTEST_SECRET_KEY") && r.stdout.includes("DAISY_SHELL=1"), r.stdout);
-  r = await run("echo $PATH; command -v node");
-  check("PATH has Homebrew and {{ASSISTANT}}'s node", r.ok && r.stdout.includes("/opt/homebrew/bin") && r.stdout.includes("{{DOTDIR}}/node/bin"), r.stdout);
+  // The lane finds node through {{ASSISTANT}}'s node link (or Homebrew). A practice install with --home elsewhere makes the link
+  // there, not in this home, so with no link here only the PATH is checked (nvm, Volta or a tarball Node isn't on the lane's PATH).
+  const linked = existsSync(join(HOME, "{{DOTDIR}}/node/bin/node"));
+  r = await run("echo $PATH; command -v node || echo NO_NODE");
+  const pathOk = r.stdout.includes("/opt/homebrew/bin") && r.stdout.includes("{{DOTDIR}}/node/bin");
+  check(linked ? "PATH has Homebrew and {{ASSISTANT}}'s node, and node is found" : "PATH has Homebrew and {{ASSISTANT}}'s node folder (no node link in this home, so finding node isn't checked)",
+    r.ok && pathOk && (!linked || /\n\/\S*\/node\s*$/.test(r.stdout)), r.stdout);
   r = await run("pwd", { cwd: "~/Projects" });
   check("cwd with ~ works", r.ok && r.stdout.trim() === join(HOME, "Projects"), r.stdout);
   r = await run("pwd", { cwd: "/no/such/folder" });

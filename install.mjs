@@ -178,6 +178,10 @@ async function main() {
   const TOTAL = 7;
   const UPDATE = has("update");
   if (UPDATE && has("force")) die("use --update or --force, not both. --update keeps your keys and connector URL; --force makes new ones.");
+  // Flags that contradict each other stop here, before any question.
+  if (has("bell") && has("no-bell")) die("use --bell or --no-bell, not both.");
+  if (has("lead-agent") && has("no-lead-agent")) die("use --lead-agent NAME or --no-lead-agent, not both.");
+  if (has("power-lanes") && has("no-power-lanes")) die("use --power-lanes or --no-power-lanes, not both.");
   say(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
   if (!UPDATE) say("Nuff Said is made for Claude. It's an independent project, not made by, affiliated with or endorsed by Anthropic.");
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
@@ -210,6 +214,17 @@ async function main() {
   }
   if (!DRY && !which(HOST === "win32" ? "npx.cmd" : "npx")) die("npx is missing. It comes with Node; reinstall Node from nodejs.org.");
 
+  // Already installed: say so before any question. The LaunchAgent name is the same for every install, and a manual-guide
+  // install (step 1 done) is carried on with the guide, not replaced.
+  if (!UPDATE && !has("force")) {
+    const takenEarly = MAC && fs.existsSync(path.join(HOME, "Library", "LaunchAgents", "com.daisy.handoff-worker.plist"));
+    const manualDir = existingInstalls().find((d) => { try { return JSON.parse(fs.readFileSync(path.join(d, "install-receipt.json"), "utf8")).manual; } catch { return false; } });
+    const named = val("assistant") && path.join(HOME, "Projects", slugOf(clean(val("assistant"))).slug);
+    if (manualDir) die(`you already ran step 1 of MANUAL-INSTALL.md (${manualDir}). Nothing was changed. Carry on with the guide, steps 2 to 7; to start over, run --uninstall and move that folder aside first.`);
+    if (takenEarly || (named && fs.existsSync(named))) die(`${takenEarly ? "a Nuff Said worker is already installed for this user" : `${named} already exists`}. Nothing was changed. ` +
+      "Run with --uninstall first, or --force to replace it (the old folder is kept as a backup).");
+  }
+
   // 2. identity
   step("About you", TOTAL);
   const ask = await asker();
@@ -229,15 +244,19 @@ async function main() {
   // The phone bell: off unless the person says yes (--bell, or yes to the question), after reading what it answers for them.
   // --yes takes the default, which is off. An update keeps last time's answer; an install from before the question
   // (no answer on record) gets the question once, so an update never turns it on, or keeps it on, without a yes.
-  if (has("bell") && has("no-bell")) die("use --bell or --no-bell, not both.");
   const prevBell = prev && typeof prev.receipt.bell === "boolean" ? prev.receipt.bell : null;
   let bell = MAC && (has("no-bell") ? false : has("bell") ? true : prevBell);
   if (MAC && (bell === null || (has("bell") && prevBell !== true))) for (const l of BELL_NOTE) say(`  ${l}`);
-  if (bell === null) bell = /^y(es)?$/i.test(await ask(BELL_QUESTION, "no"));
+  // Only yes turns it on and only no (or Enter) leaves it off; anything else is asked again, then taken as no.
+  for (let i = 0; bell === null; i++) {
+    const a = String(await ask(i ? "Turn on phone notifications? Type yes or no" : BELL_QUESTION, "no")).trim();
+    if (/^y(es)?$/i.test(a)) bell = true;
+    else if (/^n(o)?$/i.test(a) || i === 2) { bell = false; if (!/^n(o)?$/i.test(a)) say("  Still didn't understand that, so phone notifications stay off. Turn them on later with --update --bell."); }
+    else say(`  I didn't understand "${a.slice(0, 20)}". Type yes to turn phone notifications on, or no to leave them off.`);
+  }
   ask.close();
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
   const prevLead = prev ? ("leadAgent" in prev.receipt ? prev.receipt.leadAgent : /^LEAD_AGENT = "([^"]*)"$/m.exec(prev.toml)?.[1]) : null;
-  if (has("lead-agent") && has("no-lead-agent")) die("use --lead-agent NAME or --no-lead-agent, not both.");
   const lead = has("no-lead-agent") ? "" : (val("lead-agent") || (has("lead-agent") ? "" : prevLead) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
   if (has("lead-agent") && !lead) die("--lead-agent needs a name, e.g. --lead-agent captain");
   const dropLead = !!(prevLead && !lead); // turned off on this update: its key comes off Cloudflare too
@@ -290,7 +309,7 @@ async function main() {
   fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION, timeZone }, null, 2) + "\n");
   fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
   // This run's answers, before anything can stop it partway, so a second try keeps them. The full receipt replaces it at the end.
-  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), ...(MANUAL ? { manual: true } : {}), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
+  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), ...(MANUAL || prev?.receipt.manual ? { manual: true } : {}), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
     ...(UPDATE ? { updatedFrom: prev.receipt.updatedFrom || prev.receipt.installer || prev.site.installer || null } : {}) }, null, 2) + "\n");
   ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
   if (UPDATE && !DRY) stillOld = "Nothing changed on Cloudflare or in the running worker: they still use your old settings, including the command line switch, until the update finishes. Run node install.mjs --update again.";
@@ -350,7 +369,7 @@ async function main() {
   } else await handOff(dir, urlFile, assistant, bell);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
-    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, ...(MANUAL ? { manual: true } : {}), at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
+    installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, ...(MANUAL || prev?.receipt.manual ? { manual: true } : {}), at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
     ...(UPDATE ? { updatedFrom: (prev.receipt.unfinished ? prev.receipt.updatedFrom : prev.receipt.installer) || prev.site.installer || null } : {}), steps,
   }, null, 2) + "\n");
   say(`\n${DRY ? "DRY RUN COMPLETE" : UPDATE ? "UPDATE COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
@@ -364,7 +383,7 @@ async function handOff(dir, urlFile, assistant, bell) {
     copied = c.status === 0;
   }
   say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > + Add > Add custom connector.`);
-  say(`  2. Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue.`);
+  say(`  2. Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue, then Continue again on the screen with the settings Claude detected.`);
   say(`     Under Authentication choose "No sign in", leave Request headers empty, and click Add.`);
   say(`  3. On your phone, open the Claude app, start voice, and say: "Check updates with ${assistant}."`);
   if (MAC && bell) {
@@ -384,6 +403,12 @@ function slugOf(assistant) {
 }
 
 // The install to update or re-key: the one for --assistant NAME, or the only one in ~/Projects.
+// Install folders in ~/Projects (any assistant name).
+function existingInstalls() {
+  const projects = path.join(HOME, "Projects");
+  return (fs.existsSync(projects) ? fs.readdirSync(projects) : []).filter((n) => /-handoff$/.test(n)).map((n) => path.join(projects, n)).filter((d) => fs.existsSync(path.join(d, "site.json")));
+}
+
 function findInstall() {
   const projects = path.join(HOME, "Projects");
   const dirs = val("assistant") ? [path.join(projects, slugOf(clean(val("assistant"))).slug)]
@@ -553,7 +578,8 @@ async function asker() {
   if (has("yes")) { const f = async (q, d) => { say(`  ${q} [${d}]: ${d} (--yes)`); return d; }; f.close = () => {}; return f; }
   if (!process.stdin.isTTY) {
     const f = async (q) => die(`no terminal to ask in ("${q.split("?")[0]}?"). Run it in Terminal, or add --yes to take the defaults ` +
-      "(command line and desktop control on, phone notifications off). Nothing was changed.");
+      (has("update") ? "(an update keeps your earlier answers where it has them; phone notifications off if there's no answer on record). Nothing was changed."
+        : "(command line and desktop control on, phone notifications off). Nothing was changed."));
     f.close = () => {}; return f;
   }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -580,6 +606,9 @@ function workerConfig(home, claudeBin, slug, power, bell = false) {
     bell: bell ? { url: "http://127.0.0.1:8790/notify", keyFile: ".bell-key" } : null, // null: --no-bell
     addDirs: [home],
     maxParallel: 3,
+    // The supervisor checks for stop and kill commands every 2 s while a job is queued or running, or a command came in the
+    // last minute, and every 15 s otherwise, so an idle install uses few of Cloudflare's free daily requests.
+    supervisor: { pollSeconds: 2, idlePollSeconds: 15 },
     powerLanes: power, // shell commands and desktop control; the connector's POWER_LANES var matches it
     host: MAC
       ? { driverBin: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver", idleSeconds: 10, overlay: true }
@@ -706,7 +735,7 @@ function installMac(dir, bell = false) {
     const aside = path.join(HOME, ".handoff-uninstalled", stamp());
     fs.mkdirSync(aside, { recursive: true });
     fs.renameSync(path.join(agents, BELL_PLIST), path.join(aside, BELL_PLIST));
-    ok(`${DRY ? "phone bell would stop (dry run)" : "phone bell stopped"}; its startup entry moved to ${aside}`);
+    ok(`${DRY ? "phone bell would stop (dry run; only this practice folder's startup entry was moved, to " : "phone bell stopped; its startup entry moved to "}${aside}${DRY ? ")" : ""}`);
   }
   if (!plists.length) die("no launch agents in the template (a bug)");
   for (const f of plists) {

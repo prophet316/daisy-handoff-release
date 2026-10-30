@@ -70,12 +70,14 @@ The Nuff Said installer finds Claude Code either way; this only matters when you
 
 ## Cloudflare sign-in or deploy failed
 
-**You see:** `Cloudflare sign-in didn't finish`, `couldn't create the database`, `deploy failed`, or `needs a workers.dev subdomain`.
+**You see:** `Cloudflare sign-in didn't finish`, `couldn't create the database`, `deploy failed`, `needs a workers.dev subdomain`, or an error about cron triggers.
 
 - **The browser didn't open, or you closed it:** run `node install.mjs` again. Nothing was deployed yet.
 - **New account:** open the email from Cloudflare and verify your address, then run the installer again.
 - **workers.dev subdomain:** open [dash.cloudflare.com](https://dash.cloudflare.com), go to **Workers & Pages**, and pick a subdomain when it asks. Then run the installer again.
 - **Signed in to the wrong Cloudflare account:** run `npx -y wrangler@4.151.3 logout`, then run the installer again and sign in with the right one.
+- **Deploy fails mentioning cron triggers:** a free Cloudflare account allows 5 cron triggers in all ([Workers limits](https://developers.cloudflare.com/workers/platform/limits/)), and Nuff Said needs one (it checks schedules every minute). Remove one from another Worker in the Cloudflare dashboard, or use a separate free Cloudflare account, then run `node install.mjs --update` (or `node install.mjs` again if this was the first install).
+- **Requests fail with Error 1027:** the account used up the free plan's 100,000 Worker requests for the day, shared by all its Workers. They come back at midnight UTC. The README's Cloudflare requests section says what one install uses.
 - **Something else:** the last lines of the error come from Cloudflare's own tool. Run `node doctor.mjs` and open an issue with its report.
 
 ---
@@ -107,10 +109,10 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
-- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + Add > Add custom connector**, click **Continue**, choose **No sign in** under **Authentication**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
+- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + Add > Add custom connector**, click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Choose **No sign in** under **Authentication**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
 - **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.
-- **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account. Close and reopen the app.
+- **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account; Anthropic says one "will be available to use the next time you log in to your account on Claude for iOS or Android" ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)). Close and reopen the app.
 - Run `node doctor.mjs`. It tests your connector from your Mac without showing the URL.
 
 ---
@@ -134,7 +136,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 Jobs run, but your phone never buzzes when one finishes.
 
-How it works: if you said yes to phone notifications, the installer starts an always-on Claude Code session on your Mac with **Remote Control** turned on. Remote Control is Claude Code's own way to link a session on your computer to the Claude app. When a job finishes, the worker tells that session, and the session sends your phone a push notification through the Claude app. Claude Code decides when to push, and it can skip one while you're active in Claude: Anthropic says "the server can still suppress the mobile push when it detects that you are active" ([Environment variables](https://code.claude.com/docs/en/env-vars)). So a missing push while you're using Claude isn't a fault. Notifications need all of this:
+How it works: if you said yes to phone notifications, the installer starts an always-on Claude Code session on your Mac with **Remote Control** turned on. Remote Control is Claude Code's own way to link a session on your computer to the Claude app. When a job finishes, the worker tells that session, and the session sends your phone a push notification through the Claude app. Claude Code decides when to push, and Anthropic says "the server can still suppress the mobile push when it detects that you are active" ([Environment variables](https://code.claude.com/docs/en/env-vars)), so a push can be skipped. So a missing push now and then isn't always a fault; if none ever arrive, check the list below. Notifications need all of this:
 
 1. **The Claude app on your phone**, signed in to the same account as Claude Code on your Mac. Open it once after installing.
 2. **Notifications allowed** for the Claude app on your phone. On iPhone: Settings > Notifications > Claude. Focus modes can hold them back.

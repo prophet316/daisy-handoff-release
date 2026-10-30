@@ -62,7 +62,8 @@ const cfg = DIR ? readJson(path.join(DIR, "worker", "config.json")) : null;
 const receiptJson = DIR ? readJson(path.join(DIR, "install-receipt.json")) : null;
 // How to finish an install that stopped partway: run the update again (it keeps the keys and connector URL), or carry on
 // with the manual steps. Starting over with --force only for a finished install that lost its files.
-const FINISH = receiptJson?.manual && receiptJson?.dryRun ? "You're installing by hand: carry on with MANUAL-INSTALL.md, steps 2 to 7. Don't run --force; it would make new keys."
+const MANUAL_STEPS = !!(receiptJson?.manual && receiptJson?.dryRun);
+const FINISH = MANUAL_STEPS ? "You're installing by hand: carry on with MANUAL-INSTALL.md, steps 2 to 7. Don't run --force; it would make new keys."
   : receiptJson?.unfinished ? "Your last install or update stopped partway. In the release folder run node install.mjs --update again; it keeps your keys and connector URL."
   : !receiptJson ? "If you're installing by hand, carry on with MANUAL-INSTALL.md. Otherwise, in the release folder run node install.mjs --update; it keeps your keys and connector URL."
   : "Run node install.mjs --uninstall, then node install.mjs --force.";
@@ -171,7 +172,8 @@ if (!DIR || !site) {
       const mine = plist.includes(DIR);
       check(pr.status === 0 && pid ? (mine ? "ok" : "warn") : "fail",
         `${label}: ${pr.status !== 0 ? "not loaded" : pid ? `running (pid ${pid})` : `loaded but not running${lastExit ? `, last exit ${lastExit}` : ""}`}${mine ? "" : ", and it belongs to a different install folder"}`,
-        pr.status !== 0 || !pid ? `Log out and back in. If that doesn't start it: ${FINISH[0].toLowerCase()}${FINISH.slice(1)}` : "Only one install per Mac account works. Uninstall the other one first.",
+        // Mid-way through the manual guide, logging out would load the half-built install's services: the guide is the fix.
+        pr.status !== 0 || !pid ? (MANUAL_STEPS ? FINISH : `Log out and back in. If that doesn't start it: ${FINISH[0].toLowerCase()}${FINISH.slice(1)}`) : "Only one install per Mac account works. Uninstall the other one first.",
         "The worker isn't running");
     }
   }
@@ -180,7 +182,7 @@ if (!DIR || !site) {
     const age = Date.now() - fs.statSync(alive).mtimeMs;
     // The alive file shows the worker's loop is running, not that it reached the connector (the live check below does that).
     check(age < 120_000 ? "ok" : "fail", `${age < 120_000 ? "worker is running" : "worker isn't running"} (its loop last ran ${ago(age)} ago)`, "The worker is stuck or stopped. Look at the end of logs/worker.log.", "The worker isn't running");
-  } else if (live) check("fail", "the worker has never run", "Look at logs/worker.log in your install folder.", "The worker isn't running");
+  } else if (live) check("fail", "the worker has never run", MANUAL_STEPS ? FINISH : "Look at logs/worker.log in your install folder.", "The worker isn't running");
 
   // phone bell (Remote Control session)
   if (MAC && live && cfg?.bell === null) say("  info  phone notifications: off (they stay off unless you say yes; turn on with node install.mjs --update --bell)");

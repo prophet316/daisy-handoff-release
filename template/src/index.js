@@ -831,11 +831,13 @@ export function timeBudget(text) {
 }
 
 // The exact email a job holds for {{OWNER}}'s yes, as {{HE}}'ll hear it before approving.
-export function heldText(h) {
+export function heldText(h, max = 600) {
   if (!h) return "";
   const list = (a) => (a || []).join(", ");
+  const body = String(h.body || "");
   const head = `Held email, sent only when {{OWNER}} approves: from ${h.from || "?"}${h.account ? ` (Composio ${h.account})` : ""} to ${list(h.to)}` +
-    (h.cc?.length ? `, cc ${list(h.cc)}` : "") + (h.bcc?.length ? `, bcc ${list(h.bcc)}` : "") + `. Subject: "${h.subject}". Body: ${String(h.body || "").slice(0, 600)}${String(h.body || "").length > 600 ? "…" : ""}`;
+    (h.cc?.length ? `, cc ${list(h.cc)}` : "") + (h.bcc?.length ? `, bcc ${list(h.bcc)}` : "") + `. Subject: "${h.subject}". Body: ${body.slice(0, max)}` +
+    (body.length > max ? `… (The body is longer than shown, ${body.length} characters; read the full draft, email-draft.json, with read_job_files before approving.)` : "");
   return h.problems?.length ? `${head}\nCan't be sent as is: ${h.problems.join(" ")}` : head;
 }
 
@@ -1088,8 +1090,10 @@ async function publishJob(env, args) {
 
 // ---- Follow-ups: approve, reply, retry. Each puts a finished job back in the queue with a run mode. ----
 
+// One line per entry, starting with its time: a newline inside an agent's result or message can't forge an entry (the worker
+// counts only lines that start "[time] {{OWNER}} replied" as {{OWNER}}'s words).
 const addHistory = (j, now, ...lines) => {
-  const h = [j.history, ...lines.map((l) => `[${localTime(now)}] ${l}`)].filter(Boolean).join("\n");
+  const h = [j.history, ...lines.map((l) => `[${localTime(now)}] ${String(l).replace(/\s*[\r\n]+\s*/g, " / ")}`)].filter(Boolean).join("\n");
   return h.length > HISTORY_MAX ? "…" + h.slice(-HISTORY_MAX) : h;
 };
 const lastRun = (j) => `Run ${j.attempts || 1} ended ${j.status}: ${j.result || "(no summary)"}`;
@@ -1118,6 +1122,8 @@ async function approveJob(env, args) {
   const note = typeof args.note === "string" ? args.note.trim().slice(0, 2000) : "";
   const held = j.held ? JSON.parse(j.held) : null;
   if (held && j.sent) return toolText(`"${j.title}" (id ${id}) already sent its email (${sentText(JSON.parse(j.sent))}). It is never sent twice.`, true);
+  // Sending email from {{OWNER}}'s account takes {{HIS}} own yes; the lead agent can't approve it.
+  if (held && !who.owner) return toolText(`Only {{OWNER}} can approve sending an email, from {{HIS}} own Claude chat. "${j.title}" (id ${id}) keeps waiting; nothing was sent.`, true);
   if (held?.problems?.length && !note) {
     return toolText(`"${j.title}" (id ${id}) holds an email that can't be sent as drafted: ${held.problems.join(" ")} Use reply_to_job with {{OWNER}}'s answer; nothing was sent.`, true);
   }
@@ -1975,7 +1981,9 @@ async function workerApi(route, request, env) {
     const { results: cmds } = await env.DB.prepare("UPDATE control SET taken_at=?1 WHERE taken_at IS NULL RETURNING id, kind, job_id, arg, created_at").bind(now).all();
     // Pushed to {{OWNER}} only when self-recovery hasn't fixed it within STALL_PUSH_MS.
     const stalled = (await stalledJobs(env, nowMs)).filter((j) => j.mins * 60_000 >= STALL_PUSH_MS && (!j.stall_alerted || j.stall_alerted < j.last_step)).map(({ id, title, mins }) => ({ id, title, mins }));
-    return json({ commands: cmds.sort((a, b) => a.id - b.id).map((c) => ({ ...c, arg: c.arg ? JSON.parse(c.arg) : null })), stalled });
+    // busy: a job is queued or running, so the supervisor keeps its fast poll for stops and kills (idle, it polls less often).
+    const busy = !!(await env.DB.prepare("SELECT 1 AS b FROM jobs WHERE status IN ('queued','running') LIMIT 1").first());
+    return json({ commands: cmds.sort((a, b) => a.id - b.id).map((c) => ({ ...c, arg: c.arg ? JSON.parse(c.arg) : null })), stalled, busy });
   }
   if (route === "checkin") {
     // The supervisor's hourly check-in, or a self-recovery attempt, for a running job (worker/watch.mjs).
@@ -2110,7 +2118,12 @@ async function cardJob(env, j, max) {
     : `${ended} ${localTime(j.finished_at || j.updated_at)}${mins !== null ? ` · took ${mins} min` : ""}`;
   const now = j.status === "running" ? await progressText(env, j) : "";
   const full = [now, j.result || (j.status === "queued" ? "Waiting for the {{MACHINE}} to pick it up." : "")].filter(Boolean).join("\n");
-  return { id: j.id, title: j.title, status: j.status, stopping: !!(j.cancel_requested && j.status === "running"), when, summary: full.length > max ? full.slice(0, max - 1).trimEnd() + "…" : full, cut: full.length > max };
+  // A held email is shown in full on the job card (who made the job, from, to, subject and body) before its Approve button.
+  // A list card has no room for it, so a job that holds one gets Open there instead of Approve.
+  const holds = !!(j.held && !j.sent && j.status === "needs_approval");
+  const by = j.created_by ? `Created by ${j.created_by}, not {{OWNER}}.` : "";
+  return { id: j.id, title: j.title, status: j.status, stopping: !!(j.cancel_requested && j.status === "running"), when, summary: full.length > max ? full.slice(0, max - 1).trimEnd() + "…" : full, cut: full.length > max,
+    by, holds_email: holds, held: holds && max >= 1500 ? heldText(JSON.parse(j.held), 4000) : "" };
 }
 
 // The SDK bundle ends in an ES export list; turn it into a plain object so it runs inline in the card's one module script
@@ -2142,6 +2155,7 @@ h2{font-size:17px;font-weight:var(--font-weight-semibold,600);line-height:1.3;ma
 .list .sum{-webkit-line-clamp:2;font-size:14px}.list .job+.job{margin-top:12px;padding-top:12px}.list h2{margin:6px 0 2px}
 .list .acts{margin-top:8px}.list .btn{flex:0 0 auto;min-width:132px}.sum.open{display:block;-webkit-line-clamp:unset}
 .link{background:none;border:0;padding:6px 0;min-height:32px;font:inherit;font-size:14px;color:var(--fg2);text-decoration:underline;cursor:pointer}
+.held{margin:8px 0 0;padding:8px 10px;border:1px solid var(--line2);border-radius:var(--r);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
 .note{margin:8px 0 0;font-size:14px;color:var(--fg2);overflow-wrap:anywhere}.note:empty{display:none}
 .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.acts:empty{display:none}
 .btn{flex:1 1 130px;min-height:44px;padding:0 16px;border-radius:var(--r);font:inherit;font-size:15px;font-weight:var(--font-weight-semibold,600);cursor:pointer;
@@ -2171,12 +2185,16 @@ function theme(ctx) {
 
 // Each status gets at most two actions. Tool actions go to {{ASSISTANT}} through Claude; Reply and Read files ask Claude in chat,
 // because they need {{OWNER}}'s words or Claude's reading. Approve and Stop take a second tap. A list keeps one button per job.
+// What they send as {{OWNER}}'s message names the job by id only: a title can be an agent's words, and this message is {{HIS}}.
 function actions(j) {
   const a = [], tools = !!caps.serverTools, chat = !!caps.message;
-  if (j.status === "needs_approval") { if (tools) a.push({ k: "approve", label: "Approve", primary: 1, tool: "approve_job", sure: "Tap again to approve" }); if (chat) a.push({ k: "reply", label: "Reply", ask: "I want to reply to my {{ASSISTANT}} job \\u201c" + j.title + "\\u201d (id " + j.id + "). Ask me what to tell it." }); }
+  if (j.status === "needs_approval") {
+    if (tools) a.push(j.holds_email && !j.held ? { k: "open", label: "Open", primary: 1, tool: "get_job" } : { k: "approve", label: "Approve", primary: 1, tool: "approve_job", sure: "Tap again to approve" });
+    if (chat) a.push({ k: "reply", label: "Reply", ask: "I want to reply to my {{ASSISTANT}} job with id " + j.id + ". Ask me what to tell it." });
+  }
   else if (j.status === "running" || j.status === "queued") { if (tools) { a.push({ k: "refresh", label: "Refresh", tool: "get_job" }); if (!j.stopping) a.push({ k: "stop", label: "Stop job", tool: "cancel_job", sure: "Tap again to stop" }); } }
-  else if (j.status === "failed" || j.status === "cancelled") { if (tools) a.push({ k: "retry", label: "Retry", primary: 1, tool: "retry_job" }); if (chat) a.push({ k: "reply", label: "Reply", ask: "About my {{ASSISTANT}} job \\u201c" + j.title + "\\u201d (id " + j.id + "): ask me what to change, then run it again." }); }
-  else if (j.status === "done" && chat) { a.push({ k: "files", label: "Read the files", ask: "Read me what my {{ASSISTANT}} job \\u201c" + j.title + "\\u201d (id " + j.id + ") made." }); a.push({ k: "reply", label: "Follow up", ask: "I have a follow-up for my {{ASSISTANT}} job \\u201c" + j.title + "\\u201d (id " + j.id + "). Ask me what it is." }); }
+  else if (j.status === "failed" || j.status === "cancelled") { if (tools) a.push({ k: "retry", label: "Retry", primary: 1, tool: "retry_job" }); if (chat) a.push({ k: "reply", label: "Reply", ask: "About my {{ASSISTANT}} job with id " + j.id + ": ask me what to change, then run it again." }); }
+  else if (j.status === "done" && chat) { a.push({ k: "files", label: "Read the files", ask: "Read me what my {{ASSISTANT}} job with id " + j.id + " made." }); a.push({ k: "reply", label: "Follow up", ask: "I have a follow-up for my {{ASSISTANT}} job with id " + j.id + ". Ask me what it is." }); }
   return view === "list" ? a.filter((x) => x.tool && x.k !== "refresh").slice(0, 1) : a;
 }
 
@@ -2188,6 +2206,8 @@ function render() {
     const s = el("section", "job");
     const pill = el("span", "pill s-" + j.status); pill.append(el("i"), document.createTextNode(LABEL[j.status] || j.status));
     const top = el("div", "top"); top.append(pill, el("span", "when", j.when)); s.append(top, el("h2", "", j.title));
+    if (j.by) s.append(el("p", "note", j.by));
+    if (j.held) s.append(el("p", "held", j.held));
     if (j.summary) {
       const p = el("p", "sum" + (open[j.id] ? " open" : ""), j.summary); s.append(p);
       const more = el("button", "link", open[j.id] ? "Show less" : "Show more"); more.hidden = true;
@@ -2231,7 +2251,7 @@ async function act(j, a) {
     } else {
       const r = await app.callServerTool({ name: a.tool, arguments: { id: j.id } });
       const said = (r && r.content && r.content[0] && r.content[0].text) || "Done.";
-      notes[j.id] = a.k === "refresh" ? "" : said;
+      notes[j.id] = a.k === "refresh" || a.k === "open" ? "" : said;
       if (r && r.structuredContent && r.structuredContent.jobs) jobs = jobs.map((x) => x.id === j.id ? r.structuredContent.jobs[0] : x);
       else {
         const g = await app.callServerTool({ name: "get_job", arguments: { id: j.id } });

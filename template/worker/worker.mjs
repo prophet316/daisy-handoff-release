@@ -201,6 +201,8 @@ function publishNote(job) {
 // ---- CUA lane: computer-use jobs drive the claude-mac VM through worker/cua-lane.mjs, never the {{MACHINE}}'s own desktop. ----
 
 const LANE_KINDS = ["send", "post", "buy", "delete", "credentials", "access"];
+// What only {{OWNER}}'s own yes unlocks, never a lead agent's approval.
+const OWNER_ONLY_KINDS = ["send", "post", "buy", "charge"];
 
 // What the gate lets this run do: the kinds {{OWNER}} allowed in {{HIS}} request, plus, on an approved run,
 // exactly the kinds that were blocked and held for {{HIS}} yes on the run before (the gate's own record, outside the job folder).
@@ -215,6 +217,9 @@ export function cuaAllow(job, jobDir, approved, state = jobDir) {
     // approved was for exactly that purchase, so it is the one charge, not a second card. The worker recorded that card in
     // the run folder; a purchase.json on its own (an old one, or one the agent wrote later) unlocks nothing.
     if (existsSync(join(state, PURCHASE_HELD))) held.push("charge");
+    // A lead agent's approval (followup_from on an approved run) never unlocks sending, posting or spending: only {{OWNER}}'s does.
+    // The gate holds those again, and the job comes back to {{OWNER}} with its card.
+    if (job.followup_from) held = held.filter((k) => !OWNER_ONLY_KINDS.includes(k));
   }
   return { allow: [...new Set([...allow, ...held])], held: [...new Set(held)] };
 }
@@ -233,7 +238,8 @@ export function purchaseLine(jobDir, state = jobDir) {
   if (!items && !p?.total) return "Approve this purchase? {{ASSISTANT}} stopped right before paying but could not read the order details, so check the order page before approving. Nothing has been charged.";
   const to = s(p.deliver_to || p.delivery_address || p.address);
   return `Approve this purchase? ${items || "(items not read)"}. Total ${s(p.total) || "(not read)"}. Delivers to ${to || "(address not read)"}` +
-    `${p.site ? `, on ${s(p.site)}` : ""}. Nothing has been charged yet; approving lets {{ASSISTANT}} press the final button once.`;
+    `${p.site ? `, on ${s(p.site)}` : ""}. Nothing has been charged yet; approving lets {{ASSISTANT}} press the final button once. ` +
+    "These details are what the job read off the order page, not something {{ASSISTANT}} checked; look at that page before approving a large order.";
 }
 
 // What the approve card adds to the agent's summary for a held lane run, on every hold, a second hold from an approved run
@@ -250,6 +256,14 @@ export function holdCard(summary, plan, jobDir, state) {
   if (kinds.length) summary += ` Approving lets the next run do what the desktop gate held: ${kinds.join(", ")}.`;
   else if (plan.mode === "approved" && !buy) summary += " The desktop gate held nothing on this run, so approving again unlocks nothing it blocks.";
   return summary;
+}
+
+// Before every run: the hold records were read by planRun (approved runs only), so from here they hold only what this run's
+// gate holds. On every lane run, purchase.json is moved aside too: an approved run used it, and on a reply or retry it is an
+// old order that must not build a new "Nothing has been charged yet" card. A purchase this run stops at writes a fresh one.
+export function resetRunState(plan, jobDir, state) {
+  for (const f of [".cua-held.json", PURCHASE_HELD]) try { unlinkSync(join(state, f)); } catch {}
+  return plan.lane ? retirePurchase(jobDir) : null;
 }
 
 // After an approved run has read it, purchase.json is moved aside, so an old order page can't build a later card
@@ -593,9 +607,26 @@ async function flushOutbox() {
 // ---- Steering: {{OWNER}}'s words, and messages that came too late ----
 
 // Only {{OWNER}}'s own words: the request and what {{HE}} said later (never the agent's results, which history also holds).
+// An agent's words never count: not the title or details of a job an agent made, and not a note an agent sent with this run.
+// A history entry is one line that starts with its time, so only a line that starts "[time] {{OWNER}} replied" counts.
 export function requestWords(job) {
-  const later = String(job.history || "").split("\n").map((l) => /\] {{OWNER}} (?:replied|added|said mid-run|asked to retry|approved)[:.]?\s*(.*)$/.exec(l)?.[1] || "").filter(Boolean);
-  return [job.title, job.details, job.followup, ...later].filter(Boolean).join("\n");
+  const later = String(job.history || "").split("\n").map((l) => /^\[[^\]\n]*\] {{OWNER}} (?:replied|added|said mid-run|asked to retry|approved)[:.]?\s*(.*)$/.exec(l)?.[1] || "").filter(Boolean);
+  return [...(job.created_by ? [] : [job.title, job.details]), job.followup_from ? "" : job.followup, ...later].filter(Boolean).join("\n");
+}
+
+// The held email record: checked against {{OWNER}}'s own words, and run through the same redactor as everything else that
+// leaves the {{MACHINE}}. A draft that carried a key or the connector URL can't be sent; the hash is of the redacted record.
+export function holdDraft(d, job, redact, accounts = CFG.gmail?.accounts || {}) {
+  const held = checkDraft(d.draft || {}, requestWords(job), accounts);
+  if (d.error) held.problems.push(d.error);
+  if (job.created_by && held.problems.some((p) => /not (?:in|an address)/.test(p))) held.problems.push(`${job.created_by} made this job, not {{OWNER}}, so only an address {{OWNER}} gave in a reply counts.`);
+  let leaked = false;
+  const clean = (v) => { const r = redact(v, { named: false }); if (r !== v) leaked = true; return r; };
+  for (const k of ["from", "subject", "body"]) held[k] = clean(String(held[k] ?? ""));
+  for (const k of ["to", "cc", "bcc"]) held[k] = held[k].map(clean);
+  if (leaked) held.problems.push("The draft contains one of {{OWNER}}'s keys or a secret, so it can't be sent. It was replaced with [redacted] here.");
+  held.hash = draftHash(held);
+  return held;
 }
 
 function unseenMessages(dir) {
@@ -609,6 +640,15 @@ function unseenMessages(dir) {
 }
 
 // ---- Approved email: send exactly the held draft, once. No Claude run. ----
+
+// A lead agent approved a held email: nothing is sent. It waits for {{OWNER}}'s own yes, with the same draft.
+async function holdForOwner(job, dir) {
+  const why = `${job.followup_from} approved this email, but only {{OWNER}} can send one. Nothing was sent; it waits for {{OWNER}} to say approve.`;
+  appendFileSync(join(dir, "RESULT.md"), `\n## Approval (${new Date().toISOString()})\n${why}\n`);
+  await api("finish", { id: job.id, status: "needs_approval", result: why, held: JSON.parse(job.held) });
+  log(`job ${job.id} email held for {{OWNER}}: approved by ${job.followup_from}, not {{OWNER}}`);
+  await notify(bellEvent(job, "needs_approval", why));
+}
 
 async function sendApproved(job, dir) {
   log(`job ${job.id} started (approved email)`);
@@ -748,7 +788,7 @@ async function handle(job) {
   const dir = join(ROOT, "jobs", job.id);
   mkdirSync(dir, { recursive: true });
   if (job.run_mode === "publish") return publishOnly(job, dir);
-  if (job.run_mode === "approved" && job.held) return sendApproved(job, dir);
+  if (job.run_mode === "approved" && job.held) return job.followup_from ? holdForOwner(job, dir) : sendApproved(job, dir);
   const off = powerRefusal(CFG, { mode: job.mode });
   if (off) {
     log(`job ${job.id} refused: power lanes are off (${job.mode})`);
@@ -779,16 +819,14 @@ async function handle(job) {
   const state = runDir(job.id);
   mkdirSync(state, { recursive: true, mode: 0o700 });
   let plan = planRun(job, dir, state);
-  // The hold was read for this run (approved runs only); from here the record holds only what this run's gate holds.
-  for (const f of [".cua-held.json", PURCHASE_HELD]) try { unlinkSync(join(state, f)); } catch {}
-  if (plan.mode === "approved" && retirePurchase(dir)) log(`job ${job.id} purchase.json moved aside: an approved run used it`);
+  if (resetRunState(plan, dir, state)) log(`job ${job.id} purchase.json moved aside before the ${plan.mode} run`);
   mkdirSync(plan.cwd, { recursive: true });
   if (plan.lane) { writeLaneConfig(plan, dir, job); log(`job ${job.id} ${isHost ? "host lane ({{OWNER}}'s Mac)" : "lane"} ready; allowed: ${plan.lane.allow.join(", ") || "nothing gated"}`); }
   for (const f of RUN_FILES) try { unlinkSync(join(dir, f)); } catch {}
   writeHooks(plan);
   if (isHost) await hostNotify("Claude is using your Mac", job.title.replace(/^My Mac: /, ""));
   log(`job ${job.id} started (${plan.mode}, ${plan.kind}${plan.resume ? ", resuming session" : ""}${plan.cwd !== dir ? `, in ${plan.cwd}` : ""}): ${job.title}`);
-  let child = null, stopped = false, sentAt = null, busy = null;
+  let child = null, stopped = false, sentAt = null, busy = null, agentSteered = null;
   const started = new Date().toISOString(), deadline = Date.now() + RUNAWAY_MS;
   // Every few seconds: send the current step, pass on {{OWNER}}'s mid-run messages, and stop at once if {{HE}} asked.
   const tick = () => busy || (busy = (async () => {
@@ -796,7 +834,11 @@ async function handle(job) {
       let progress;
       try { const p = JSON.parse(readFileSync(join(dir, ".progress.json"), "utf8")); if (p.at !== sentAt) { progress = p; sentAt = p.at; } } catch {}
       const s = await api("status", { id: job.id, progress });
-      for (const m of s.messages || []) { appendFileSync(join(state, ".steer-inbox.jsonl"), JSON.stringify(m) + "\n"); log(`job ${job.id} message from ${m.from || "{{OWNER}}"} queued for the agent`); }
+      for (const m of s.messages || []) {
+        appendFileSync(join(state, ".steer-inbox.jsonl"), JSON.stringify(m) + "\n");
+        if (m.from) agentSteered ||= m.from; // an agent's message steers the run, so its publish waits for {{OWNER}}
+        log(`job ${job.id} message from ${m.from || "{{OWNER}}"} queued for the agent`);
+      }
       if (s.live) log(`job ${job.id} live read: ${(await api("files", { id: job.id, live: true, files: liveFiles(job, dir) })).stored} files sent`);
       if (s.cancel && child && !stopped) {
         stopped = true;
@@ -860,9 +902,7 @@ async function handle(job) {
   if (status === "needs_approval" && plan.mode !== "approved") {
     const d = readDraft(dir);
     if (d) {
-      held = checkDraft(d.draft || {}, requestWords(job), CFG.gmail?.accounts || {});
-      if (d.error) held.problems.push(d.error);
-      held.hash = draftHash(held);
+      held = holdDraft(d, job, redactor());
       writeFileSync(join(dir, ".held-email.json"), JSON.stringify(held, null, 1));
       log(`job ${job.id} holds an email from ${held.from || "?"} to ${held.to.join(", ")}${held.problems.length ? ` (${held.problems.length} problem(s))` : ""}`);
     }
@@ -876,10 +916,10 @@ async function handle(job) {
   let pubOut = null;
   // A run an agent started, retried, replied to or approved never publishes by itself: the work is done, and the publish
   // waits for {{OWNER}}'s own publish_job, so an agent can't steer what {{OWNER}}'s publish sends out.
-  const agentRun = !!(job.created_by || job.followup_from);
+  const agentRun = job.created_by || job.followup_from || agentSteered;
   if (status === "done" && (job.publish || job.share_with) && !job.published && agentRun) {
-    summary += ` Work done; publishing and sharing wait for {{OWNER}}, because ${job.created_by || job.followup_from} (not {{OWNER}}) had a hand in this run. {{OWNER}} can say "publish it" (publish_job).`;
-    log(`job ${job.id} publish held for {{OWNER}}: run involved ${job.created_by || job.followup_from}`);
+    summary += ` Work done; publishing and sharing wait for {{OWNER}}, because ${agentRun} (not {{OWNER}}) had a hand in this run${!job.created_by && !job.followup_from ? " (a message while it ran)" : ""}. {{OWNER}} can say "publish it" (publish_job).`;
+    log(`job ${job.id} publish held for {{OWNER}}: run involved ${agentRun}`);
   } else if (status === "done" && (job.publish || job.share_with) && !job.published) {
     pubOut = PUBLISHER ? await publishJob(PUBLISHER, job, dir, null) : { record: null, lines: [], problems: ["Publishing is turned off in the worker config."] };
     // The work itself is done; mark it so publish_job can retry the publish later instead of the job being stuck as failed.

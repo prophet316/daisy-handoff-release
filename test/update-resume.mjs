@@ -76,6 +76,7 @@ if (process.platform === "darwin") {
   const rec = json("install-receipt.json"); delete rec.bell; fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify(rec));
   r = install(["--dry-run", "--update"]);
   check(r.status !== 0 && /no terminal to ask in \("Turn on phone notifications\?"\)/.test(r.stderr) && fs.existsSync(plist), "with no answer on record and no terminal, the update stops at the question and changes nothing", r.stderr.slice(-300));
+  check(/an update keeps your earlier answers/.test(r.stderr) && !/command line and desktop control on/.test(r.stderr), "the update's no-terminal stop names an update's defaults, not a new install's", r.stderr.slice(-300));
   r = install(["--dry-run", "--update", "--yes"]);
   check(r.status === 0 && json("install-receipt.json").bell === false && !fs.existsSync(plist), "with --yes it takes the default, off, and stops the old bell");
   check(/research preview/.test(r.stdout) && /I am using this for local development/.test(r.stdout) && /\[no\]: no \(--yes\)/.test(r.stdout), "the question says what the bell answers for you, and shows the answer --yes took");
@@ -84,6 +85,10 @@ if (process.platform === "darwin") {
   const fresh = (args, o = {}) => spawnSync(o.cmd || process.execPath, [...(o.pre || []), path.join(REPO, "install.mjs"), "--dry-run", "--name", "Tester", "--assistant", "Daisy", "--home", nh, ...args], { encoding: "utf8", input: o.input });
   r = fresh([]);
   check(r.status !== 0 && /no terminal to ask in/.test(r.stderr) && !fs.existsSync(path.join(nh, "Projects")), "no terminal and no --yes: it stops before answering anything");
+  for (const pair of [["--bell", "--no-bell"], ["--lead-agent", "x", "--no-lead-agent"], ["--power-lanes", "--no-power-lanes"]]) {
+    r = fresh(pair);
+    check(r.status !== 0 && /not both/.test(r.stderr) && !/no terminal/.test(r.stderr), `${pair.filter((a) => a.startsWith("--")).join(" with ")} is refused before any question`, r.stderr.slice(-200));
+  }
   // A real terminal (Python's pty module), answering each question as it shows: Enter, or `bell` at the bell question.
   const PTY = `import os, pty, sys, select
 pid, fd = pty.fork()
@@ -112,6 +117,8 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
   check(r.status === 0 && nrec().bell === false && /Type yes to turn it on \[no\]/.test(r.stdout), "in a terminal, Enter at the bell question leaves it off", r.stdout.slice(-300));
   r = await tty("yes");
   check(r.status === 0 && nrec().bell === true, "in a terminal, yes turns it on", r.stdout.slice(-300));
+  r = await tty("sure");
+  check(r.status === 0 && nrec().bell === false && /I didn't understand "sure"/.test(r.stdout) && /Type yes or no \[no\]/.test(r.stdout), "an answer that isn't yes or no is asked again, and Enter then leaves it off", r.stdout.slice(-400));
 }
 
 // A real update that stops at the Cloudflare sign-in says the old settings are still live (fake claude and npx; not on Windows).
@@ -145,6 +152,11 @@ check(/MANUAL-INSTALL\.md, steps 2 to 7/.test(mdoc.stdout) && !/without --dry-ru
 const plain = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--home", mhome], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
 check(plain.status !== 0 && /--manual/.test(plain.stderr), "a plain dry run in your home folder is still refused, and points to --manual");
 check(install(["--manual", "--update"]).status !== 0, "--manual with --update is refused");
+check(!/Log out and back in/.test(mdoc.stdout) && !/Look at logs\/worker\.log/.test(mdoc.stdout), "the doctor never tells a manual-guide user to log out or read a log that doesn't exist yet", mdoc.stdout.slice(-400));
+const again = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--manual"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+check(again.status !== 0 && /already ran step 1 of MANUAL-INSTALL\.md/.test(again.stderr) && !/no terminal|--force/.test(again.stderr), "a second --manual is refused before any question and points back to the guide, not --force", again.stderr.slice(-300));
+const mstop = spawnSync(process.execPath, ["--import", pathToFileURL(hook).href, path.join(REPO, "install.mjs"), "--update", "--dry-run", "--home", mhome], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+check(mstop.status !== 0 && JSON.parse(fs.readFileSync(path.join(mdir, "install-receipt.json"), "utf8")).manual === true, "a stopped --update on a manual install keeps manual: true", mstop.stderr.slice(-300));
 
 // An install with no receipt and no answer in its worker config: the update asks for a flag instead of turning things on.
 fs.rmSync(path.join(dir, "install-receipt.json"));

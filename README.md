@@ -14,7 +14,7 @@ Nuff Said works inside the Claude app you already use. It's one custom connector
 Setup takes a Terminal installer and a free Cloudflare account. After that, day to day, you stay in Claude. Mac today; Windows is in testing and isn't in this release.
 
 > [!WARNING]
-> **Read this first.** Nuff Said ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage: anyone with the URL can use it through Claude or the Claude API, and with the command line on that includes running commands on your computer and reading the result. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. The built-in desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. For everything else a job does, the stop is an instruction to Claude. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run it with `--no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
+> **Read this first.** Nuff Said ships with the command line and desktop control turned on, the way I use it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage: anyone with the URL can use it through Claude or the Claude API, and with the command line on that includes running commands on your computer and reading the result. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. The built-in desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. For everything else a job does, the stop is an instruction to Claude. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run it with `--no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
 
 <!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request, start to finish." -->
 
@@ -44,12 +44,12 @@ Everything here is listed before you start, with what it costs.
 | ---- | ---- | ----- |
 | A Mac on macOS 13 (Ventura) or newer | | |
 | A paid Claude plan: Pro or Max (see the note on Team and Enterprise in [Install](#install-mac)) | Pro is $20 a month ($17 a month billed yearly); Max starts at $100 a month ([Claude pricing](https://claude.com/pricing)) |
-| Claude Code, installed and signed in on the Mac | Included with the plan. Jobs use your plan's normal Claude Code usage limits. Up to 3 jobs run at once and schedules add more, so on Pro, start fewer at once. | Install it with the command on [Anthropic's setup page](https://code.claude.com/docs/en/setup) (`curl -fsSL https://claude.ai/install.sh \| bash`), open a new Terminal window, run `claude`, and type `/login`. Sign in with your Claude plan, not an API key. If `claude` says command not found, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md#claude-command-not-found). |
+| Claude Code, installed and signed in on the Mac | Included with the plan. Jobs use your plan's normal Claude Code usage limits. Up to 3 jobs run at once, and scheduled jobs count against the same plan limits, so on Pro, start fewer at once. | Install it with the command on [Anthropic's setup page](https://code.claude.com/docs/en/setup) (`curl -fsSL https://claude.ai/install.sh \| bash`), open a new Terminal window, run `claude`, and type `/login`. Sign in with your Claude plan, not an API key. If `claude` says command not found, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md#claude-command-not-found). |
 | The Claude app on your phone | Free |
 | Node 22.13 or newer | Free |
 | Apple's Command Line Tools | Free |
 | Your Mac's administrator password | |
-| A Cloudflare account | Free plan is enough |
+| A Cloudflare account | Free plan is enough for one install. An idle install makes about 14,400 of the free plan's 100,000 Worker requests a day, which are shared across your Cloudflare account, and running jobs add more ([Cloudflare requests](#cloudflare-requests)). It uses 1 of the 5 cron triggers a free account allows. |
 | CuaDriver (optional) | Free | For desktop control only. Needs macOS 14 (Sonoma) or newer. |
 | A [Composio](https://composio.dev) account (optional) | See Composio |
 
@@ -115,7 +115,7 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 
 | Feature | What it does for you |
 |---|---|
-| Your own connector | The installer puts your connector and its database on your own free Cloudflare account. No shared server: your jobs are stored on your own Cloudflare account, not on a server the author runs, so the author can't see them. Your Claude chats and the bell's Remote Control session are stored by Anthropic like any other Claude conversation. |
+| Your own connector | The installer puts your connector and its database on your own free Cloudflare account. No shared server: your jobs are stored on your own Cloudflare account, not on a server I run, so I can't see them. Your Claude chats and the bell's Remote Control session are stored by Anthropic like any other Claude conversation. |
 | No open ports | Your computer reaches out; nothing reaches in. That isn't the same as safe: your connector URL is the way in, so treat it like a password. |
 | Keys made on your computer | Three random keys (four with a lead agent), readable only by you, never printed or logged. |
 | Change a leaked key | If your connector URL or a key leaks, `node install.mjs --rotate-keys` changes the keys and lists every schedule, routine, running job and job waiting to run, so you can clear anything you didn't set up. |
@@ -141,7 +141,7 @@ The whole worker is Mac only in this release. The blue glow and Daisy cursor sta
 
 ## Your connector follows your Claude account
 
-Your connector lives in your Claude account, not on one device. Anthropic's help page says a custom connector you set up works "across every Claude client, including claude.ai, Claude Desktop, Cowork, and the mobile apps" ([Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)). So the jobs you start by voice on your phone should be the same jobs you see from the Claude app on your computer or from claude.ai in a browser. The author uses it from the Claude phone app and has also checked it in Claude Duet chats (Duet is an invite-only research preview from Anthropic, and its help page doesn't cover custom connectors).
+Your connector lives in your Claude account, not on one device. Anthropic's help pages say Claude reaches a custom connector "from Anthropic's cloud infrastructure," on every Claude client including the mobile apps ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)), and that a connector you set up on the web or desktop "will be available to use the next time you log in to your account on Claude for iOS or Android" ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)). So the jobs you start by voice on your phone should be the same jobs you see from the Claude app on your computer or from claude.ai in a browser. I use it from the Claude phone app and have also checked it in Claude Duet chats (Duet is an invite-only research preview from Anthropic, and its help page doesn't cover custom connectors).
 
 ---
 
@@ -152,11 +152,23 @@ You (voice or chat, Claude app)
    -> Claude
    -> your connector (a Cloudflare Worker on YOUR free Cloudflare account)
    -> job queue
-   <- worker on your computer checks in every 20 seconds
+   <- worker on your computer checks for new jobs every 20 seconds
+      (a small supervisor checks for stop commands: every 15 seconds idle, every 2 while a job runs)
    -> Claude Code does the work, then you get a notification
 ```
 
-Your computer never opens a port. The worker reaches out to your connector; nothing reaches in. Every install has its own connector, its own database and its own keys, so the author can't see your jobs.
+Nothing on your computer listens to the internet. The worker reaches out to your connector; nothing reaches in. (With phone notifications on, the bell listens on 127.0.0.1, this computer only, and needs its own key.) Every install has its own connector, its own database and its own keys, so I can't see your jobs.
+
+### Cloudflare requests
+
+Cloudflare's free plan allows 100,000 Worker requests a day, shared by every Worker on the account; past that, Cloudflare answers with Error 1027 until midnight UTC ([Workers limits](https://developers.cloudflare.com/workers/platform/limits/)). That would include stop everything, which also goes through your connector. What one install uses:
+
+- Idle: about 14,400 a day. The worker asks for new jobs and due schedules every 20 seconds (8,640), and the supervisor checks for stop commands every 15 seconds (5,760).
+- While a job is queued or running, and for a minute after a command: the supervisor checks every 2 seconds (about 1,800 an hour), and the worker checks each running job for messages and stops every 10 seconds (360 an hour per job; every 3 seconds, 1,200 an hour, for desktop control).
+- Claude's own calls to your connector, one per tool call.
+- The connector's every-minute schedule check: 1,440 runs a day. Cloudflare's page doesn't say whether these count toward the 100,000.
+
+I measured the idle numbers on a Mac against a local test connector that counts requests, for 5 minutes each: 51,840 a day before 0.9.1 (the supervisor checked every 2 seconds all the time) and 14,400 a day once it settles. To see your own use, open your Worker in the Cloudflare dashboard.
 
 Jobs run while your Mac is on and you're logged in. One install per Mac user account.
 
@@ -164,7 +176,7 @@ Jobs run while your Mac is on and you're logged in. One install per Mac user acc
 
 **Remote Control** is a Claude Code feature from Anthropic. It links a Claude Code session running on your computer to the Claude app on your phone, so that session can talk to you there. Anthropic explains it on the [Remote Control page](https://code.claude.com/docs/en/remote-control).
 
-Nuff Said uses it for one thing: notifications, and only if you turn them on. Then the installer starts one Claude Code session on your Mac with Remote Control on, and keeps it running. You may see it in the Claude app as "Daisy bell" (or your assistant's name). Leave it running. When a job finishes, the worker tells that session, and the session sends your phone a notification through the Claude app. Claude Code decides when to push, and it can skip one while you're active in Claude: Anthropic says "the server can still suppress the mobile push when it detects that you are active" ([Environment variables](https://code.claude.com/docs/en/env-vars)).
+Nuff Said uses it for one thing: notifications, and only if you turn them on. Then the installer starts one Claude Code session on your Mac with Remote Control on, and keeps it running. You may see it in the Claude app as "Daisy bell" (or your assistant's name). Leave it running. When a job finishes, the worker tells that session, and the session sends your phone a notification through the Claude app. Claude Code decides when to push, and Anthropic says "the server can still suppress the mobile push when it detects that you are active" ([Environment variables](https://code.claude.com/docs/en/env-vars)), so a push can be skipped.
 
 The bell also uses Claude Code channels, a research preview from Anthropic ([Channels](https://code.claude.com/docs/en/channels)), so the worker can hand the session each finished job. The bell's channel isn't on Anthropic's approved list, so the bell starts Claude Code with its developer flag for channels, `--dangerously-load-development-channels server:daisy-bell`. That flag shows a warning that Anthropic meant for people testing their own channels, and its answer is "I am using this for local development." That warning comes back every time the bell starts, and nobody is at that terminal to answer it, so **if you turn on phone notifications, the bell picks that answer for you each time it starts**. It also says yes to Claude Code's question about the bell's own MCP server. The installer says this in the question itself, and the bell stays off unless you say yes: pressing Enter, `--yes`, and an update from a version before the question all leave it off. The session loads only Daisy's channel, none of your other connectors.
 
@@ -192,7 +204,7 @@ Notifications are the only part that needs Remote Control. Starting and checking
 - **The command line and desktop control are on by default.** Claude can run shell commands on your computer from the conversation, take screenshots of your screen, and click and type on your desktop. To turn them off, answer no to the installer's question or run it with `--no-power-lanes`. Off, those tools are hidden from Claude and your computer refuses them too. Turning them off is not a sandbox: code and design jobs still run Claude Code with its normal tools, including its own command line, inside the folders you send them to. If you already installed, run `node install.mjs --update --no-power-lanes` from the release folder (or `--update --power-lanes` to turn them back on). Your connector URL stays the same.
 - **Send, post, spend and delete need your yes.** Jobs stop and ask before any of those unless your request asked for it. For desktop control, email and publishing, the built-in tools stop for your yes in code. A code or design job still has its own command line, though, so a job tricked by a web page or email could reach your desktop, Composio or other apps another way. For everything else a job does, the stop is an instruction to Claude, and a well-made trick can get past an instruction.
 - **Agents can't give that yes.** Every job, thread, schedule, routine, message, reply, approval, cancel and stop records who sent it. Your own Claude chat reaches the connector from Anthropic's servers, so it's recognized as you. A script or agent that calls the URL directly, like a job on your computer, is labeled as an agent. The connector refuses its approvals and its answers to a job waiting for your yes, and it can't publish, share, use the run-command tool, look at or use your desktop, or undo stop everything. What it starts is marked as an agent's, and the job is told that isn't your approval. Agents can still start work, including ordinary jobs that run Claude Code with its command line, message each other and keep working. This is a check on where the call comes from, not a login: anything else that reaches your connector through Anthropic, like someone else's Claude or the Claude API with any key, comes from the same addresses and counts as you. So could a job on your computer that starts its own Claude session using the connectors in your Claude account: jobs are started with those connectors switched off, but a job can switch them back on. That's why the URL is a password.
-- **Letting a lead agent approve for you is off.** `--lead-agent NAME` turns it on for one named agent. It can approve and answer jobs waiting for your yes, and nothing more: it still can't publish, share, or use the run-command and desktop tools. Its approvals are logged as that agent, never as you, and a run it approved doesn't publish until you say so. The catch: it proves itself with a key file, `.lead-agent-key`, and any job on your computer can read that file, so a job that was tricked by a web page or email could approve for you too. Leave it off unless you need it. To turn it off: `node install.mjs --update --no-lead-agent`. Your connector URL stays the same.
+- **Letting a lead agent approve for you is off.** `--lead-agent NAME` turns it on for one named agent. It can approve and answer jobs waiting for your yes, with limits: it can't approve sending a held email, and its approval never lets a desktop job send, post, buy or pay; those come back to you. It still can't publish, share, or use the run-command and desktop tools. Its approvals are logged as that agent, never as you, and a run it approved doesn't publish until you say so. The catch: it proves itself with a key file, `.lead-agent-key`, and any job on your computer can read that file, so a job that was tricked by a web page or email could approve for you too. Leave it off unless you need it. To turn it off: `node install.mjs --update --no-lead-agent`. Your connector URL stays the same.
 
 Read [SECURITY.md](SECURITY.md) for the details.
 
@@ -209,7 +221,7 @@ Read [SECURITY.md](SECURITY.md) for the details.
    It checks Node and Claude Code first and tells you exactly what's missing.
 3. Answer five questions (your name, what you call your assistant, what you call this computer, whether jobs may use the command line and control your desktop, and whether to turn on phone notifications; the command line question is yes unless you type no, and phone notifications stay off unless you type yes). Before the last question it says what the phone bell answers for you; see [Phone notifications and Remote Control](#phone-notifications-and-remote-control).
 4. Sign in to Cloudflare when your browser opens.
-5. In Claude, go to **Customize > Connectors**, click **+ Add**, choose **Add custom connector**, name it **Nuff Said**, paste the URL the installer copied for you, and click **Continue**. Claude then shows the authentication settings it detected: under **Authentication**, choose **No sign in**, leave **Request headers** empty, and click **Add**. Your key is already in the URL. (Anthropic's steps: [Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).) Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
+5. In Claude, go to **Customize > Connectors**, click **+ Add**, choose **Add custom connector**, name it **Nuff Said**, paste the URL the installer copied for you, and click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Under **Authentication**, choose **No sign in**, leave **Request headers** empty, and click **Add**. Your key is already in the URL. (Anthropic's steps: [Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).) Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
 6. Open the Claude app, start voice, and say: **"Check updates with Daisy."** (or whatever you named your assistant). You're still talking to Claude; the name tells Claude to use your connector.
 7. If you turned on phone notifications: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
 
@@ -311,7 +323,7 @@ When Anthropic ships all of this natively, use theirs.
 
 ## Why this exists
 
-Claude's voice mode is the best place I've found to think out loud. But back then it couldn't hand work to Claude Code on my computer.
+Claude's voice mode is my favorite place to think out loud. But back then it couldn't hand work to Claude Code on my computer.
 
 So every time a thought turned into a task, I had to stop talking, open the laptop, find the right session, type it all out, and come back later. The typing wasn't the problem. Losing the thread was.
 
@@ -337,7 +349,7 @@ node test/time-unit.mjs
 node worker/shell-lane.mjs --shell-selftest
 ```
 
-GitHub runs the installer dry run, update and key change, the time zone, redaction and bell prompt tests on macOS and Windows for every change, and `./test.sh gate` on macOS ([installer.yml](.github/workflows/installer.yml)).
+The workflow in [installer.yml](.github/workflows/installer.yml) is set up to run the installer dry run, update and key change, and the time zone, redaction and bell prompt tests on GitHub's macOS and Windows runners, plus `./test.sh gate` on macOS. For 0.9.1 it didn't run: GitHub Actions was blocked on the account. Every test above was run by hand on one Mac (macOS 26.4, Node 22.23) with the command line and desktop control on and off. Nothing was run on Windows. [RELEASE_NOTES.md](RELEASE_NOTES.md) lists exactly what ran.
 
 ---
 
