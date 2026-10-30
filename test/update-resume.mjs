@@ -85,6 +85,70 @@ check(r.status === 0 && json("install-receipt.json").leadAgent === null, "the ne
   check(r.status === 0 && !/Not kept from the old one/.test(r.stdout), "an update of a config with nothing planted lists nothing", r.stdout.slice(-800));
 }
 
+// Where publishing uploads to isn't a choice the update keeps: a planted Google Drive folder (every Drive publish would land
+// in someone else's folder) or a turned-off Google account check is reset and listed, so the owner sets it again after checking.
+{
+  const c = json(path.join("worker", "config.json"));
+  fs.writeFileSync(path.join(dir, "worker", "config.json"), JSON.stringify({ ...c, publish: { accounts: { googledocs: "docs_me" }, driveFolderId: "1AttackersFolder_x", expectAccount: null } }, null, 2));
+  r = install(["--dry-run", "--update"]);
+  const raw = fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8"), n = JSON.parse(raw);
+  check(r.status === 0 && !raw.includes("1AttackersFolder_x") && !("expectAccount" in n.publish) && n.publish.accounts.googledocs === "docs_me", "an update resets a planted Drive upload folder and a turned-off account check, and keeps the account name", raw);
+  check(/Not kept from the old one: [^\n]*publish\.driveFolderId[^\n]*publish\.expectAccount/.test(r.stdout), "and lists both as not kept", r.stdout.slice(-1500));
+}
+
+// A key named like a built-in object property (valueOf, toString, constructor, __proto__) is unknown, like any other:
+// listed as not kept, and the update finishes instead of stopping halfway with the old install moved aside.
+{
+  const c = json(path.join("worker", "config.json"));
+  const sup = JSON.stringify({ ...c.supervisor, toString: "x" }).slice(0, -1) + ',"__proto__":{"pollSeconds":1}}';
+  const planted = JSON.stringify({ ...c, supervisor: "SUP", constructor: "y", toString: "z" }).replace('"SUP"', sup).slice(0, -1) +
+    ',"valueOf":{"a":1},"hasOwnProperty":{"b":2},"__proto__":{"polluted":true}}';
+  fs.writeFileSync(path.join(dir, "worker", "config.json"), planted);
+  r = install(["--dry-run", "--update"]);
+  const raw = fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8");
+  check(r.status === 0 && fs.existsSync(path.join(dir, "install-receipt.json")) && !/"(valueOf|hasOwnProperty|constructor|toString|__proto__)"/.test(raw) && ({}).polluted === undefined,
+    "an update with planted built-in names finishes and keeps none of them", `${r.status} ${raw.slice(0, 300)} ${r.stderr.slice(-500)}`);
+  check(/Not kept from the old one: [^\n]*valueOf[^\n]*__proto__/.test(r.stdout) && /supervisor\.toString/.test(r.stdout) && /supervisor\.__proto__/.test(r.stdout), "and lists them as not kept, at the top level and inside supervisor", r.stdout.slice(-1500));
+}
+
+// An update that fails with an error after it moved the old folder aside, before the new one has the keys, puts the old
+// folder back as it was, and the next update works.
+{
+  const before = { key: fs.readFileSync(path.join(dir, ".connector-key"), "utf8"), cfg: fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8") };
+  fs.mkdirSync(path.join(dir, "jobs", "keep-me"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "jobs", "keep-me", "RESULT.md"), "mine");
+  const boom = path.join(home, "fail-after-move.mjs");
+  fs.writeFileSync(boom, `import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module";
+const orig = fs.copyFileSync;
+fs.copyFileSync = function (a, b, ...rest) { if (String(b).endsWith("doctor.mjs")) throw new Error("TEST: disk full"); return orig.call(this, a, b, ...rest); };
+syncBuiltinESMExports();\n`);
+  r = install(["--dry-run", "--update"], { pre: ["--import", pathToFileURL(boom).href] });
+  const projects = path.dirname(dir), failed = fs.readdirSync(projects).filter((n) => n.startsWith(`${path.basename(dir)}.failed-`));
+  check(r.status === 1 && /the update failed partway \(TEST: disk full\)\. Your old install folder is back at/.test(r.stderr), "an update that fails partway says the old folder is back", r.stderr.slice(-600));
+  check(fs.readFileSync(path.join(dir, ".connector-key"), "utf8") === before.key && fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8") === before.cfg &&
+    fs.readFileSync(path.join(dir, "jobs", "keep-me", "RESULT.md"), "utf8") === "mine" && fs.existsSync(path.join(dir, "site.json")) && failed.length === 1,
+    "the old folder is back with its keys, settings and jobs, and the half-made one is kept aside", JSON.stringify(failed));
+  r = install(["--dry-run", "--update"]);
+  check(r.status === 0 && fs.readFileSync(path.join(dir, ".connector-key"), "utf8") === before.key, "the next update works and keeps the same keys", r.stderr.slice(-400));
+  failed.forEach((n) => fs.rmSync(path.join(projects, n), { recursive: true, force: true }));
+  fs.rmSync(path.join(dir, "jobs", "keep-me"), { recursive: true, force: true });
+}
+
+// Claude Code loads the .claude settings (hooks included) of the folder a thread or job runs in. Nuff Said never makes one,
+// so the update moves any it carries over into the old install's folder and says so.
+{
+  const hook = { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "/tmp/planted-hook" }] }] } };
+  const plant = (rel) => { fs.mkdirSync(path.join(dir, rel, ".claude"), { recursive: true }); fs.writeFileSync(path.join(dir, rel, ".claude", "settings.json"), JSON.stringify(hook)); };
+  plant(path.join("threads", "t1")); plant(path.join("jobs", "j1")); plant("threads");
+  fs.writeFileSync(path.join(dir, "threads", "t1", "notes.md"), "keep me");
+  r = install(["--dry-run", "--update"]);
+  const left = ["threads/t1", "jobs/j1", "threads"].filter((rel) => fs.existsSync(path.join(dir, rel, ".claude")));
+  const projects = path.dirname(dir), bak = fs.readdirSync(projects).filter((n) => n.startsWith(`${path.basename(dir)}.bak`)).map((n) => path.join(projects, n)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  check(r.status === 0 && !left.length && fs.readFileSync(path.join(dir, "threads", "t1", "notes.md"), "utf8") === "keep me", "an update moves planted .claude folders out of thread and job folders and keeps the rest", `${left} ${r.stderr.slice(-300)}`);
+  check(!!bak && fs.existsSync(path.join(bak, "claude-folders", "threads", "t1", ".claude", "settings.json")), "the moved folders are kept in the old install's folder", bak);
+  check(/moved 3 Claude Code settings folder\(s\)/.test(r.stdout), "the update says what it moved and where", r.stdout.slice(-1500));
+}
+
 // The phone bell is off unless you say yes (Mac only): --yes leaves it off, an update never turns it on by itself, and it can
 // be turned on and off again and stays as you left it.
 if (process.platform === "darwin") {
@@ -202,12 +266,13 @@ if (process.platform !== "win32") {
   const fenv = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
   const first = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--yes", "--no-start", "--no-power-lanes", "--name", "Tester", "--assistant", "Daisy", "--home", fhome], { encoding: "utf8", env: fenv });
   const again = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--update", "--no-start", "--home", fhome], { encoding: "utf8", env: fenv });
-  check(first.status !== 0 && again.status !== 0 && /Nothing was deployed yet\. Run node install\.mjs --update again when you're ready\./.test(again.stderr) && !/old settings/.test(again.stderr),
-    "an update after a first install that never reached Cloudflare says nothing was deployed yet, not that old settings are live", again.stderr.slice(-500));
+  check(first.status !== 0 && again.status !== 0 && /Nothing was deployed yet\. Run node install\.mjs --update again when you're ready\./.test(again.stderr) && !/old settings/.test(again.stderr) &&
+    (again.stderr.match(/nothing was deployed/gi) || []).length === 1,
+    "an update after a first install that never reached Cloudflare says once that nothing was deployed yet, not that old settings are live", again.stderr.slice(-500));
   // --uninstall of that install has no startup entries to move; the doctor still knows it was uninstalled.
   const un2 = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--home", fhome], { encoding: "utf8", env: fenv });
   const fdoc = spawnSync(process.execPath, [path.join(fdir, "doctor.mjs"), "--dir", fdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: fhome } });
-  check(un2.status === 0 && /was uninstalled/.test(fdoc.stdout) && !/--update again/.test(fdoc.stdout), "after --uninstall of an install that stopped at Cloudflare, the doctor doesn't say to run --update", fdoc.stdout.slice(-600));
+  check(un2.status === 0 && /was uninstalled/.test(fdoc.stdout) && !/--update again|Finish the Cloudflare sign-in|install is incomplete/.test(fdoc.stdout), "after --uninstall of an install that stopped at Cloudflare, the doctor doesn't say to run --update, finish the sign-in, or that the install is incomplete", fdoc.stdout.slice(-600));
   fs.rmSync(fhome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 

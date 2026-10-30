@@ -89,8 +89,9 @@ const LEAK_STEPS = (dir, db) => [
   `  3. ${path.join("logs", "shell.log")} lists commands run here, but a command could have changed it. The connector keeps its own`,
   `     list on Cloudflare: npx -y ${WRANGLER} d1 execute ${db} --remote --command "SELECT created_at, arg FROM control WHERE kind='shell' ORDER BY id"`,
   "     (someone with your Cloudflare sign-in could change that too). Check crontab -l, ~/Library/LaunchAgents, Login Items,",
-  "     ~/.zshrc and ~/.ssh/authorized_keys. Finding nothing doesn't prove nothing happened; if in doubt, treat this computer as",
-  "     compromised. SECURITY.md has every step.",
+  "     ~/.zshrc, ~/.ssh/authorized_keys and Claude Code's hooks: ~/.claude/settings.json, and any .claude folder in",
+  `     ${dir} (Nuff Said never makes one; --update moves those in job and thread folders aside). Finding nothing doesn't`,
+  "     prove nothing happened; if in doubt, treat this computer as compromised. SECURITY.md has every step.",
   "  4. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more, from the fresh download, and only then add the",
   "     connector in Claude with that URL. Until then, treat the keys from this key change as seen: a copied Cloudflare or Claude",
   "     sign-in, or something left running here, could have read them. If this run was that second one, you're done here:",
@@ -111,6 +112,7 @@ const BELL_QUESTION = "Turn on phone notifications? The bell uses a Claude Code 
 const HOST = process.platform; // the OS we are really running on
 // While an update runs: what is still on your old settings if it stops now (set by main as it goes).
 let stillOld = null;
+let rollback = null; // { bak, dir } from the moment the old folder is moved aside until the new one has the keys
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -153,7 +155,12 @@ const shown = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-
 const ok = (s) => { say(`  ok    ${s}`); steps.push(["ok", s]); };
 const note = (s) => { say(`  note  ${s}`); steps.push(["note", s]); };
 const skip = (s) => { say(`  skip  ${s}`); steps.push(["skip", s]); };
-function die(s) { console.error(`\nSTOPPED: ${s}${stillOld ? `\n${stillOld}` : ""}`); process.exit(1); }
+function die(s) {
+  if (rollback) putBack(rollback, s);
+  // Said once: when the line under the stop already says nothing was deployed and to run --update again, the stop doesn't.
+  if (stillOld && /^Nothing was deployed yet/.test(stillOld)) s = s.replace(/ Run this again when you're ready; nothing was deployed\.$/, "");
+  console.error(`\nSTOPPED: ${s}${stillOld ? `\n${stillOld}` : ""}`); process.exit(1);
+}
 let stepNo = 0;
 const step = (t, total) => { stepNo++; say(`\n[${stepNo}/${total}] ${t}`); };
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -223,7 +230,28 @@ function uninstall() {
 }
 
 // ---------- install ----------
-await main();
+try { await main(); } catch (e) { if (rollback) putBack(rollback, e); throw e; }
+
+// A stop or an error before the new folder has the keys would leave a folder that --update can't find or that has no keys
+// to keep. So the old folder goes back in place, as it was before this run.
+function putBack({ bak, dir }, e) {
+  rollback = null;
+  const failed = `${dir}.failed-${stamp()}`, why = shown(e?.message || e).slice(0, 300), what = has("update") ? "the update" : "this run";
+  try {
+    if (fs.existsSync(dir)) {
+      for (const d of ["jobs", "threads", "logs"]) if (fs.existsSync(path.join(dir, d)) && !fs.existsSync(path.join(bak, d))) fs.renameSync(path.join(dir, d), path.join(bak, d));
+      fs.renameSync(dir, failed);
+    }
+    fs.renameSync(bak, dir);
+    console.error(`\nSTOPPED: ${what} failed partway (${why}). Your old install folder is back at ${dir}, as it was before this run,` +
+      ` with your keys, jobs, threads and logs. Nothing changed on Cloudflare. ${fs.existsSync(failed) ? `The half-made folder is at ${failed}; delete it when you like. ` : ""}` +
+      `Run node doctor.mjs, then node install.mjs ${has("update") ? "--update" : "--force"} again; if it fails the same way, TROUBLESHOOTING.md says how to report it.`);
+  } catch (e2) {
+    console.error(`\nSTOPPED: ${what} failed partway (${why}), and putting the old folder back failed too (${shown(e2.message).slice(0, 200)}).` +
+      ` Your old install is at ${bak}. Rename it to ${dir} by hand${fs.existsSync(dir) ? ` after moving ${dir} aside` : ""}, then run it again.`);
+  }
+  process.exit(1);
+}
 
 async function main() {
   const TOTAL = 7;
@@ -354,6 +382,7 @@ async function main() {
     bak = `${dir}.bak-${stamp()}`;
     for (let i = 2; fs.existsSync(bak); i++) bak = `${dir}.bak-${stamp()}-${i}`; // two runs in one second
     fs.renameSync(dir, bak); note(`old folder kept at ${bak}`);
+    rollback = { bak, dir };
   }
 
   // 3. render
@@ -406,6 +435,7 @@ async function main() {
   // The old URL too, until the deploy writes it again: if this update stops partway, the next try still knows the URL.
   if (UPDATE && fs.existsSync(path.join(bak, ".connector-url"))) writeSecret(path.join(dir, ".connector-url"), fs.readFileSync(path.join(bak, ".connector-url"), "utf8"));
   ok(UPDATE ? `${kept} keys kept from your install${keyFiles.length > kept ? `, ${keyFiles.length - kept} new` : ""}, readable only by you` : `${keyFiles.length} keys made on this computer, readable only by you`);
+  rollback = null; // from here a stop leaves a folder that --update can run in again
 
   // 5. cloudflare
   step("Putting your connector on Cloudflare", TOTAL);
@@ -505,6 +535,24 @@ function carryOver(bak, dir, bell) {
     fs.renameSync(from, path.join(dir, d));
     moved++;
   }
+  // A thread or job runs Claude Code in its folder, which loads that folder's .claude settings, hooks included. Nuff Said
+  // never makes one there, so one that was carried over could only have been planted: move it into the old folder, not on.
+  const planted = [];
+  for (const d of ["jobs", "threads"]) {
+    const top = path.join(dir, d);
+    let names = [];
+    try { names = fs.readdirSync(top); } catch { continue; }
+    for (const at of [top, ...names.map((n) => path.join(top, n))]) {
+      const c = path.join(at, ".claude");
+      let st = null;
+      try { if (!fs.lstatSync(at).isDirectory()) continue; st = fs.lstatSync(c); } catch { continue; } // never through a link
+      const to = path.join(bak, "claude-folders", path.relative(dir, at));
+      fs.mkdirSync(to, { recursive: true });
+      fs.renameSync(c, path.join(to, ".claude"));
+      planted.push(path.join(path.relative(dir, at), ".claude") + (st.isDirectory() ? "" : " (not a folder)"));
+    }
+  }
+  if (planted.length) note(`moved ${planted.length} Claude Code settings folder(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Nuff Said never makes these, and their hooks would run in every later job there. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
   const cfgPath = path.join(dir, "worker", "config.json"), oldPath = path.join(bak, "worker", "config.json");
   if (fs.existsSync(oldPath)) {
     const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
@@ -521,7 +569,8 @@ function carryOver(bak, dir, bell) {
 // you could have changed any of that, and SECURITY.md says an update from a fresh download puts back the released code. So
 // the update writes this release's config and copies over only your choices: numbers, on/off switches, the separate
 // desktop's name, the disk to watch and the Composio account names. A Composio program path is kept only if it's the
-// standard one. Everything else from the old file is listed as not kept.
+// standard one. Everything else from the old file is listed as not kept, including where publishing uploads to (a Google
+// Drive folder) and a turned-off Google account check: the owner sets those again after checking them.
 function keptSettings(fresh, old, home = HOME) {
   const cfg = JSON.parse(JSON.stringify(fresh)), dropped = [];
   const num = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
@@ -534,7 +583,7 @@ function keptSettings(fresh, old, home = HOME) {
   // from: the old settings, to: the new ones (a copy of this release's, which is also what "unchanged" means).
   const keep = (from, to, rules, where) => {
     for (const [k, v] of Object.entries(from || {})) {
-      const id = where ? `${where}.${k}` : k, r = rules[k];
+      const id = where ? `${where}.${k}` : k, r = Object.hasOwn(rules, k) ? rules[k] : null;
       if (!r) { if (!same(v, to[k])) dropped.push(id); continue; }
       if (typeof r === "function") { if (r(v)) to[k] = v; else if (!same(v, to[k])) dropped.push(id); continue; }
       if (v === false && r.mayBeOff) { to[k] = false; continue; }
@@ -554,7 +603,7 @@ function keptSettings(fresh, old, home = HOME) {
     screen: { fields: { displays: num } },
     health: { fields: { disk: abs, accounts: (v) => Array.isArray(v) && v.every((x) => typeof x === "string" && x.length < 200), composioBin } },
     gmail: { fields: { accounts, composioBin } },
-    publish: { mayBeOff: true, fields: { accounts, expectAccount: (v) => v === null || (typeof v === "string" && v.length < 200), driveFolderId: word, timeoutSeconds: num, composioBin } },
+    publish: { mayBeOff: true, fields: { accounts, expectAccount: (v) => typeof v === "string" && v.length < 200, timeoutSeconds: num, composioBin } },
   });
   // Never copied, so they stay as this run made them: the command line switch, where the connector is, the bell (this
   // release's address and key file, or off), and every program path, file path, folder list, tool list, command and environment.

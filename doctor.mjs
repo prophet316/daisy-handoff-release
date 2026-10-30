@@ -158,7 +158,7 @@ if (!DIR || !site) {
   else check("warn", "this install is from before time zones: schedules use US Central Time", "Update to the newest release to use your own time zone.", "Schedules run at the wrong time");
   const missing = [".connector-key", ".worker-key", ".bell-key", ".connector-url"].filter((f) => !fs.existsSync(path.join(DIR, f)));
   check(missing.length ? "fail" : "ok", missing.length ? `missing ${missing.join(", ")}` : "keys and connector URL are in place",
-    `The install is incomplete. ${FINISH}`, "Install stopped partway");
+    UNINSTALLED ? FINISH : `The install is incomplete. ${FINISH}`, "Install stopped partway");
   if (process.platform !== "win32") {
     // Every key file the installer makes, the lead agent key too when it's turned on. A missing file isn't "open".
     const open = [".connector-key", ".worker-key", ".bell-key", ".connector-url", ".lead-agent-key"].filter((f) => { try { return (fs.statSync(path.join(DIR, f)).mode & 0o077) !== 0; } catch { return false; } });
@@ -168,7 +168,7 @@ if (!DIR || !site) {
   if (cfg) {
     const deployed = isDeployed(cfg.base);
     check(deployed ? "ok" : "fail", deployed ? "worker knows its connector" : "the connector was never deployed (this is a dry run, or the install stopped before Cloudflare)",
-      receiptJson?.manual && receiptJson?.dryRun ? FINISH : receiptJson?.dryRun ? "A dry run never deploys. Run node install.mjs without --dry-run." : `${FINISH} Finish the Cloudflare sign-in when your browser opens.`, "Cloudflare sign-in or deploy failed");
+      receiptJson?.manual && receiptJson?.dryRun ? FINISH : receiptJson?.dryRun ? "A dry run never deploys. Run node install.mjs without --dry-run." : UNINSTALLED ? FINISH : `${FINISH} Finish the Cloudflare sign-in when your browser opens.`, "Cloudflare sign-in or deploy failed");
     say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}${receiptJson?.unfinished && receiptJson?.updatedFrom ? " in the new files, but Cloudflare and the running worker may still use your old setting until the update finishes" : ""}`);
   }
 

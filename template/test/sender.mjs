@@ -225,12 +225,18 @@ r = await call(AGENT, "cancel_schedule", { schedule: "owner routine" });
 check("cancel_schedule from an agent records the agent", !r.isError && /Cancelled by agent tester \(not /.test(row("SELECT last_note FROM schedules WHERE name='owner routine'").last_note || ""), r.text);
 
 // ---- 7. stop everything: an agent may stop, only the owner may resume ----
+// The pause replies are read aloud, so they use the words the owner says ("Stop everything", "start things again"), not tool names.
+const toolNames = /stop_all|resume_all|retry_job/;
 r = await call(AGENT, "stop_all");
 check("stop_all from an agent pauses and records the agent", !r.isError && /agent tester/.test(row("SELECT value FROM settings WHERE key='paused'")?.value || ""), r.text);
+check("the stop reply says how to undo it in the owner's words, with no tool names", /says "start things again"/.test(r.text) && !toolNames.test(r.text), r.text);
+r = await call(OWNER_IP, "check_updates");
+check("what's new while paused uses the same words, with no tool names", /Everything is paused \(Stop everything, .*"start things again"/.test(r.text) && !toolNames.test(r.text), r.text.slice(-400));
 r = await call(AGENT, "resume_all");
 check("resume_all from an agent is refused and stays paused", r.isError && !!row("SELECT value FROM settings WHERE key='paused' AND value<>'null'"), r.text);
 r = await call(OWNER_IP, "resume_all");
 check("resume_all from the owner resumes", !r.isError && /Resumed .*by agent tester/.test(r.text), r.text);
+check("the resume reply has no tool names", !toolNames.test(r.text), r.text);
 
 // ---- 8. the worker tells Claude who it came from ----
 const thread = planRun({ id: "t1", title: "x", details: "do it", run_mode: "thread", created_by: "agent tester", thread: { name: "t", session_id: "s" }, mode: "code" }, "/tmp/x");
@@ -238,6 +244,10 @@ check("a thread task an agent started is marked as not the owner's approval", /c
 const sched = planRun({ id: "s1", title: "x", details: "do it", origin: "agent tester's schedule (not X's) \"x\"", created_by: "agent tester", mode: "code" }, "/tmp/x");
 check("an agent's scheduled run is not called the owner's approval", !/approval for exactly what it says/.test(sched.rules) && /agent tester set it up, not/.test(sched.rules), sched.rules.slice(-400));
 const own = planRun({ id: "s2", title: "x", details: "do it", origin: "X's schedule \"x\"", mode: "code" }, "/tmp/x");
+for (const odd of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+  const p = planRun({ id: "m1", title: "x", details: "do it", mode: odd }, "/tmp/x"), code = planRun({ id: "m1", title: "x", details: "do it", mode: "code" }, "/tmp/x");
+  check(`a job mode named "${odd}" (a built-in name, not in modes.json) runs as an ordinary code job`, !p.lane && JSON.stringify(p.tools) === JSON.stringify(code.tools) && p.rules === code.rules, JSON.stringify(p.tools));
+}
 check("the owner's scheduled run still counts as the owner's saved approval", /approval for exactly what it says/.test(own.rules));
 
 // ---- 9a. a worker restart (which an agent can ask for) doesn't start a desktop or screen job again by itself ----

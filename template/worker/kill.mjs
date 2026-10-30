@@ -14,13 +14,13 @@ import { join } from "node:path";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Every process: pid, ppid, pgid, session, state, age in seconds, and its command line followed by its environment
+// Every process: pid, ppid, pgid, session, state, age and start time in seconds, and its command line followed by its environment
 // (ps -E; own processes only). Zombies are left out: they are already dead and only wait for their parent.
 export function processTable() {
-  let out = "";
-  try { out = execFileSync("/bin/ps", ["-axE", "-ww", "-o", "pid=,ppid=,pgid=,stat=,etime=,command="], { maxBuffer: 64 << 20 }).toString(); } catch { return []; }
+  let out = "", now = 0;
+  try { out = execFileSync("/bin/ps", ["-axE", "-ww", "-o", "pid=,ppid=,pgid=,stat=,etime=,command="], { maxBuffer: 64 << 20 }).toString(); now = Date.now() / 1000; } catch { return []; }
   const table = out.split("\n").map((l) => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s(.*)$/.exec(l)).filter(Boolean)
-    .map((m) => ({ pid: +m[1], ppid: +m[2], pgid: +m[3], stat: m[4], age: etimeSeconds(m[5]), text: m[6], sid: 0 }))
+    .map((m) => ({ pid: +m[1], ppid: +m[2], pgid: +m[3], stat: m[4], age: etimeSeconds(m[5]), start: now - etimeSeconds(m[5]), text: m[6], sid: 0 }))
     .filter((p) => !p.stat.startsWith("Z"));
   // ps on macOS always shows session 0; getsid(2) knows the real one. It's called through osascript, which is part of macOS,
   // so stopping jobs never needs Apple's Command Line Tools (without them /usr/bin/python3 is only an installer prompt).
@@ -44,8 +44,30 @@ const hasTag = (text, name, value) => {
   return next === undefined || next === " ";
 };
 
-// What the worker recorded for a job's run: { pid, sid, worker_tag }.
+// What the worker recorded for a job's run: { pid, sid, worker_tag, at, boot }.
 const readRun = (dir) => { try { return JSON.parse(readFileSync(join(dir, ".run.json"), "utf8")); } catch { return null; } };
+
+// When this Mac last started, in seconds (kern.boottime), or null if it can't be read. Read once per process.
+let boot;
+export function bootTime() {
+  if (boot === undefined) try { boot = Number(/sec = (\d+)/.exec(execFileSync("/usr/sbin/sysctl", ["-n", "kern.boottime"]).toString())[1]) || null; } catch { boot = null; }
+  return boot;
+}
+
+// A recorded session id is only a number: after a reboot, or once the job's processes are all gone, the same number can
+// belong to anything. Trust it only while it is provably the run's own session: the run was recorded since this Mac last
+// started, and the session's leader, if it is still alive, started when the run did.
+// With the leader gone, only the session's processes that started while the run could still be running count (after its
+// start and before its runaway cap). Returns a filter for that session's processes, or null to ignore the record.
+const SLACK_S = 3;
+function runSession(r, table) {
+  const sid = Number(r?.sid), at = Date.parse(r?.at) / 1000, until = Date.parse(r?.until) / 1000, b = bootTime();
+  if (!sid || !Number.isFinite(at) || !b || Number(r.boot) !== b) return null;
+  const leader = table.find((p) => p.pid === sid);
+  if (leader) return leader.sid === sid && Math.abs(leader.start - at) <= SLACK_S + 1 ? () => true : null;
+  if (!Number.isFinite(until)) return null;
+  return (p) => p.start >= at - SLACK_S && p.start <= until + SLACK_S;
+}
 
 // The processes that belong to a job (or to every job a worker started, by its worker tag).
 // match: { jobDir?, workerTag?, jobsRoot? (with workerTag: where the job folders are), tag?: [name, value], rootPid? }.
@@ -71,7 +93,10 @@ export function findProcs(match, table = processTable()) {
     try { names = readdirSync(match.jobsRoot); } catch {}
     for (const n of names) { const r = readRun(join(match.jobsRoot, n)); if (r?.worker_tag === match.workerTag) runs.push(r); }
   }
-  for (const r of runs) if (r && Number(r.sid)) sids.add(Number(r.sid));
+  for (const r of runs) {
+    const ok = runSession(r, table);
+    if (ok) for (const p of table) if (!keep.has(p.pid) && p.sid === Number(r.sid) && !keepSid.has(p.sid) && ok(p)) mine.add(p.pid);
+  }
   const root = match.rootPid && table.find((p) => p.pid === match.rootPid);
   if (root && !keep.has(root.pid)) { mine.add(root.pid); if (root.sid === root.pid) sids.add(root.sid); }
   for (const p of table) if (!keep.has(p.pid) && sids.has(p.sid) && !keepSid.has(p.sid)) mine.add(p.pid);

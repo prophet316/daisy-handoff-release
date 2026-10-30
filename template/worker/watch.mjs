@@ -236,7 +236,7 @@ export function makeWatcher(ctx) {
     const hb = Math.max(mtime(join(dir, ".heartbeat")), mtime(join(dir, ".progress.json")), run.at_ms, wakeAt);
     const silent = now - hb;
     if (silent >= MS.silence) {
-      const procs = findProcs({ jobDir: dir, rootPid: run.pid });
+      const procs = findProcs({ jobDir: dir }); // run.pid leads the recorded session, which findProcs checks is still the run's
       if (!procs.length) return; // the run already ended; the worker takes it from here
       // CPU of what the session started (tool commands, lane servers), not claude itself, which only waits while a tool runs.
       const cpu = cpuSeconds(procs.filter((p) => p.pid !== run.pid).map((p) => p.pid));

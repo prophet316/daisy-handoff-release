@@ -18,7 +18,7 @@ import { makePublisher, publishJob } from "./publish.mjs";
 import { readDraft, checkDraft, draftHash, sendHeldEmail } from "./email.mjs";
 import { makeRedactor, envSecrets, installSecrets, SECRET_NAME } from "./redact.mjs";
 import { staleLaunchd, reloadLaunchd } from "./launchd-reload.mjs";
-import { hardKill } from "./kill.mjs";
+import { hardKill, findProcs, processTable, bootTime } from "./kill.mjs";
 import { powerRefusal, powerOn } from "./power.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -32,6 +32,8 @@ const EMPTY_MCP = join(ROOT, "worker", "empty-mcp.json");
 const TOOLS = ["Bash", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "Edit", "Write", "NotebookEdit", "TodoWrite"];
 // Thread modes: each has its own instructions and its own tool set (worker/modes.json).
 const MODES = JSON.parse(readFileSync(join(ROOT, CFG.modesFile || "worker/modes.json"), "utf8"));
+// A job's mode comes from the connector: only modes.json's own entries count, never a name like "constructor".
+const modeOf = (name) => (typeof name === "string" && Object.hasOwn(MODES, name) ? MODES[name] : null);
 const MAX_PARALLEL = Math.max(1, Number(CFG.maxParallel) || 1);
 const WORKER_ID = CFG.workerId || hostname();
 // Every job process carries this tag (and DAISY_JOB_DIR) in its environment, so kills find it even after its parent is gone.
@@ -161,7 +163,7 @@ export function planRun(job, jobDir = join(ROOT, "jobs", job.id), state = runDir
   }
   if (job.mode === "screen") prompt = screenPrompt(job);
   const approved = mode === "approved";
-  const kind = MODES[job.mode] ? job.mode : "code";
+  const kind = modeOf(job.mode) ? job.mode : "code";
   const m = MODES[kind];
   const profile = approved && CFG.approved && !m.cua ? CFG.approved : {};
   const cwd = workDir(job, jobDir);
@@ -398,7 +400,7 @@ export async function captureScreen(dir) {
 
 // Where Claude runs. A thread or project always uses the same folder, so its session can be resumed.
 export function workDir(job, jobDir = join(ROOT, "jobs", job.id)) {
-  if (MODES[job.mode]?.cua) return jobDir; // its project_dir only names the lane, so computer jobs run one at a time
+  if (modeOf(job.mode)?.cua) return jobDir; // its project_dir only names the lane, so computer jobs run one at a time
   if (job.project_dir) return job.project_dir;
   if (job.thread_id) return join(ROOT, "threads", job.thread_id);
   return jobDir;
@@ -438,8 +440,8 @@ function runClaude(plan, dir, onSpawn, meta = {}) {
       // account, so it can't reach this connector through Anthropic and count as {{OWNER}}. A job can unset it: a speed bump, not a boundary.
       env: { ...process.env, DAISY_JOB_DIR: dir, DAISY_RUN_DIR: plan.state, DAISY_WORKER_TAG: WORKER_TAG, ENABLE_CLAUDEAI_MCP_SERVERS: "false" } });
     // watch: the supervisor watches this run's heartbeat (job_started is the first run of this pickup; recoveries keep it).
-    if (child.pid) writeFileSync(join(dir, ".run.json"), JSON.stringify({ pid: child.pid, pgid: child.pid, sid: child.pid, worker_pid: process.pid, worker_tag: WORKER_TAG, at: new Date().toISOString(),
-      watch: true, job_id: meta.id, title: meta.title, run_mode: plan.mode, cwd: plan.cwd || dir, job_started: meta.started, run_n: meta.n || 1 }));
+    if (child.pid) writeFileSync(join(dir, ".run.json"), JSON.stringify({ pid: child.pid, pgid: child.pid, sid: child.pid, worker_pid: process.pid, worker_tag: WORKER_TAG, at: new Date().toISOString(), boot: bootTime(),
+      until: new Date(meta.deadline || Date.now() + RUNAWAY_MS).toISOString(), watch: true, job_id: meta.id, title: meta.title, run_mode: plan.mode, cwd: plan.cwd || dir, job_started: meta.started, run_n: meta.n || 1 }));
     if (onSpawn) onSpawn(child);
     let out = "", err = "", timedOut = false, ended = false;
     const end = (r) => { if (ended) return; ended = true; clearTimeout(timer); resolve(r); };
@@ -815,7 +817,7 @@ async function handle(job) {
     await api("finish", { id: job.id, status: "failed", result: `${off} Nothing was run.` });
     return notify(bellEvent(job, "failed", off));
   }
-  const isLane = !!MODES[job.mode]?.cua;
+  const isLane = !!modeOf(job.mode)?.cua;
   const isHost = isLane && job.target === "host";
   const bad = isHost ? await ensureHost()
     : isLane ? (CFG.cua ? await ensureLane() : "The CUA lane is not set up in the worker config.") : checkProject(job.project_dir);
@@ -1023,10 +1025,22 @@ function restartRequested() {
 }
 
 // Jobs a worker started before it was killed or restarted keep running in their own process groups. A fresh worker
-// requeues them (reset), so first it ends what is left of them: they carry its tag.
+// requeues them (reset), so first it ends what is left of them: they carry its tag. Then it deletes the run records
+// (.run.json) of this worker's jobs that have nothing left running, so a session id saved before a reboot or a cancel
+// isn't read again at every later start.
 async function killOrphans() {
-  const k = await hardKill({ workerTag: WORKER_TAG, jobsRoot: join(ROOT, "jobs") }, { graceMs: 10_000 });
+  const jobsRoot = join(ROOT, "jobs");
+  const k = await hardKill({ workerTag: WORKER_TAG, jobsRoot }, { graceMs: 10_000 });
   if (k.found) log(`ended ${k.found} process(es) left from before the restart${k.killed ? ` (${k.killed} needed SIGKILL)` : ""}${k.left ? `, ${k.left} STILL ALIVE` : ""}`);
+  let names = [];
+  try { names = readdirSync(jobsRoot); } catch {}
+  const table = processTable();
+  for (const n of names) {
+    const dir = join(jobsRoot, n);
+    let run = null;
+    try { run = JSON.parse(readFileSync(join(dir, ".run.json"), "utf8")); } catch { continue; }
+    if (run?.worker_tag === WORKER_TAG && !findProcs({ jobDir: dir }, table).length) try { unlinkSync(join(dir, ".run.json")); } catch {}
+  }
 }
 
 let drainingSince = null;

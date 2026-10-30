@@ -276,7 +276,7 @@ async function lead(name, a) {
   if (!overlay()) return;
   const t = await targetOf(name, a);
   if (t.rects.length) await ask({ cmd: "frost", rects: t.rects });
-  if (t.point) await ask({ cmd: "move", x: t.point.x, y: t.point.y, kind: PULSE[name] || "none" });
+  if (t.point) await ask({ cmd: "move", x: t.point.x, y: t.point.y, kind: (Object.hasOwn(PULSE, name) && PULSE[name]) || "none" });
 }
 
 // {{OWNER}}'s real pointer (overlay first: no extra process), for the guard.

@@ -30,7 +30,7 @@ const BLOCK = [
   [/(^|[;&|(\s])(csrutil|nvram|fdesetup|spctl|tccutil|systemsetup)\b/, "it changes macOS security or system settings"],
   [/\bsecurity\s+(dump-keychain|find-(generic|internet)-password|export|unlock-keychain)\b/, "it reads saved passwords or keys"],
   [/\bkill\b[^\n]*\bpgrep\b[^\n]*(supervisor|{{SLUG}}|\bnode\b)/, "it would kill the stop switch itself; say force kill the job, or restart the worker, instead"],
-  [/launchctl\s+(bootout|unload|remove|disable|kill)\b[^\n]*com\.daisy\.supervisor/, "it would stop the stop switch itself"],
+  [/launchctl\s+(bootout|unload|remove|disable|kill)\b[^\n]*com\.daisy\.supervisor/, "it would turn off the stop switch itself"],
 ];
 
 const PROTECTED = new Set(["/", "/Users", HOME, "/System", "/Library", "/Applications", "/private", "/usr", "/bin", "/sbin", "/etc", "/var", "/opt", "/Volumes",

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Smoke test for the Nuff Said connector ({{ASSISTANT}}).
-# Usage: ./test.sh                 (local dev server)
-#        ./test.sh deployed        (reads the private URL from .connector-url, never prints it)
+# Usage: ./test.sh                 (a local dev server at 127.0.0.1:8799 with the key "localtestkey"; the release doesn't set one up)
+#        ./test.sh deployed        (your real connector: reads the private URL from .connector-url, never prints it. It queues a
+#                                   real job, "Smoke test job", that your worker picks up and runs with Claude Code on this
+#                                   computer, on your Claude plan. Cancel it in Claude if you don't want it to run.)
 #        ./test.sh gate            (the computer-use safety gate, the power-lanes switch, who-sent-it, time zones, redaction and
 #                                   the bell, offline: no desktop, no connector; the bell self-test uses port 18790)
 cd "$(dirname "$0")"
@@ -34,7 +36,7 @@ if [ "$1" = "gate" ]; then
   [ $rc = 0 ] && echo "gate: all passed" || echo "gate: FAILED"
   exit $rc
 fi
-if [ "$1" = "deployed" ]; then B="$(cat .connector-url)"; else B="http://127.0.0.1:8799/localtestkey/mcp"; fi
+if [ "$1" = "deployed" ]; then B="$(cat .connector-url)"; echo "Note: step 4 queues a real job on your connector; your worker runs it with Claude Code on this computer."; else B="http://127.0.0.1:8799/localtestkey/mcp"; fi
 BAD="${B%/*/mcp}/wrongkey/mcp"
 post() { curl -s -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -X POST "$B" -d "$1"; echo; }
 code() { curl -s -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -X POST "$1" -d "$2"; echo; }
