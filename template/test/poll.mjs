@@ -59,7 +59,7 @@ check("run_command is queued while the check-in is under 30 s old", !/Not run/.t
 setCheckin(31_000);
 const late = (await (await connector.fetch(new Request(`https://test.invalid/${env.CONNECTOR_KEY}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "160.79.104.20" },
   body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "run_command", arguments: { command: "echo hi" } } }) }), env)).json()).result.content[0].text;
-check("and refused, with nothing queued, once it's over 30 s old", /^Not run/.test(late) && db.prepare("SELECT count(*) AS n FROM control WHERE kind='shell'").get().n === 1, late);
+check("and refused, with nothing queued, once it's over 30 s old", /<job-output>\nNot run/.test(late) && db.prepare("SELECT count(*) AS n FROM control WHERE kind='shell'").get().n === 1, late);
 db.prepare("DELETE FROM settings WHERE key='supervisor'").run(); db.prepare("DELETE FROM control").run();
 
 const tag = "polltest", keyFile = `logs/.${tag}-key`, cfg = join(ROOT, "logs", `${tag}-config.json`);

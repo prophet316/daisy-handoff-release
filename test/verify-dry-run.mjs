@@ -56,6 +56,10 @@ const workerSrc = fs.readFileSync(path.join(dir, "worker", "worker.mjs"), "utf8"
 check(/ENABLE_CLAUDEAI_MCP_SERVERS: "false"/.test(workerSrc), "a job's own Claude sessions don't load the connectors in your Claude account");
 check(/"Bash\(cua-driver:\*\)"/.test(workerSrc) && /"Bash\(composio:\*\)"/.test(workerSrc), "jobs are denied the usual cua-driver and composio commands");
 check(cfg.powerLanes === (power === "on"), `worker config has command line and desktop control ${power} (powerLanes: ${cfg.powerLanes})`);
+if (platform === "darwin") {
+  const site = JSON.parse(fs.readFileSync(path.join(dir, "site.json"), "utf8"));
+  check(cfg.host?.overlay === true && cfg.host?.overlayBin === `${home}/${site.dotdir}/overlay/DaisyOverlay.app/Contents/MacOS/DaisyOverlay`, `worker config points the host lane at the glow helper the installer builds (${cfg.host?.overlayBin})`);
+}
 
 // 5. wrangler.toml
 const toml = fs.readFileSync(path.join(dir, "wrangler.toml"), "utf8");

@@ -88,6 +88,14 @@ chmod 600 .connector-url
 
 `.connector-url` is your private connector URL. Treat it like a password.
 
+If you left the command line and desktop control on, build the blue glow and Daisy cursor (named after your assistant) for desktop control. It needs Apple's Command Line Tools and takes a few seconds:
+
+```bash
+bash worker/overlay/build.sh
+```
+
+If it fails, desktop control still works, with CuaDriver's own cursor and no glow.
+
 ## 6. Let Claude Code trust the bell folder
 
 Skip this step if you left phone notifications off.

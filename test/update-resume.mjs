@@ -138,6 +138,8 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
   check(r.status === 0 && nrec().powerLanes === false && /Still didn't understand that, so the command line and desktop control stay off/.test(r.stdout), "three unclear answers at the command line question leave it off", r.stdout.slice(-400));
   r = await tty("no thanks");
   check(r.status === 0 && nrec().bell === false && !/I didn't understand/.test(r.stdout), "\"no thanks\" at the bell question is a no, not asked again", r.stdout.slice(-300));
+  r = await tty("on", "on");
+  check(r.status === 0 && nrec().bell === true && nrec().powerLanes === true && !/I didn't understand/.test(r.stdout), "\"on\" is a yes at both questions, the way \"off\" is a no", r.stdout.slice(-300));
 }
 
 // A real update that stops at the Cloudflare sign-in says the old settings are still live (fake claude and npx; not on Windows).
@@ -187,8 +189,89 @@ if (process.platform === "darwin") {
   fs.renameSync(mplist, `${mplist}.aside`);
   const afterUn = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--manual"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
   check(afterUn.status !== 0 && /then --uninstall/.test(afterUn.stderr) && /move that folder aside/.test(afterUn.stderr) && !/Carry on with the guide/.test(afterUn.stderr), "after --uninstall, a fresh --manual says to move the folder aside first, not to carry on", afterUn.stderr.slice(-300));
-  fs.renameSync(`${mplist}.aside`, mplist);
+  // The doctor after --uninstall (simulated by moving the entries where --uninstall puts them; a real one would boot out the
+  // live worker's label): it points to the Uninstall steps, never to --update, which would put the entries back.
+  const unDir = path.join(mhome, ".handoff-uninstalled", "20261030-000000");
+  fs.mkdirSync(unDir, { recursive: true });
+  fs.renameSync(`${mplist}.aside`, path.join(unDir, "com.daisy.handoff-worker.plist"));
+  const unOthers = fs.readdirSync(path.dirname(mplist)).filter((f) => /^com\.daisy\..*\.plist$/.test(f));
+  for (const f of unOthers) fs.renameSync(path.join(path.dirname(mplist), f), path.join(unDir, f));
+  const mdoc3 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+  check(/was uninstalled/.test(mdoc3.stdout) && /README's Uninstall steps/.test(mdoc3.stdout) && !/--update again/.test(mdoc3.stdout), "after --uninstall, the doctor points to the Uninstall steps, not to --update", mdoc3.stdout.slice(-400));
+  for (const f of fs.readdirSync(unDir)) fs.renameSync(path.join(unDir, f), path.join(path.dirname(mplist), f));
 }
+
+// --rotate-keys with no terminal (a script, or Claude Code running it) stops before it changes a key, and says so. A fresh
+// practice install of its own, so nothing above changes what it sees.
+const rhome = fs.mkdtempSync(path.join(os.tmpdir(), "rotate-keys-")), rdir = path.join(rhome, "Projects", "daisy-handoff");
+const rinstall = (args) => spawnSync(process.execPath, [path.join(REPO, "install.mjs"), ...args, "--home", rhome], { encoding: "utf8" });
+check(rinstall(["--dry-run", "--yes", "--name", "Tester", "--assistant", "Daisy"]).status === 0, "practice install for --rotate-keys");
+const keyBefore = fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
+r = rinstall(["--rotate-keys"]);
+check(r.status !== 0 && /no terminal here/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/Nothing was changed/.test(r.stderr + r.stdout) &&
+  fs.readFileSync(path.join(rdir, ".connector-key"), "utf8") === keyBefore, "--rotate-keys with no terminal stops before changing a key and says no keys were changed", r.stderr.slice(-300));
+r = rinstall(["--dry-run", "--rotate-keys", "--yes"]);
+check(r.status === 0 && /\[1\/5\] Clean connector code[\s\S]*\[2\/5\] New connector key/.test(r.stdout) && /4\. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more/.test(r.stdout),
+  "--rotate-keys deploys the clean code before the new connector key, and ends by saying to change the keys again after the Cloudflare sign-out", `${r.status} ${r.stderr.slice(-300)}`);
+// The real (not dry) order, against a stand-in for wrangler that logs each call: the clean code is deployed and a secret
+// Nuff Said never sets is removed before any key is stored. The stand-in fails at the worker key, so nothing goes further.
+const fakeBin = path.join(rhome, "fakebin"), calls = path.join(rhome, "wrangler-calls.txt");
+fs.mkdirSync(fakeBin);
+fs.writeFileSync(path.join(fakeBin, "npx"), `#!/bin/sh
+shift 2; echo "$*" >> "${calls}"
+case "$*" in
+  whoami*) echo "You are logged in";;
+  "deploy"*) [ -n "$FAIL_DEPLOY" ] && { echo "deploy broke" >&2; exit 1; }; echo "Deployed";;
+  "secret list"*) echo '[{"name":"CONNECTOR_KEY","type":"secret_text"},{"name":"WORKER_KEY","type":"secret_text"},{"name":"OWNER_CIDRS","type":"secret_text"}]';;
+  "secret put WORKER_KEY"*) echo "stand-in stops here" >&2; exit 1;;
+  "secret "*) cat > /dev/null; echo ok;;
+  d1*) case "$*" in *"FROM schedules"*) echo '[{"results":[{"id":"s1","name":"planted","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":"agent x"}]}]';; *) echo '[{"results":[]}]';; esac;;
+  *) echo "unexpected: $*" >&2; exit 1;;
+esac
+`, { mode: 0o755 });
+fs.writeFileSync(path.join(fakeBin, "pbcopy"), "#!/bin/sh\ncat > /dev/null\n", { mode: 0o755 });
+const rcfg = path.join(rdir, "worker", "config.json");
+fs.writeFileSync(rcfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(rcfg, "utf8")), base: "https://rotate-test.invalid" }));
+fs.writeFileSync(path.join(rdir, ".connector-url"), `https://rotate-test.invalid/${fs.readFileSync(path.join(rdir, ".connector-key"), "utf8").trim()}/mcp`);
+const rreal = (env = {}) => spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--rotate-keys", "--yes", "--no-start", "--home", rhome], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ...env } });
+const keyNow = () => fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
+let k0 = keyNow();
+r = rreal({ FAIL_DEPLOY: "1" });
+let log = fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "";
+check(r.status !== 0 && /couldn't deploy the connector code again/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/secret put/.test(log) && keyNow() === k0,
+  "--rotate-keys: if the clean deploy fails, no key is changed anywhere", r.stderr.slice(-300) + log);
+fs.rmSync(calls, { force: true });
+r = rreal();
+log = fs.readFileSync(calls, "utf8").trim().split("\n");
+const at = (re) => log.findIndex((l) => re.test(l));
+check(at(/^deploy/) >= 0 && at(/^deploy/) < at(/^secret list/) && at(/^secret list/) < at(/^secret delete OWNER_CIDRS/) && at(/^secret delete OWNER_CIDRS/) < at(/^secret put CONNECTOR_KEY/),
+  "--rotate-keys (real order): deploy the clean code, list secrets, remove OWNER_CIDRS, and only then store the new connector key", log.join(" / "));
+check(/removed the secret OWNER_CIDRS/.test(r.stdout) && keyNow() !== k0, "it says it removed the stray secret, and the connector key changed", r.stdout.slice(-500));
+check(log.filter((l) => /^deploy/.test(l)).length === 1 && at(/^deploy/) < at(/^secret put/), "the clean code is deployed once, before any secret is stored", log.join(" / "));
+// The "Clear them" question, in a real terminal: "yes please" is asked again, not taken as no, and "yes." then clears.
+if (process.platform === "darwin") {
+  const PTY2 = `import os, pty, sys, select
+pid, fd = pty.fork()
+if pid == 0: os.execv(sys.argv[1], sys.argv[1:])
+answers = os.environ["ANSWERS"].split("|"); out = b""; asked = 0
+while True:
+    r, _, _ = select.select([fd], [], [], 60)
+    if not r: break
+    try: d = os.read(fd, 4096)
+    except OSError: break
+    if not d: break
+    out += d
+    while out.count(b"]: ") > asked:
+        asked += 1
+        os.write(fd, (answers.pop(0) if answers else "").encode() + b"\\r")
+sys.stdout.write(out.decode("utf8", "replace"))
+sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
+  const cr = spawnSync("python3", ["-c", PTY2, process.execPath, path.join(REPO, "install.mjs"), "--rotate-keys", "--no-start", "--home", rhome],
+    { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ANSWERS: "yes please|yes." }, timeout: 120_000 });
+  check(/I didn't understand "yes please"/.test(cr.stdout) && /Clear them all\? Type yes or no/.test(cr.stdout) && /turned off 1 schedule\(s\)/.test(cr.stdout) && !/Kept them/.test(cr.stdout),
+    "the Clear them question asks again on \"yes please\" and clears on \"yes.\"", cr.stdout.slice(-600));
+}
+fs.rmSync(rhome, { recursive: true, force: true });
 
 // An install with no receipt and no answer in its worker config: the update asks for a flag instead of turning things on.
 fs.rmSync(path.join(dir, "install-receipt.json"));

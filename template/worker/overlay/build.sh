@@ -1,5 +1,6 @@
 #!/bin/bash
 # Builds {{ASSISTANT}}'s overlay helper (edge glow + {{ASSISTANT}}'s cursor) into ~/{{DOTDIR}}/overlay/DaisyOverlay.app.
+# The installer runs it on a Mac with the command line and desktop control on; run it by hand to rebuild.
 # A plain AppKit app with no Dock icon (LSUIElement), ad-hoc signed. It needs no macOS permission.
 # Usage: worker/overlay/build.sh [output dir]
 set -euo pipefail
@@ -9,7 +10,8 @@ APP="$OUT/DaisyOverlay.app"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/DaisyOverlay.app/Contents/MacOS"
-xcrun swiftc -O -swift-version 5 -target arm64-apple-macos14.0 -framework AppKit -framework QuartzCore \
+# Built for this Mac's own chip (Apple Silicon or Intel); the installer runs this on the Mac that uses it.
+xcrun swiftc -O -swift-version 5 -target "$(uname -m)-apple-macos13.0" -framework AppKit -framework QuartzCore \
   "$HERE/DaisyOverlay.swift" -o "$TMP/DaisyOverlay.app/Contents/MacOS/DaisyOverlay"
 cat > "$TMP/DaisyOverlay.app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -21,7 +23,7 @@ cat > "$TMP/DaisyOverlay.app/Contents/Info.plist" <<'EOF'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSUIElement</key><true/>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
 </dict></plist>
 EOF
 codesign --force --sign - "$TMP/DaisyOverlay.app" >/dev/null

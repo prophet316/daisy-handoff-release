@@ -67,7 +67,7 @@ const POWER_QUESTION = "Let jobs use the command line and control this computer'
 // A clear yes is true, a clear no is false, anything else is null (ask again). Trailing dots and commas don't count.
 function yesNo(a) {
   const w = String(a).toLowerCase().replace(/[.!,]+/g, " ").replace(/\s+/g, " ").trim();
-  if (/^(y|yes)$/.test(w)) return true;
+  if (/^(y|yes|on)$/.test(w)) return true;
   if (/^(n|no|nope|nah|no thanks|no thank you|off)$/.test(w)) return false;
   return null;
 }
@@ -88,6 +88,9 @@ const LEAK_STEPS = (dir, db) => [
   "     (someone with your Cloudflare sign-in could change that too). Check crontab -l, ~/Library/LaunchAgents, Login Items,",
   "     ~/.zshrc and ~/.ssh/authorized_keys. Finding nothing doesn't prove nothing happened; if in doubt, treat this computer as",
   "     compromised. SECURITY.md has every step.",
+  "  4. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more, from the fresh download, and only then add the",
+  "     connector in Claude with that URL. Until then, treat the keys from this key change as seen: a copied Cloudflare or Claude",
+  "     sign-in, or something left running here, could have read them.",
 ];
 // Shown at install, Mac only: what the phone bell answers for you. Same substance as README, SECURITY.md and RELEASE_NOTES.md.
 const BELL_NOTE = [
@@ -113,7 +116,7 @@ if (has("doctor")) { // the doctor lives in its own file, so the installer copie
   const d = spawnSync(process.execPath, [path.join(HERE, "doctor.mjs"), ...argv.filter((a) => a !== "--doctor")], { stdio: "inherit" });
   process.exit(d.status ?? 1);
 }
-const KNOWN = new Set(["dry-run", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "no-lead-agent", "bell", "no-bell", "manual", "time-zone",
+const KNOWN = new Set(["dry-run", "build-overlay", "uninstall", "yes", "force", "help", "name", "assistant", "machine", "home", "platform", "no-start", "no-power-lanes", "power-lanes", "lead-agent", "no-lead-agent", "bell", "no-bell", "manual", "time-zone",
   "update", "rotate-keys", "clear-schedules"]);
 for (const a of argv) if (a.startsWith("--") && !KNOWN.has(a.slice(2))) die(`unknown option ${a} (try --help)`);
 if (has("help")) {
@@ -328,7 +331,7 @@ async function main() {
   // 3. render
   step("Building your copy", TOTAL);
   const home = fwd(HOME);
-  const worker = workerConfig(home, claudeBin, slug, power, bell);
+  const worker = workerConfig(home, claudeBin, slug, power, bell, dotdir);
   const tokens = {
     HOME: home, USER: os.userInfo().username, SLUG: slug, DOTDIR: dotdir, MACHINE: machine, ASSISTANT: assistant,
     OWNER: owner, OWNER_UPPER: owner.toUpperCase(),
@@ -357,6 +360,7 @@ async function main() {
     fs.rmSync(path.join(nb, "node"), { force: true });
     fs.symlinkSync(nodeBin, path.join(nb, "node"));
     ok(`worker will run on ${nodeBin}`);
+    if (power) buildOverlay(dir, path.join(HOME, dotdir, "overlay"));
   }
 
   // 4. keys
@@ -484,16 +488,22 @@ function carryOver(bak, dir, bell) {
 
 function wranglerIn(dir) { return (args, o = {}) => run(HOST === "win32" ? "npx.cmd" : "npx", ["-y", WRANGLER, ...args], { cwd: dir, ...o }); }
 
-// If the connector URL or a key leaked: new connector, worker and lead agent keys, pushed to Cloudflare, then everything saved
-// or running that could keep going, so a planted schedule or job doesn't outlive the leak, then the worker and supervisor
-// restarted on the new keys.
+// If the connector URL or a key leaked: first the install folder's code deployed again and any other secret removed, so code
+// someone planted with the Cloudflare sign-in never gets the new key; then new connector, worker and lead agent keys, pushed to
+// Cloudflare; then everything saved or running that could keep going, so a planted schedule or job doesn't outlive the leak;
+// then the worker and supervisor restarted on the new keys.
 async function rotateKeys() {
   const { dir, site } = findInstall();
   const ROTATE = has("rotate-keys");
+  // Stop before changing anything if the question in step 4 can't be asked: a key changed and then "Nothing was changed" would
+  // leave Claude's connector dead with nobody told why.
+  if (ROTATE && !DRY && !process.stdin.isTTY && !has("yes") && !has("clear-schedules")) {
+    die("--rotate-keys asks a question, and there's no terminal here. Run it in Terminal, or add --yes (keeps schedules) or --clear-schedules. No keys were changed.");
+  }
   say(`Nuff Said ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
   const W = wranglerIn(dir);
   const db = `${site.slug || path.basename(dir)}-jobs`;
-  const STEPS = ROTATE ? 4 : 2;
+  const STEPS = ROTATE ? 5 : 2;
   const base = JSON.parse(fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8")).base;
   if (!fs.existsSync(path.join(dir, ".connector-url")) || !/^https:\/\//.test(base || "")) {
     die(`${dir} is from an install or update that stopped partway. In the release folder run node install.mjs --update first, then try this again. Nothing was changed.`);
@@ -501,6 +511,31 @@ async function rotateKeys() {
   const oldUrl = fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim();
   if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   if (!DRY) cloudflareSignIn(W, "no keys were changed");
+  if (ROTATE) {
+    // Someone who had the URL with the command line on could have used the Cloudflare sign-in saved on this computer to put
+    // their own code on the connector. Putting a secret publishes it to whatever code is deployed, so the clean code goes
+    // first and the new keys after it.
+    step("Clean connector code", STEPS);
+    if (DRY) skip("deploying the connector code again and checking its secrets (dry run)");
+    else {
+      const dep = W(["deploy"]);
+      if (dep.status !== 0) die(`couldn't deploy the connector code again: ${tail(dep)}. No keys were changed; run --rotate-keys again.`);
+      ok("connector code deployed again from the install folder");
+      const ls = W(["secret", "list", "--format", "json"]);
+      let names = null;
+      try { names = JSON.parse(ls.stdout).map((x) => x.name); } catch {}
+      if (ls.status !== 0 || !Array.isArray(names)) die(`couldn't list the connector's secrets: ${tail(ls)}. No keys were changed; run --rotate-keys again.`);
+      // The only secrets the connector should have. Anything else on it was put there by hand or by someone else: an
+      // OWNER_CIDRS secret, for one, would make every caller count as the owner, and a deploy keeps secrets.
+      const stray = names.filter((n) => !["CONNECTOR_KEY", "WORKER_KEY", "LEAD_AGENT_KEY", "RESEND_KEY"].includes(n));
+      for (const n of stray) {
+        const r = W(["secret", "delete", n], { input: "y\n" });
+        if (r.status !== 0) die(`couldn't remove the secret ${n} from the connector: ${tail(r)}. Nuff Said never sets it. No keys were changed; remove it in the Cloudflare dashboard and run --rotate-keys again.`);
+        ok(`removed the secret ${n}; Nuff Said never sets it`);
+      }
+      if (!stray.length) ok("no secrets on the connector other than Nuff Said's own");
+    }
+  }
   // The connector key first, so a leaked URL is locked out at once. The worker key last, right before the restart, so the
   // running worker isn't cut off while you read the list below (a job finishing then couldn't report and would run again).
   const newKeys = (keys, first) => {
@@ -543,8 +578,15 @@ async function rotateKeys() {
   const total = sch.length + rts.length + waiting.length;
   let clear = has("clear-schedules");
   if (!clear && total) {
+    // Same yes/no test as the install questions: "yes." or "yes please" isn't taken as no without asking again.
     const ask = await asker();
-    clear = /^y(es)?$/i.test(await ask("Turn off every schedule, delete every routine and stop or cancel every job above? You can set your own up again.", "no"));
+    for (let i = 0, v = null; v === null; i++) {
+      const a = String(await ask(i ? "Clear them all? Type yes or no (Enter means no)" : "Turn off every schedule, delete every routine and stop or cancel every job above? You can set your own up again.", "no")).trim();
+      v = yesNo(a);
+      if (v === null && i === 2) { v = false; say("  Still didn't understand that, so nothing is cleared."); }
+      else if (v === null) say(`  I didn't understand "${a.slice(0, 20)}". Type yes to clear them all, or no to keep them.`);
+      clear = v;
+    }
     ask.close();
   }
   if (DRY) skip("clearing (dry run)");
@@ -568,13 +610,6 @@ async function rotateKeys() {
     step("New worker key and restart", STEPS);
     newKeys([["WORKER_KEY", ".worker-key"], ...(fs.existsSync(path.join(dir, ".lead-agent-key")) ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])], false);
     note("the bell key (.bell-key) only works from this computer, so it stays");
-    // Someone who had the URL with the command line on could have used the Cloudflare sign-in saved on this computer to put
-    // their own code on the connector, and a key change alone keeps that code. Deploy the install folder's code again.
-    if (DRY) skip("deploying the connector code again (dry run)");
-    else {
-      const dep = W(["deploy"]);
-      (dep.status === 0 ? ok : note)(dep.status === 0 ? "connector code deployed again from the install folder" : `couldn't deploy the connector code again (${tail(dep)}); run node install.mjs --update`);
-    }
     if (MAC && !DRY && !SIM && !has("no-start")) {
       for (const label of ["com.daisy.handoff-worker", "com.daisy.supervisor"]) {
         const r = run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${label}`]);
@@ -594,8 +629,9 @@ async function rotateKeys() {
 
   if (ROTATE) {
     say("\n  Next:");
-    say("  1. In Claude, remove the old connector under Customize > Connectors and add it again with the new URL" +
-      (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`));
+    say("  1. In Claude, remove the old connector under Customize > Connectors. If the command line was off while the URL was out,");
+    say("     add it again with the new URL" +
+      (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`) + " If it was on, wait for step 4.");
     for (const l of LEAK_STEPS(dir, db)) say(l);
   }
   say(`\n${DRY ? "DRY RUN COMPLETE" : "DONE"}  (${dir})`);
@@ -637,7 +673,19 @@ function clean(s) {
   return s;
 }
 
-function workerConfig(home, claudeBin, slug, power, bell = false) {
+// The blue glow and the assistant's own cursor on the Mac come from a small Swift helper (worker/overlay), built here with
+// Apple's Command Line Tools for this Mac's chip. The worker passes its path to the host lane as HOST_OVERLAY_BIN. Desktop
+// control works without it (no glow, CuaDriver's own cursor), so a build that fails is a note, never a stop.
+function buildOverlay(dir, out) {
+  if (SIM || MANUAL || (DRY && !has("build-overlay"))) return skip(`building the blue glow and the assistant's cursor (${SIM ? "files for another computer" : MANUAL ? "manual install: MANUAL-INSTALL.md has the step" : "dry run"})`);
+  const tools = run("xcrun", ["--find", "swiftc"]);
+  if (tools.status !== 0) return note("desktop control works, but the blue glow and cursor weren't built: Apple's Command Line Tools are missing (xcode-select --install, then node install.mjs --update). See TROUBLESHOOTING.md.");
+  const r = run("bash", [path.join(dir, "worker", "overlay", "build.sh"), out]);
+  if (r.status === 0 && fs.existsSync(path.join(out, "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay"))) return ok(`blue glow and cursor built for this Mac (${path.join(out, "DaisyOverlay.app")})`);
+  note(`desktop control works, but the blue glow and cursor didn't build (${tail(r)}). See TROUBLESHOOTING.md.`);
+}
+
+function workerConfig(home, claudeBin, slug, power, bell = false, dotdir = ".daisy") {
   const cfg = {
     base: "set-after-deploy",
     workerTag: slug, // unique per install, so one install's cleanup can never end another install's jobs
@@ -654,7 +702,7 @@ function workerConfig(home, claudeBin, slug, power, bell = false) {
     supervisor: { pollSeconds: 2, idlePollSeconds: 15 },
     powerLanes: power, // shell commands and desktop control; the connector's POWER_LANES var matches it
     host: MAC
-      ? { driverBin: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver", idleSeconds: 10, overlay: true }
+      ? { driverBin: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver", idleSeconds: 10, overlay: true, overlayBin: `${home}/${dotdir}/overlay/DaisyOverlay.app/Contents/MacOS/DaisyOverlay` }
       : { driverBin: "", idleSeconds: 10, overlay: false },
   };
   if (WIN) cfg.screen = { displays: 1, captureBin: "" };

@@ -39,7 +39,7 @@ You need all of these. The installer checks Node and Claude Code itself and stop
 
 **You see:** the doctor says Apple's Command Line Tools are missing, or a window pops up asking to install "command line developer tools".
 
-The phone bell uses Python, which comes with Apple's free Command Line Tools. In Terminal run `xcode-select --install`, click **Install**, and wait for it to finish (a few minutes). You don't need the full Xcode app.
+The phone bell uses Python, and the blue glow on your desktop is built with Swift; both come with Apple's free Command Line Tools. In Terminal run `xcode-select --install`, click **Install**, and wait for it to finish (a few minutes). You don't need the full Xcode app.
 
 ---
 
@@ -168,6 +168,16 @@ CuaDriver needs macOS 14 (Sonoma) or newer ([CuaDriver install page](https://cua
 Screenshots ("what's on my screen") need Screen Recording for Node. The first time, macOS asks; click **Allow**.
 
 Don't want desktop control at all? Reinstall with `--no-power-lanes`.
+
+**No blue glow or Daisy cursor** (named after your assistant)**, but desktop control works:** the installer builds them with Apple's Command Line Tools, and the install still finishes if that build fails. The doctor says "helper isn't built". Install the tools (`xcode-select --install`), then run `node install.mjs --update` from the release folder, or build it by hand in your install folder: `bash worker/overlay/build.sh`. It's built for your Mac's own chip.
+
+---
+
+## Nothing runs and schedules were skipped
+
+**You see:** jobs stay queued and the daily digest lists schedules as skipped.
+
+If you or an agent said stop everything, the queue and schedules stay paused until you start them again. Say "start things again" (or "resume everything") in your own Claude chat; Claude calls resume_all. An agent can't do this for you. Jobs that the stop ended stay stopped; say "retry it" for the ones you want.
 
 ---
 

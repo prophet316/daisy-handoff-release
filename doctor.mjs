@@ -65,8 +65,14 @@ const receiptJson = DIR ? readJson(path.join(DIR, "install-receipt.json")) : nul
 const MANUAL_STEPS = !!(receiptJson?.manual && receiptJson?.dryRun);
 // A manual install, or one whose connector was never deployed: logging out would only load services with nowhere to report,
 // and there's no worker log yet. FINISH is the fix.
-const NO_LOGOUT = MANUAL_STEPS || !!receiptJson?.manual || !!(cfg && !isDeployed(cfg.base));
-const FINISH = MANUAL_STEPS ? "You're installing by hand: carry on with MANUAL-INSTALL.md, steps 2 to 7. Don't run --force; it would make new keys."
+// After --uninstall: no startup entries left, and the ones it moved aside are in ~/.handoff-uninstalled. Running --update
+// then would put them back, so the fix is the README's Uninstall steps or a fresh start.
+const daisyPlists = (d) => { try { return fs.readdirSync(d).filter((f) => /^com\.daisy\..*\.plist$/.test(f)); } catch { return []; } };
+const UNINSTALLED = MAC && !!DIR && !daisyPlists(path.join(HOME, "Library", "LaunchAgents")).length &&
+  (() => { try { return fs.readdirSync(path.join(HOME, ".handoff-uninstalled")).some((s) => daisyPlists(path.join(HOME, ".handoff-uninstalled", s)).length); } catch { return false; } })();
+const NO_LOGOUT = UNINSTALLED || MANUAL_STEPS || !!receiptJson?.manual || !!(cfg && !isDeployed(cfg.base));
+const FINISH = UNINSTALLED ? "This install was uninstalled (--uninstall moved its startup entries to ~/.handoff-uninstalled). To remove the rest, follow the README's Uninstall steps. To install again, move the install folder aside first, then run the installer (or --manual) again."
+  : MANUAL_STEPS ? "You're installing by hand: carry on with MANUAL-INSTALL.md, steps 2 to 7. Don't run --force; it would make new keys."
   : receiptJson?.unfinished ? "Your last install or update stopped partway. In the release folder run node install.mjs --update again; it keeps your keys and connector URL."
   : !receiptJson ? "If you're installing by hand, carry on with MANUAL-INSTALL.md. Otherwise, in the release folder run node install.mjs --update; it keeps your keys and connector URL."
   : "Run node install.mjs --uninstall, then node install.mjs --force.";
@@ -225,6 +231,12 @@ if (!DIR || !site) {
       const miss = j ? ["accessibility", "screen_recording"].filter((k) => j[k] === false) : [];
       if (j) check(miss.length ? "fail" : "ok", miss.length ? `CuaDriver is missing ${miss.join(" and ")}` : "CuaDriver has Accessibility and Screen Recording",
         "System Settings > Privacy & Security: turn on CuaDriver under Accessibility and under Screen & System Audio Recording.", "Desktop control doesn't work");
+    }
+    if (cfg.host?.overlay !== false) {
+      const ov = cfg.host?.overlayBin || path.join(HOME, site.dotdir || ".daisy", "overlay", "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay");
+      const built = fs.existsSync(ov);
+      check(built ? "ok" : "warn", `blue glow and ${site.assistant || "assistant"} cursor helper ${built ? "is built" : "isn't built"}`,
+        `Desktop control still works, with CuaDriver's own cursor and no glow. To build it: bash "${path.join(DIR, "worker", "overlay", "build.sh")}" (needs Apple's Command Line Tools: xcode-select --install), or run node install.mjs --update.`, "Desktop control doesn't work");
     }
   }
 
