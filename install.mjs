@@ -64,8 +64,10 @@ const POWER_WARNING = [
   "--no-power-lanes. Off isn't a sandbox: code and design jobs still run Claude",
   "Code with its own command line and can change any file in your home folder, so",
   "a leaked URL can still reach this computer. Anyone who can change your",
-  "Cloudflare account can run jobs here too. Install it only on a computer you",
-  "trust it with. Desktop control is Mac only for now.",
+  "Cloudflare account can run jobs here too. These count as you and get these",
+  "tools: your own Claude chats, Claude Code on this Mac, and Claude's cloud",
+  "agents. The README says how to keep Nuff Said out of each. Install it only on",
+  "a computer you trust it with. Desktop control is Mac only for now.",
 ];
 // Says plainly that Enter means on and what on means for a leaked URL. Each question stands on its own: an update or a flag can
 // skip the other one. Short lines, so an 80-column Terminal doesn't break words.
@@ -182,6 +184,9 @@ const shown = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-
 const ok = (s) => { say(`  ok    ${s}`); steps.push(["ok", s]); };
 const note = (s) => { say(`  note  ${s}`); steps.push(["note", s]); };
 const skip = (s) => { say(`  skip  ${s}`); steps.push(["skip", s]); };
+// A long ok or note line, wrapped under its text so an 80-column Terminal doesn't break words. The receipt keeps it whole.
+const wrapped = (tag, s) => { const out = [""]; for (const w of s.split(" ")) { const l = out.length - 1; if (out[l] && out[l].length + w.length >= 72) out.push(w); else out[l] += (out[l] ? " " : "") + w; }
+  say(`  ${tag.padEnd(6)}${out.join(`\n${" ".repeat(8)}`)}`); steps.push([tag, s]); };
 function die(s) {
   if (rollback) putBack(rollback, s);
   // Said once: when the line under the stop already says nothing was deployed and to run --update again, the stop doesn't.
@@ -390,10 +395,11 @@ async function main() {
   if (prev && dir !== prev.dir) die(`--update keeps the assistant's name (${prev.site.assistant}); a new name is a new install. Nothing was changed.`);
   ok(`${owner}'s assistant ${assistant}, on the ${machine}`);
   ok(`install folder ${dir}`);
-  ok(`schedules use your time zone, ${timeZone} (another one: --time-zone)`);
+  wrapped("ok", `schedules use your time zone, ${timeZone} (another one: --time-zone)`);
   if (lead) for (const l of LEAD_WARNING(lead)) note(l);
-  else ok(`approvals are refused for agents that call your URL directly; your own Claude chat counts as you (see SECURITY.md)${dropLead ? `. Lead agent "${prevLead}" turned off` : ""}`);
-  (power ? note : ok)(`command line and desktop control ${power ? "on: jobs can run shell commands and use this computer's desktop (turn off: rerun the installer with --no-power-lanes)" : "off (turn on: rerun the installer with --power-lanes, or answer yes)"}`);
+  else wrapped("ok", `approvals are refused for scripts and agents that call your URL directly; your own Claude chats, Claude Code on this Mac and Claude's cloud agents count as you (see SECURITY.md)`);
+  if (!lead && dropLead) ok(`Lead agent "${prevLead}" turned off`);
+  wrapped(power ? "note" : "ok", `command line and desktop control ${power ? "on: jobs can run shell commands and use this computer's desktop (turn off: rerun the installer with --no-power-lanes)" : "off (turn on: rerun the installer with --power-lanes, or answer yes)"}`);
 
   const agents = path.join(HOME, "Library", "LaunchAgents");
   const taken = MAC && fs.existsSync(path.join(agents, "com.daisy.handoff-worker.plist"));

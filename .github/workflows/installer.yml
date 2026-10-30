@@ -7,11 +7,14 @@ permissions:
   contents: read
 jobs:
   dry-run:
+    # While the repo is private, GitHub's hosted runners are blocked on this account, so the Windows leg runs on the
+    # maintainer's own self-hosted runner and the Mac is covered by local verify runs. Before the repo goes public, put this
+    # back to [macos-latest, windows-latest] and remove the self-hosted runner: see .github/RELEASE-CHECKLIST.md.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        os: [beast]
+    runs-on: [self-hosted, Windows, X64, beast]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,6 +58,12 @@ jobs:
       - name: The doctor never sends the key to an address the install didn't deploy
         shell: bash
         run: node test/doctor-no-leak.mjs
+      - name: On our own machines, clear what the last run left in this home (hosted runners start clean)
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          rm -rf "$HOME/Projects/manual-handoff"
+          rm -f "$HOME/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/"*Handoff.cmd
       - name: MANUAL-INSTALL.md step 1, exactly as written (in the runner's own home)
         shell: bash
         run: |

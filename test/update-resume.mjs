@@ -413,11 +413,16 @@ r = rinstall(["--dry-run", "--yes", "--name", "Tester", "--assistant", "Daisy"])
 check(r.status === 0, "practice install for --rotate-keys");
 // The warning is wrapped for an 80-column Terminal, so its words are checked with the line breaks folded into spaces.
 const flat = r.stdout.replace(/\s+/g, " ");
-check(/Off isn't a sandbox: code and design jobs still run Claude Code with its own command line/.test(flat) && /Anyone who can change your Cloudflare account can run jobs here too/.test(flat),
-  "the installer's warning says off isn't a sandbox and the Cloudflare account is a key too", r.stdout.slice(0, 1500));
+check(/Off isn't a sandbox: code and design jobs still run Claude Code with its own command line/.test(flat) && /Anyone who can change your Cloudflare account can run jobs here too/.test(flat) &&
+  /These count as you and get these tools: your own Claude chats, Claude Code on this Mac, and Claude's cloud agents\./.test(flat),
+  "the installer's warning says off isn't a sandbox, the Cloudflare account is a key too, and which Claude callers count as you", r.stdout.slice(0, 1500));
 const keyBefore = fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
-r = rinstall(["--rotate-keys"]);
-check(r.status !== 0 && /no terminal here/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/Nothing was changed/.test(r.stderr + r.stdout) &&
+// A run that isn't a dry run can't happen on Windows yet (the installer refuses it there), so these key-change checks, and the
+// real-order ones below that use a shell-script stand-in for wrangler, run on the Mac and Linux only.
+const realRuns = process.platform !== "win32";
+if (!realRuns) console.log("skip  --rotate-keys real runs (the installer only does dry runs on Windows)");
+if (realRuns) r = rinstall(["--rotate-keys"]);
+if (realRuns) check(r.status !== 0 && /no terminal here/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/Nothing was changed/.test(r.stderr + r.stdout) &&
   fs.readFileSync(path.join(rdir, ".connector-key"), "utf8") === keyBefore, "--rotate-keys with no terminal stops before changing a key and says no keys were changed", r.stderr.slice(-300));
 r = rinstall(["--dry-run", "--rotate-keys", "--yes"]);
 check(r.status === 0 && /\[1\/5\] Clean connector code[\s\S]*\[2\/5\] New connector key/.test(r.stdout) && /4\. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more/.test(r.stdout),
@@ -428,51 +433,53 @@ check(/don't add the new URL yet/.test(r.stdout) && /whichever way the switch wa
 // The real (not dry) order, against a stand-in for wrangler that logs each call: the clean code is deployed and a secret
 // Nuff Said never sets is removed before any key is stored. The stand-in fails at the worker key, so nothing goes further.
 const fakeBin = path.join(rhome, "fakebin"), calls = path.join(rhome, "wrangler-calls.txt");
-fs.mkdirSync(fakeBin);
-fs.writeFileSync(path.join(fakeBin, "npx"), `#!/bin/sh
-shift 2; echo "$*" >> "${calls}"
-case "$*" in
-  whoami*) printf '%s\\n' "You are logged in" "┌──────────────┬────────────┐" "│ Account Name │ Account ID │" "├──────────────┼────────────┤" "│ Rotate Test's Account │ abc123 │" "└──────────────┴────────────┘";;
-  "deploy"*) [ -n "$FAIL_DEPLOY" ] && { echo "deploy broke" >&2; exit 1; }; echo "Deployed";;
-  "secret list"*) echo '[{"name":"CONNECTOR_KEY","type":"secret_text"},{"name":"WORKER_KEY","type":"secret_text"},{"name":"OWNER_CIDRS","type":"secret_text"}]';;
-  "secret put WORKER_KEY"*) echo "stand-in stops here" >&2; exit 1;;
-  "secret "*) cat > /dev/null; echo ok;;
-  d1*) [ -n "$PLANT" ] && case "$*" in
-      *"FROM schedules"*) printf "%s\\n" '[{"results":[{"id":"s9","name":"news\\u001b[1A\\u001b[2K\\u001b[1A\\u001b[2K","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":null}]}]'; exit 0;;
-      *"FROM routines"*) printf "%s\\n" '[{"results":[{"id":"r9","name":"tidy\\u009b2J\\u202eevil","steps":"[]","created_by":null}]}]'; exit 0;;
-      *"FROM jobs"*) printf "%s\\n" '[{"results":[{"id":"j9","title":"ok\\u001b]0;pwned\\u0007\\r\\nNo schedules.","status":"queued","created_by":null}]}]'; exit 0;;
-    esac
-    case "$*" in *"FROM schedules"*) echo '[{"results":[{"id":"s1","name":"planted","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":"agent x"}]}]';; *) echo '[{"results":[]}]';; esac;;
-  *) echo "unexpected: $*" >&2; exit 1;;
-esac
-`, { mode: 0o755 });
-fs.writeFileSync(path.join(fakeBin, "pbcopy"), "#!/bin/sh\ncat > /dev/null\n", { mode: 0o755 });
-const rcfg = path.join(rdir, "worker", "config.json");
-fs.writeFileSync(rcfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(rcfg, "utf8")), base: "https://rotate-test.invalid" }));
-fs.writeFileSync(path.join(rdir, ".connector-url"), `https://rotate-test.invalid/${fs.readFileSync(path.join(rdir, ".connector-key"), "utf8").trim()}/mcp`);
-const rreal = (env = {}) => spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--rotate-keys", "--yes", "--no-start", "--home", rhome], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ...env } });
-const keyNow = () => fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
-let k0 = keyNow();
-r = rreal({ FAIL_DEPLOY: "1" });
-let log = fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "";
-check(r.status !== 0 && /couldn't deploy the connector code again/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/secret put/.test(log) && keyNow() === k0,
-  "--rotate-keys: if the clean deploy fails, no key is changed anywhere", r.stderr.slice(-300) + log);
-fs.rmSync(calls, { force: true });
-r = rreal();
-log = fs.readFileSync(calls, "utf8").trim().split("\n");
-const at = (re) => log.findIndex((l) => re.test(l));
-check(at(/^deploy/) >= 0 && at(/^deploy/) < at(/^secret list/) && at(/^secret list/) < at(/^secret delete OWNER_CIDRS/) && at(/^secret delete OWNER_CIDRS/) < at(/^secret put CONNECTOR_KEY/),
-  "--rotate-keys (real order): deploy the clean code, list secrets, remove OWNER_CIDRS, and only then store the new connector key", log.join(" / "));
-check(/Cloudflare account: Rotate Test's Account\. If that isn't an account only you control, stop now with Ctrl-C, or afterwards run node install\.mjs --uninstall/.test(r.stdout) && !/abc123/.test(r.stdout), "after the Cloudflare sign-in it names the account it will use", r.stdout.slice(0, 800));
-check(/removed the secret OWNER_CIDRS/.test(r.stdout) && keyNow() !== k0, "it says it removed the stray secret, and the connector key changed", r.stdout.slice(-500));
-check(log.filter((l) => /^deploy/.test(l)).length === 1 && at(/^deploy/) < at(/^secret put/), "the clean code is deployed once, before any secret is stored", log.join(" / "));
-// Names and titles in the job database can be written by anyone with the old URL. One with escape sequences (cursor up,
-// erase line, a window title, a fake "No schedules." line) is listed with its control characters shown as "?", so it can't
-// hide itself or others from the list the owner is told to check.
-r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--clear-schedules", "--home", rhome], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, PLANT: "1" } });
-check(r.status === 0 && !/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u202a-\u202e]/.test(r.stdout) && /Schedules \(1\):\n {4}- "news\?\[1A\?\[2K\?\[1A\?\[2K" \(s9\)/.test(r.stdout) &&
-  /- "tidy\?2J\?evil" \(r9\)/.test(r.stdout) && /- "ok\?\]0;pwned\?\?\?No schedules\." \(j9\), queued/.test(r.stdout) && /turned off 1 schedule\(s\), deleted 1 routine\(s\)/.test(r.stdout),
-  "--clear-schedules lists planted names with escape sequences as plain text, with no control characters reaching the terminal", JSON.stringify(r.stdout.slice(-900)) + r.stderr.slice(-300));
+if (realRuns) {
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(path.join(fakeBin, "npx"), `#!/bin/sh
+  shift 2; echo "$*" >> "${calls}"
+  case "$*" in
+    whoami*) printf '%s\\n' "You are logged in" "┌──────────────┬────────────┐" "│ Account Name │ Account ID │" "├──────────────┼────────────┤" "│ Rotate Test's Account │ abc123 │" "└──────────────┴────────────┘";;
+    "deploy"*) [ -n "$FAIL_DEPLOY" ] && { echo "deploy broke" >&2; exit 1; }; echo "Deployed";;
+    "secret list"*) echo '[{"name":"CONNECTOR_KEY","type":"secret_text"},{"name":"WORKER_KEY","type":"secret_text"},{"name":"OWNER_CIDRS","type":"secret_text"}]';;
+    "secret put WORKER_KEY"*) echo "stand-in stops here" >&2; exit 1;;
+    "secret "*) cat > /dev/null; echo ok;;
+    d1*) [ -n "$PLANT" ] && case "$*" in
+        *"FROM schedules"*) printf "%s\\n" '[{"results":[{"id":"s9","name":"news\\u001b[1A\\u001b[2K\\u001b[1A\\u001b[2K","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":null}]}]'; exit 0;;
+        *"FROM routines"*) printf "%s\\n" '[{"results":[{"id":"r9","name":"tidy\\u009b2J\\u202eevil","steps":"[]","created_by":null}]}]'; exit 0;;
+        *"FROM jobs"*) printf "%s\\n" '[{"results":[{"id":"j9","title":"ok\\u001b]0;pwned\\u0007\\r\\nNo schedules.","status":"queued","created_by":null}]}]'; exit 0;;
+      esac
+      case "$*" in *"FROM schedules"*) echo '[{"results":[{"id":"s1","name":"planted","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":"agent x"}]}]';; *) echo '[{"results":[]}]';; esac;;
+    *) echo "unexpected: $*" >&2; exit 1;;
+  esac
+  `, { mode: 0o755 });
+  fs.writeFileSync(path.join(fakeBin, "pbcopy"), "#!/bin/sh\ncat > /dev/null\n", { mode: 0o755 });
+  const rcfg = path.join(rdir, "worker", "config.json");
+  fs.writeFileSync(rcfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(rcfg, "utf8")), base: "https://rotate-test.invalid" }));
+  fs.writeFileSync(path.join(rdir, ".connector-url"), `https://rotate-test.invalid/${fs.readFileSync(path.join(rdir, ".connector-key"), "utf8").trim()}/mcp`);
+  const rreal = (env = {}) => spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--rotate-keys", "--yes", "--no-start", "--home", rhome], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ...env } });
+  const keyNow = () => fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
+  let k0 = keyNow();
+  r = rreal({ FAIL_DEPLOY: "1" });
+  let log = fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "";
+  check(r.status !== 0 && /couldn't deploy the connector code again/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/secret put/.test(log) && keyNow() === k0,
+    "--rotate-keys: if the clean deploy fails, no key is changed anywhere", r.stderr.slice(-300) + log);
+  fs.rmSync(calls, { force: true });
+  r = rreal();
+  log = fs.readFileSync(calls, "utf8").trim().split("\n");
+  const at = (re) => log.findIndex((l) => re.test(l));
+  check(at(/^deploy/) >= 0 && at(/^deploy/) < at(/^secret list/) && at(/^secret list/) < at(/^secret delete OWNER_CIDRS/) && at(/^secret delete OWNER_CIDRS/) < at(/^secret put CONNECTOR_KEY/),
+    "--rotate-keys (real order): deploy the clean code, list secrets, remove OWNER_CIDRS, and only then store the new connector key", log.join(" / "));
+  check(/Cloudflare account: Rotate Test's Account\. If that isn't an account only you control, stop now with Ctrl-C, or afterwards run node install\.mjs --uninstall/.test(r.stdout) && !/abc123/.test(r.stdout), "after the Cloudflare sign-in it names the account it will use", r.stdout.slice(0, 800));
+  check(/removed the secret OWNER_CIDRS/.test(r.stdout) && keyNow() !== k0, "it says it removed the stray secret, and the connector key changed", r.stdout.slice(-500));
+  check(log.filter((l) => /^deploy/.test(l)).length === 1 && at(/^deploy/) < at(/^secret put/), "the clean code is deployed once, before any secret is stored", log.join(" / "));
+  // Names and titles in the job database can be written by anyone with the old URL. One with escape sequences (cursor up,
+  // erase line, a window title, a fake "No schedules." line) is listed with its control characters shown as "?", so it can't
+  // hide itself or others from the list the owner is told to check.
+  r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--clear-schedules", "--home", rhome], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, PLANT: "1" } });
+  check(r.status === 0 && !/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u202a-\u202e]/.test(r.stdout) && /Schedules \(1\):\n {4}- "news\?\[1A\?\[2K\?\[1A\?\[2K" \(s9\)/.test(r.stdout) &&
+    /- "tidy\?2J\?evil" \(r9\)/.test(r.stdout) && /- "ok\?\]0;pwned\?\?\?No schedules\." \(j9\), queued/.test(r.stdout) && /turned off 1 schedule\(s\), deleted 1 routine\(s\)/.test(r.stdout),
+    "--clear-schedules lists planted names with escape sequences as plain text, with no control characters reaching the terminal", JSON.stringify(r.stdout.slice(-900)) + r.stderr.slice(-300));
+}
 // The "Clear them" question, in a real terminal: "yes please" is asked again, not taken as no, and "yes." then clears.
 if (process.platform === "darwin") {
   const PTY2 = `import os, pty, sys, select
