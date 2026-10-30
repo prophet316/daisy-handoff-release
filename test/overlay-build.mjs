@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let fail = 0;
 const check = (ok, s, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${s}${ok || !extra ? "" : `  (${String(extra).slice(-400)})`}`); if (!ok) fail++; };
-// The installer folds long lines for an 80-column Terminal (continuations indented 8 spaces): read them as one line.
-const unfold = (s) => String(s ?? "").replace(/\n {8,9}(?=\S)/g, " ");
+// The installer and the doctor fold long lines for an 80-column Terminal (continuations indented 8 to 11 spaces): read them as one line.
+const unfold = (s) => String(s ?? "").replace(/\n {8,11}(?=\S)/g, " ");
 if (process.platform !== "darwin") { console.log("overlay build: Mac only, skipped"); process.exit(0); }
 if (spawnSync("xcrun", ["--find", "swiftc"], { stdio: "ignore" }).status !== 0) {
   console.log("overlay build: skipped, Apple's Command Line Tools are missing (install them with xcode-select --install, then run this again)"); process.exit(0);
@@ -26,7 +26,7 @@ const install = (args, env = {}) => {
 };
 const bin = (home) => path.join(home, ".daisy", "overlay", "DaisyOverlay.app", "Contents", "MacOS", "DaisyOverlay");
 
-const doctor = (home) => spawnSync(process.execPath, [path.join(home, "Projects", "daisy-handoff", "doctor.mjs"), "--offline"], { encoding: "utf8", env: { ...process.env, HOME: home } }).stdout;
+const doctor = (home) => unfold(spawnSync(process.execPath, [path.join(home, "Projects", "daisy-handoff", "doctor.mjs"), "--offline"], { encoding: "utf8", env: { ...process.env, HOME: home } }).stdout)
 
 // 1. A plain dry run doesn't build (it changes nothing on the Mac), and says so; the doctor then says it isn't built.
 let { r, home } = install([]);

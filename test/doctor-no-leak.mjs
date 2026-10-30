@@ -27,7 +27,7 @@ function doctor() {
   const r = spawnSync(process.execPath, ["--import", pathToFileURL(hook).href, path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } }); // USERPROFILE: Windows' home
   if (r.status === null || !/Nuff Said doctor/.test(r.stdout || "")) check(false, "the doctor ran", `${r.stderr}`.slice(0, 300)); // a doctor that never ran proves nothing
   const urls = fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : [];
-  return { out: `${r.stdout}${r.stderr}`, urls };
+  return { out: `${r.stdout}${r.stderr}`.replace(/\n {8,11}(?=\S)/g, " "), urls }; // its lines are folded at 80 columns: joined back
 }
 
 // 1. a dry run: the placeholder address

@@ -14,8 +14,8 @@ let fail = 0;
 const check = (ok, s, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${s}${ok || !extra ? "" : `  (${extra})`}`); if (!ok) fail++; };
 const install = (args, opts = {}) => spawnSync(process.execPath, [...(opts.pre || []), path.join(REPO, "install.mjs"), ...args, "--home", home], { encoding: "utf8" });
 const json = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
-// The installer folds long lines for an 80-column Terminal (continuations indented 5 to 9 spaces): read them as one line.
-const unfold = (s) => String(s ?? "").replace(/\n {5,9}(?=\S)/g, " ");
+// The installer and the doctor fold long lines for an 80-column Terminal (continuations indented 5 to 11 spaces): read them as one line.
+const unfold = (s) => String(s ?? "").replace(/\n {5,11}(?=\S)/g, " ");
 
 // Stops the installer just before the worker config gets the connector's address, as a failed deploy does.
 const hook = path.join(home, "stop-at-deploy.mjs");
@@ -305,7 +305,7 @@ if (process.platform !== "win32") {
   const real = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--update", "--no-power-lanes", "--no-start", "--home", home],
     { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
   check(real.status !== 0 && /sign-in didn't finish/.test(real.stderr) && /still use your old settings, including the command line switch/.test(real.stderr), "a stopped real update says Cloudflare and the running worker keep the old settings", real.stderr.slice(-300));
-  const doc = spawnSync(process.execPath, [path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home } });
+  const doc = spawnSync(process.execPath, [path.join(dir, "doctor.mjs"), "--dir", dir], { encoding: "utf8", env: { ...process.env, HOME: home } }); doc.stdout = unfold(doc.stdout);
   check(/off in the new files, but Cloudflare and the running worker may still use your old setting/.test(doc.stdout), "the doctor says the same", doc.stdout.slice(-300));
   if (process.platform === "darwin") {
     // Phone notifications turned on by an update on a Mac without the tools: the stop names the command that was run.
@@ -328,7 +328,7 @@ if (process.platform !== "win32") {
     "an update after a first install that never reached Cloudflare says once that nothing was deployed yet, not that old settings are live", again.stderr.slice(-500));
   // --uninstall of that install has no startup entries to move; the doctor still knows it was uninstalled.
   const un2 = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--home", fhome], { encoding: "utf8", env: fenv });
-  const fdoc = spawnSync(process.execPath, [path.join(fdir, "doctor.mjs"), "--dir", fdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: fhome } });
+  const fdoc = spawnSync(process.execPath, [path.join(fdir, "doctor.mjs"), "--dir", fdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: fhome } }); fdoc.stdout = unfold(fdoc.stdout);
   check(un2.status === 0 && /was uninstalled/.test(fdoc.stdout) && !/--update again|Finish the Cloudflare sign-in|install is incomplete/.test(fdoc.stdout), "after --uninstall of an install that stopped at Cloudflare, the doctor doesn't say to run --update, finish the sign-in, or that the install is incomplete", fdoc.stdout.slice(-600));
   fs.rmSync(fhome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
@@ -375,7 +375,7 @@ const man = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--manu
 check(man.status === 0 && fs.existsSync(path.join(mhome, "Projects", "daisy-handoff", "site.json")) && JSON.parse(fs.readFileSync(path.join(mhome, "Projects", "daisy-handoff", "install-receipt.json"), "utf8")).dryRun === true, "--manual builds the install in your home folder and deploys nothing", man.stderr.slice(-300));
 const mdir = path.join(mhome, "Projects", "daisy-handoff");
 check(JSON.parse(fs.readFileSync(path.join(mdir, "install-receipt.json"), "utf8")).manual === true, "the receipt records a manual install");
-const mdoc = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+const mdoc = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } }); mdoc.stdout = unfold(mdoc.stdout);
 check(/MANUAL-INSTALL\.md, steps 2 to 7/.test(mdoc.stdout) && !/without --dry-run|install\.mjs --force/.test(mdoc.stdout), "the doctor sends a manual install on to MANUAL-INSTALL.md, never to --force", mdoc.stdout.slice(-400));
 const plain = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--home", mhome], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
 check(plain.status !== 0 && /--manual/.test(plain.stderr), "a plain dry run in your home folder is still refused, and points to --manual");
@@ -388,7 +388,7 @@ check(mstop.status !== 0 && JSON.parse(fs.readFileSync(path.join(mdir, "install-
 // A real --update on a manual install that stopped at the Cloudflare sign-in: manual and unfinished, no dryRun.
 const mrec = JSON.parse(fs.readFileSync(path.join(mdir, "install-receipt.json"), "utf8"));
 fs.writeFileSync(path.join(mdir, "install-receipt.json"), JSON.stringify({ ...mrec, dryRun: false, unfinished: true }));
-const mdoc2 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+const mdoc2 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } }); mdoc2.stdout = unfold(mdoc2.stdout);
 check(!/Log out and back in/.test(mdoc2.stdout) && !/Look at logs\/worker\.log/.test(mdoc2.stdout) && /--update again/.test(mdoc2.stdout), "after a manual install's --update stopped, the doctor says to run --update again, never to log out", mdoc2.stdout.slice(-400));
 // After --uninstall (startup entries moved aside, folder kept), a fresh --manual says to move the folder, not to carry on.
 if (process.platform === "darwin") {
@@ -403,10 +403,10 @@ if (process.platform === "darwin") {
   fs.renameSync(`${mplist}.aside`, path.join(unDir, "com.daisy.handoff-worker.plist"));
   const unOthers = fs.readdirSync(path.dirname(mplist)).filter((f) => /^com\.daisy\..*\.plist$/.test(f));
   for (const f of unOthers) fs.renameSync(path.join(path.dirname(mplist), f), path.join(unDir, f));
-  const mdoc3 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+  const mdoc3 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } }); mdoc3.stdout = unfold(mdoc3.stdout);
   check(/was uninstalled/.test(mdoc3.stdout) && /README's Uninstall steps/.test(mdoc3.stdout) && !/--update again/.test(mdoc3.stdout), "after --uninstall, the doctor points to the Uninstall steps, not to --update", mdoc3.stdout.slice(-400));
   // Not offline too: the live check is skipped (a manual install has only the example address), and says the same.
-  const mdoc4 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } });
+  const mdoc4 = spawnSync(process.execPath, [path.join(mdir, "doctor.mjs"), "--dir", mdir], { encoding: "utf8", env: { ...process.env, HOME: mhome, USERPROFILE: mhome } }); mdoc4.stdout = unfold(mdoc4.stdout);
   check(/skipped the live connector check/.test(mdoc4.stdout) && /was uninstalled/.test(mdoc4.stdout) && !/Finish the Cloudflare step/.test(mdoc4.stdout), "after --uninstall, the skipped live check doesn't say to finish the Cloudflare step", mdoc4.stdout.slice(-600));
   for (const f of fs.readdirSync(unDir)) fs.renameSync(path.join(unDir, f), path.join(path.dirname(mplist), f));
 }
@@ -529,7 +529,7 @@ if (process.platform === "darwin") {
   check(r.status === 0 && (!tools || !/Phone notifications need/.test(unfold(r.stdout))), "with the tools installed, the bell on raises no Python note", r.stdout.slice(-400));
   // The doctor: missing tools fail when this install uses them (the blue glow here), and it says stop and force kill don't need them.
   const dhome = path.join(chome, "Projects", "daisy-handoff");
-  const doc = (e) => spawnSync(process.execPath, [path.join(dhome, "doctor.mjs"), "--dir", dhome, "--offline"], { encoding: "utf8", env: { ...e, HOME: chome } });
+  const doc = (e) => { const r = spawnSync(process.execPath, [path.join(dhome, "doctor.mjs"), "--dir", dhome, "--offline"], { encoding: "utf8", env: { ...e, HOME: chome } }); r.stdout = unfold(r.stdout); return r; };
   let d = doc(env);
   check(/FAIL.*Apple's Command Line Tools are missing\. This install needs them for phone notifications and the blue glow\./.test(d.stdout), "the doctor says what this install needs the tools for", d.stdout.slice(0, 1500));
   const cfgFile = path.join(dhome, "worker", "config.json"), c = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
@@ -545,7 +545,7 @@ fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ ...jso
 r = install(["--dry-run", "--update"], { pre: ["--import", pathToFileURL(hook).href] });
 const stopped2 = json("install-receipt.json");
 check(r.status !== 0 && stopped2.unfinished === true && !stopped2.updatedFrom, "an update after a first install that never finished records no earlier version", JSON.stringify(stopped2));
-const doc2 = spawnSync(process.execPath, [path.join(dir, "doctor.mjs"), "--dir", dir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } });
+const doc2 = spawnSync(process.execPath, [path.join(dir, "doctor.mjs"), "--dir", dir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } }); doc2.stdout = unfold(doc2.stdout);
 check(!/may still use your old setting/.test(doc2.stdout) && /command line and desktop control: off/.test(doc2.stdout), "and the doctor doesn't speak of an old setting", doc2.stdout.slice(0, 1500));
 
 // An install with no receipt and no answer in its worker config: the update asks for a flag instead of turning things on.
