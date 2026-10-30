@@ -1,0 +1,41 @@
+name: release
+# Push a tag like v0.9.0. This builds daisy-handoff.zip, checks it, signs its provenance,
+# and opens a DRAFT release with the files attached. Nothing is public until you click Publish.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installer version matches the tag
+        run: |
+          v="$(node -e "console.log(require('fs').readFileSync('install.mjs','utf8').match(/VERSION = \"([^\"]+)\"/)[1])")"
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "install.mjs says $v but the tag is $GITHUB_REF_NAME"; exit 1; }
+      - name: Build the zip (same file name every release, so the latest-download link never breaks)
+        run: |
+          mkdir -p dist/daisy-handoff
+          cp -R install.mjs template README.md LICENSE SECURITY.md CHANGELOG.md dist/daisy-handoff/
+          (cd dist && zip -qr daisy-handoff.zip daisy-handoff && sha256sum daisy-handoff.zip > daisy-handoff.zip.sha256)
+      - name: Test the zip exactly as a stranger gets it
+        run: |
+          cd "$RUNNER_TEMP" && unzip -q "$GITHUB_WORKSPACE/dist/daisy-handoff.zip"
+          node daisy-handoff/install.mjs --dry-run --yes --home "$RUNNER_TEMP/h" --platform darwin
+          node "$GITHUB_WORKSPACE/test/verify-dry-run.mjs" "$RUNNER_TEMP/h" daisy-handoff darwin
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/daisy-handoff.zip
+      - name: Open the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/daisy-handoff.zip dist/daisy-handoff.zip.sha256 \
+            --draft --title "Daisy Handoff $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md

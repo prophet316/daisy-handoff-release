@@ -1,0 +1,43 @@
+name: installer
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Dry run (real OS, throwaway home)
+        shell: bash
+        run: node install.mjs --dry-run --yes --name Tester --assistant Daisy --home "$RUNNER_TEMP/home"
+      - name: Verify the install
+        shell: bash
+        run: node test/verify-dry-run.mjs "$RUNNER_TEMP/home" daisy-handoff "$(node -p process.platform)"
+      - name: Refuses to overwrite an install
+        shell: bash
+        run: "! node install.mjs --dry-run --yes --home \"$RUNNER_TEMP/home\""
+      - name: Uninstall dry run
+        shell: bash
+        run: node install.mjs --uninstall --dry-run --home "$RUNNER_TEMP/home"
+      - name: Dry run with --no-power-lanes (turned off)
+        shell: bash
+        run: node install.mjs --dry-run --yes --no-power-lanes --name Tester --assistant Daisy --home "$RUNNER_TEMP/nopower"
+      - name: Verify power lanes are off
+        shell: bash
+        run: node test/verify-dry-run.mjs "$RUNNER_TEMP/nopower" daisy-handoff "$(node -p process.platform)" off
+      - name: Dry run with --power-lanes (old flag, still on)
+        shell: bash
+        run: node install.mjs --dry-run --yes --power-lanes --name Tester --assistant Daisy --home "$RUNNER_TEMP/power"
+      - name: Verify power lanes are on
+        shell: bash
+        run: node test/verify-dry-run.mjs "$RUNNER_TEMP/power" daisy-handoff "$(node -p process.platform)" on

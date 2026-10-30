@@ -1,0 +1,12 @@
+.connector-key
+.connector-url
+.worker-key
+.bell-key
+.env*
+*.pem
+*.key
+node_modules/
+logs/
+jobs/
+threads/
+.DS_Store

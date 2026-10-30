@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;padding:16px;font:13px system-ui;background:#F5F4ED}body.dark{background:#262624;color:#FAF9F5}
+iframe{display:block;border:.5px solid rgba(31,30,29,.3);border-radius:12px;height:40px}body.dark iframe{border-color:rgba(222,220,209,.3)}
+#log{white-space:pre-wrap;font:11px ui-monospace,monospace}body.shot #log{display:none}</style></head><body><pre id="log">START</pre>
+<script type="module">
+// Strict stand-in for Claude: the official MCP Apps host bridge (AppBridge) renders the card from /card.html, sends it a real
+// tool result from the {{ASSISTANT}} server, sizes the frame from the card's size-changed messages, and passes the card's tool
+// calls back to the server. Query: tool, args (JSON), theme (light|dark), width, platform, caps (full|none), clicks
+// (comma-separated CSS selectors, pressed in order), shot (hide the log for screenshots), raw (log every message the card sends).
+// Run it with test/card-drive.mjs: --dump-dom never runs animation frames, so the card could not report its size there.
+import { AppBridge, PostMessageTransport } from "/vendor/ext-apps-bridge.js";
+const q = new URLSearchParams(location.search);
+const log = (t) => (document.getElementById("log").textContent += "\n" + t);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const theme = q.get("theme") || "light", width = Number(q.get("width") || 600);
+if (theme === "dark") document.body.classList.add("dark");
+if (q.has("shot")) document.body.classList.add("shot");
+const rpc = async (method, params) => (await (await fetch("/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json()).result;
+// A few of Claude's published style tokens (light, dark), so the card is checked with host styles applied.
+const T = { "--color-background-primary": ["#FFFFFF", "#30302E"], "--color-text-primary": ["#141413", "#FAF9F5"], "--color-text-secondary": ["#3D3D3A", "#C2C0B6"],
+  "--color-text-tertiary": ["#73726C", "#9C9A92"], "--color-background-success": ["#E9F1DC", "#1B4614"], "--color-text-success": ["#265B19", "#7AB948"],
+  "--color-background-warning": ["#F6EEDF", "#483A0F"], "--color-text-warning": ["#5A4815", "#D1A041"], "--color-background-danger": ["#F7ECEC", "#602A28"],
+  "--color-text-danger": ["#7F2C28", "#EE8884"], "--color-background-info": ["#D6E4F6", "#253E5F"], "--color-text-info": ["#3266AD", "#80AADD"],
+  "--color-background-inverse": ["#141413", "#FAF9F5"], "--color-text-inverse": ["#FFFFFF", "#141413"], "--color-border-primary": ["rgba(31,30,29,.4)", "rgba(222,220,209,.4)"],
+  "--color-border-tertiary": ["rgba(31,30,29,.15)", "rgba(222,220,209,.15)"], "--font-sans": ["system-ui, sans-serif", "system-ui, sans-serif"] };
+const variables = Object.fromEntries(Object.entries(T).map(([k, v]) => [k, v[theme === "dark" ? 1 : 0]]));
+const full = q.get("caps") !== "none";
+const caps = full ? { serverTools: {}, openLinks: {}, message: { text: {} }, updateModelContext: { text: {} } } : {};
+
+const args = JSON.parse(q.get("args") || "{}");
+const result = await rpc("tools/call", { name: q.get("tool") || "get_job", arguments: args });
+const html = await (await fetch("/card.html")).text();
+const f = document.createElement("iframe");
+f.setAttribute("sandbox", "allow-scripts allow-same-origin"); // same-origin only so this test can read the card's text
+f.style.width = width + "px";
+document.body.insertBefore(f, document.getElementById("log"));
+const bridge = new AppBridge(null, { name: "card-test-host", version: "1" }, caps, { hostContext: {
+  theme, platform: q.get("platform") || "web", displayMode: "inline", availableDisplayModes: ["inline"], locale: "en-US", timeZone: "America/Chicago",
+  containerDimensions: { width, maxHeight: 4000 }, safeAreaInsets: { top: 0, right: 0, bottom: 0, left: 0 }, styles: { variables } } });
+bridge.onsizechange = ({ width: w, height: h }) => { f.style.height = h + "px"; log(`SIZE ${w}x${h}`); };
+bridge.oncalltool = async (p) => { log(`CALL ${p.name} ${JSON.stringify(p.arguments)}`); const r = await rpc("tools/call", p); log(`REPLY ${String(r.content?.[0]?.text || "").slice(0, 90).replace(/\n/g, " ")}`); return r; };
+bridge.onmessage = async (p) => { log(`MESSAGE ${p.content.map((c) => c.text).join(" ")}`); return {}; };
+bridge.onupdatemodelcontext = async (p) => { log(`CONTEXT ${(p.content || []).map((c) => c.text).join(" ")}`); return {}; };
+bridge.onopenlink = async (p) => { log(`LINK ${p.url}`); return {}; };
+if (q.has("raw")) addEventListener("message", (e) => log("RAW " + (e.data && (e.data.method || ("reply " + e.data.id)))));
+let ready;
+const initialized = new Promise((r) => (ready = r));
+bridge.oninitialized = () => { log(`INITIALIZED ${bridge.getAppVersion()?.name}`); ready(); };
+f.srcdoc = html;
+await new Promise((r) => (f.onload = r));
+await bridge.connect(new PostMessageTransport(f.contentWindow, f.contentWindow));
+const timeout = await Promise.race([initialized.then(() => false), sleep(3000).then(() => true)]);
+if (timeout) { log("NO-HANDSHAKE the card never finished ui/initialize"); log("VIEW " + f.contentDocument.body.innerText.replace(/\s+/g, " ").trim()); log("DONE"); }
+else {
+  await bridge.sendToolInput({ arguments: args });
+  await bridge.sendToolResult(result);
+  await sleep(500);
+  const d = f.contentDocument;
+  const view = () => {
+    log("VIEW " + d.body.innerText.replace(/\s+/g, " ").trim());
+    log("BUTTONS " + [...d.querySelectorAll("button")].filter((b) => b.offsetParent).map((b) => `${b.textContent.trim()}${b.disabled ? "(off)" : ""}[${Math.round(b.getBoundingClientRect().height)}px]`).join(" | "));
+    log(`FIT frame ${f.getBoundingClientRect().height}px content ${Math.ceil(d.documentElement.scrollHeight)}px overflow ${d.documentElement.scrollHeight > f.clientHeight + 1 ? "yes" : "no"}`);
+  };
+  view();
+  for (const sel of (q.get("clicks") || "").split(",").filter(Boolean)) {
+    const b = d.querySelector(sel);
+    log(`CLICK ${sel} ${b ? b.textContent.trim() : "missing"}`);
+    b?.click();
+    await sleep(1500);
+    view();
+  }
+  log("DONE");
+}
+</script></body></html>

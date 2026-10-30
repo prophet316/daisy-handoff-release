@@ -1,0 +1,28 @@
+// Unit checks for the Central Time schedule math in src/index.js. Usage: node test/time-unit.mjs
+import { ctToUtc, nextRun, parseTime, ctParts } from "../src/index.js";
+let pass = 0, fail = 0;
+const eq = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : `: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`); };
+const at = (iso) => Date.parse(iso);
+eq("7:00 CDT (Oct 22) = 12:00Z", new Date(ctToUtc(2026, 10, 22, 7, 0)).toISOString(), "2026-10-22T12:00:00.000Z");
+eq("7:00 CST (Nov 2, after DST ends) = 13:00Z", new Date(ctToUtc(2026, 11, 2, 7, 0)).toISOString(), "2026-11-02T13:00:00.000Z");
+eq("daily 7:00 across the Nov 1 change: Oct 31 -> Nov 1 13:00Z", nextRun("daily", "07:00", null, at("2026-10-31T12:30:00Z")), "2026-11-01T13:00:00.000Z");
+eq("daily 7:00 asked at 6:59 CT fires today", nextRun("daily", "07:00", null, at("2026-10-22T11:59:00Z")), "2026-10-22T12:00:00.000Z");
+eq("daily 7:00 asked at 7:00 CT exactly moves to tomorrow", nextRun("daily", "07:00", null, at("2026-10-22T12:00:00Z")), "2026-10-23T12:00:00.000Z");
+eq("daily 23:30 CT is next UTC day", nextRun("daily", "23:30", null, at("2026-10-22T03:00:00Z")), "2026-10-22T04:30:00.000Z");
+eq("weekdays from Friday 8 PM CT -> Monday", nextRun("weekdays", "08:00", null, at("2026-10-24T01:00:00Z")), "2026-10-26T13:00:00.000Z");
+eq("weekly mon,thu from Wed -> Thu", nextRun("weekly", "09:15", "mon,thu", at("2026-10-21T20:00:00Z")), "2026-10-22T14:15:00.000Z");
+eq("weekly sun from Sun after the time -> next Sun", nextRun("weekly", "09:00", "sun", at("2026-10-25T15:00:00Z")), "2026-11-01T15:00:00.000Z");
+eq("before DST starts (Mar 13 2027): daily 7:00 = 13:00Z", nextRun("daily", "07:00", null, at("2027-03-13T00:00:00Z")), "2027-03-13T13:00:00.000Z");
+eq("DST starts Mar 14 2027: daily 7:00 = 12:00Z", nextRun("daily", "07:00", null, at("2027-03-13T14:00:00Z")), "2027-03-14T12:00:00.000Z");
+eq("weekday of Oct 21 2026 CT is wed", ctParts(at("2026-10-22T01:00:00Z")).wd, 3);
+eq("parse '7:30 pm'", parseTime("7:30 pm"), { hh: 19, mm: 30 });
+eq("parse '7:30 A.M.'", parseTime("7:30 A.M."), { hh: 7, mm: 30 });
+eq("parse '12 am'", parseTime("12 am"), { hh: 0, mm: 0 });
+eq("parse '12pm'", parseTime("12pm"), { hh: 12, mm: 0 });
+eq("parse '19:05'", parseTime("19:05"), { hh: 19, mm: 5 });
+eq("parse 'noon'", parseTime("noon"), { hh: 12, mm: 0 });
+eq("reject '25:00'", parseTime("25:00"), null);
+eq("reject '13 pm'", parseTime("13 pm"), null);
+eq("reject 'tomorrow'", parseTime("tomorrow"), null);
+console.log(`TIME UNIT: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

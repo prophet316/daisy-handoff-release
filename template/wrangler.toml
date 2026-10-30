@@ -1,0 +1,23 @@
+name = "{{SLUG}}"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+# Filled in by deploy.sh with this install's own D1 database (never another install's).
+[[d1_databases]]
+binding = "DB"
+database_name = "{{SLUG}}-jobs"
+database_id = "set-by-deploy"
+
+# Workers AI embeddings for find_job, the dead-man alarm cron, and the job card flag.
+[ai]
+binding = "AI"
+remote = true
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+JOB_CARDS = "on"
+# Command line (run_command) and desktop control (look_at_screen, use_computer). Set by the installer: "on" unless --no-power-lanes.
+POWER_LANES = "{{POWER_LANES}}"

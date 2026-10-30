@@ -1,0 +1,15 @@
+name: Idea
+description: Something you wish you could say to it.
+labels: [idea]
+body:
+  - type: textarea
+    id: say
+    attributes:
+      label: What you want to be able to say
+      placeholder: "\"Daisy, ...\""
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it would save you

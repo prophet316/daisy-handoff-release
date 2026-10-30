@@ -1,0 +1,51 @@
+name: Something broke
+description: The installer or a job didn't do what it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Never paste your connector URL or anything from `.connector-url`, `.connector-key` or `.worker-key`. Those are passwords."
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options: [macOS, Windows]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Installer version
+      description: First line the installer printed, e.g. 0.9.0
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: macOS, Node and Claude Code versions
+      description: "Your macOS version, then the output of `node -v` and `claude --version`."
+  - type: textarea
+    id: said
+    attributes:
+      label: What you said or ran
+      description: The exact words or command.
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: receipt
+    attributes:
+      label: install-receipt.json (optional)
+      description: It's in your install folder and holds no keys. Paste it here.
+      render: json
+  - type: textarea
+    id: log
+    attributes:
+      label: Last 30 lines of logs/worker.log (optional)
+      description: In your install folder. Read it first and cut anything private.
+      render: text

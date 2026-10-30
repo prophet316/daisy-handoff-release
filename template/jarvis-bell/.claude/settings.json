@@ -1,0 +1,6 @@
+{
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "deny": ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Agent"]
+  }
+}

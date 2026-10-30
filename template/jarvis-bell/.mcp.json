@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "daisy-bell": { "command": "{{HOME}}/{{DOTDIR}}/node/bin/node", "args": ["{{HOME}}/Projects/{{SLUG}}/worker/bell.mjs"] }
+  }
+}
