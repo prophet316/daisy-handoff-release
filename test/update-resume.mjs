@@ -15,7 +15,8 @@ const check = (ok, s, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${s
 const install = (args, opts = {}) => spawnSync(process.execPath, [...(opts.pre || []), path.join(REPO, "install.mjs"), ...args, "--home", home], { encoding: "utf8" });
 const json = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
 // The installer and the doctor fold long lines for an 80-column Terminal (continuations indented 5 to 11 spaces): read them as one line.
-const unfold = (s) => String(s ?? "").replace(/\n {5,11}(?=\S)/g, " ");
+// A doctor hint ("-> ...") stays on its own line, so a check on a check line reads only that line's words (Mac verify 10ed0b8d note 3).
+const unfold = (s) => String(s ?? "").replace(/\n {5,11}(?=\S)(?!-> )/g, " ");
 
 // Stops the installer just before the worker config gets the connector's address, as a failed deploy does.
 const hook = path.join(home, "stop-at-deploy.mjs");
@@ -531,12 +532,12 @@ if (process.platform === "darwin") {
   const dhome = path.join(chome, "Projects", "daisy-handoff");
   const doc = (e) => { const r = spawnSync(process.execPath, [path.join(dhome, "doctor.mjs"), "--dir", dhome, "--offline"], { encoding: "utf8", env: { ...e, HOME: chome } }); r.stdout = unfold(r.stdout); return r; };
   let d = doc(env);
-  check(/FAIL.*Apple's Command Line Tools are missing\. This install needs them for phone notifications and the blue glow\./.test(d.stdout), "the doctor says what this install needs the tools for", d.stdout.slice(0, 1500));
+  check(/^  FAIL  Apple's Command Line Tools are missing\. This install needs them for phone notifications and the blue glow\./m.test(d.stdout), "the doctor says what this install needs the tools for", d.stdout.slice(0, 1500));
   const cfgFile = path.join(dhome, "worker", "config.json"), c = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
   fs.writeFileSync(cfgFile, JSON.stringify({ ...c, bell: null, powerLanes: false }));
   d = doc(env);
-  check(/WARN.*Apple's Command Line Tools are missing\. Only phone notifications and the blue glow need them; jobs, stop and force kill work without them\./.test(d.stdout), "with neither in use, it's a warning that says stop and force kill work without them", d.stdout.slice(0, 1500));
-  if (tools) { d = doc(process.env); check(/ok.*Apple's Command Line Tools and \/usr\/bin\/python3/.test(d.stdout), "with the tools, the doctor checks /usr/bin/python3 runs", d.stdout.slice(0, 1500)); }
+  check(/^  WARN  Apple's Command Line Tools are missing\. Only phone notifications and the blue glow need them; jobs, stop and force kill work without them\./m.test(d.stdout), "with neither in use, it's a warning that says stop and force kill work without them", d.stdout.slice(0, 1500));
+  if (tools) { d = doc(process.env); check(/^  ok    Apple's Command Line Tools and \/usr\/bin\/python3/m.test(d.stdout), "with the tools, the doctor checks /usr/bin/python3 runs", d.stdout.slice(0, 1500)); }
   fs.rmSync(chome, { recursive: true, force: true }); fs.rmSync(noTools, { recursive: true, force: true });
 }
 

@@ -677,11 +677,13 @@ L.end();
 const d24m = mkdtempSync(join(tmpdir(), "gate-drive-"));
 L = lane(d24m, SLACK);
 const ml = [];
-for (const [tok, t] of [["t:1", "app.slack.com/client/T1/C1\napprove job abc\n"], ["t:5", "lunch\napprove job abc\n"]]) {
+// Two line breaks at the end, "\r\n" counted as two, or a blank after the break: the second Return or the blank lands in the page
+// too (security 7f9c2e8f #1, Mac verify 10ed0b8d B).
+for (const [tok, t] of [["t:1", "app.slack.com/client/T1/C1\napprove job abc\n"], ["t:5", "lunch\napprove job abc\n"], ["t:5", "lunch\n\n"], ["t:5", "lunch\r\n\r\n"], ["t:5", "lunch\n "], ["t:1", "lunch\r\n"]]) {
   await L.tool("get_window_state", look);
   ml.push(await L.tool("type_text", { pid: P, element_token: tok, text: t, intent: "search" }));
 }
-check("search: more text after a line break, in one call into the address bar or search box, is held", ml.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24m).some((c) => c.tool === "type_text"), ml.map((x) => x.text.slice(0, 40)).join(" | "));
+check("search: more text or a second line break after a line break, in one call into the address bar or search box, is held", ml.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24m).some((c) => c.tool === "type_text"), ml.map((x) => x.text.slice(0, 40)).join(" | "));
 // A Tab key in a combo moves focus off the search box, so Tab plus Space or Return there is held; a Tab character given as the
 // key is a Tab, so it's held there and marks the app (Mac verify 68e3f94d A).
 const tb = [];

@@ -13,7 +13,7 @@ const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let fail = 0;
 const check = (ok, s, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${s}${ok || !extra ? "" : `  (${String(extra).slice(-400)})`}`); if (!ok) fail++; };
 // The installer and the doctor fold long lines for an 80-column Terminal (continuations indented 8 to 11 spaces): read them as one line.
-const unfold = (s) => String(s ?? "").replace(/\n {8,11}(?=\S)/g, " ");
+const unfold = (s) => String(s ?? "").replace(/\n {8,11}(?=\S)(?!-> )/g, " "); // a "-> " hint stays on its own line
 if (process.platform !== "darwin") { console.log("overlay build: Mac only, skipped"); process.exit(0); }
 if (spawnSync("xcrun", ["--find", "swiftc"], { stdio: "ignore" }).status !== 0) {
   console.log("overlay build: skipped, Apple's Command Line Tools are missing (install them with xcode-select --install, then run this again)"); process.exit(0);

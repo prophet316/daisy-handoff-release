@@ -402,8 +402,8 @@ function selftest() {
     ["a no-break space, vertical tab or line separator typed held", ["\u00a0", "a\u000bb", "a\u2028b"].every((t) => gate({ action: "type_text", intent: "type ok", text: t, app: "Google Chrome" }, none)?.includes("send"))],
     ["a typed Tab in a search box held (it moves focus off the box)", gate({ action: "type_text", intent: "search", text: "\t\n", app: "Google Chrome", searchBox: true }, none)?.includes("send")],
     // Several lines typed in one call into a search box: the rest lands in the page that loads (security 579132b8 #2), and so does
-    // a second Return, "\r\n" included (security 7f9c2e8f #1).
-    ["a search box or address bar with more text, or a second line break, after a line break held", ["app.slack.com/client/T1/C1\napprove job abc\n", "lunch\napprove job abc\n", "lunch\n approve", "lunch\r\nok", "lunch\n\n", "x\n\n\n", "\n\n", "lunch\n\r", "lunch\r\n"].every((t) => gate({ action: "type_text", intent: "search", text: t, app: "Google Chrome", searchBox: true }, none)?.includes("send"))],
+    // a second Return, "\r\n" included (security 7f9c2e8f #1, Mac verify 10ed0b8d B).
+    ["a search box or address bar with more text, or a second line break, after a line break held", ["app.slack.com/client/T1/C1\napprove job abc\n", "lunch\napprove job abc\n", "lunch\n approve", "lunch\r\nok", "lunch\n\n", "x\n\n\n", "\n\n", "lunch\n\r", "lunch\r\n", "lunch\r\n\r\n", "lunch\n "].every((t) => gate({ action: "type_text", intent: "search", text: t, app: "Google Chrome", searchBox: true }, none)?.includes("send"))],
     // A Tab key in a combo moves focus off the box too, and a Tab character given as the key is a Tab (Mac verify 68e3f94d A).
     ["Tab plus Space or Return in a search box held", ["tab+space", "shift+tab+space", "space+tab", "tab+return", "\t"].every((keys) => gate({ action: "hotkey", intent: "press the keys", keys, app: "Google Chrome", searchBox: true }, none)?.includes("send"))],
     ["a Tab character as the key is a Tab", tabKey("\t") && tabKey("shift+\t")],
