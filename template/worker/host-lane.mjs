@@ -84,7 +84,8 @@ export const OFF_LIMITS = [
   { name: "TextMate", re: /^textmate$/i, ids: [/^com\.macromates\.textmate/i] },
   { name: "a JetBrains IDE", re: /^(intellij idea( ce| ultimate)?|pycharm( ce| professional edition| community edition)?|webstorm|goland|clion|rubymine|phpstorm|rider|datagrip|rustrover|fleet|android studio)$/i,
     ids: [/^com\.jetbrains\./i, /^com\.google\.android\.studio/i], say: /\b(intellij|pycharm|webstorm|goland|clion|rubymine|phpstorm|jetbrains|datagrip|rustrover|android studio)\b/i },
-  { name: "Codex", re: /^codex$/i, ids: [/^com\.openai\.codex/i] },
+  // OpenAI's desktop apps, by bundle id: their coding agent runs commands, and their agents act on the computer.
+  { name: "an OpenAI app", re: /^chatgpt( atlas)?$/i, ids: [/^com\.openai\./i], say: /\b(chatgpt|openai)\b/i },
   { name: "Docker", re: /^docker( desktop)?$/i, ids: [/^com\.docker\./i] },
   // Launchers run commands, scripts and Shortcuts from a search box (their keys are checked in launcherKeys below).
   { name: "Spotlight", re: /^spotlight$/i, ids: [/^com\.apple\.spotlight$/i] },
@@ -770,10 +771,10 @@ function selftest() {
     ["Claude app off-limits by bundle", offLimits({ bundle: "com.anthropic.claudefordesktop" }, "on my Mac reply to the email") === "Claude"],
     ["Claude app allowed when named", offLimits({ name: "Claude" }, "on my Mac open the Claude app and start a new chat") === null],
     ["claude.ai is the Claude chat", claudeSite("https://claude.ai/new") && claudeSite("https://www.claude.com/x") && !claudeSite("https://example.com/claude.ai")],
-    ...["Script Editor", "Automator", "Shortcuts", "Warp", "Ghostty", "Alacritty", "WezTerm", "Visual Studio Code", "Cursor", "Xcode", "Zed", "PyCharm", "Activity Monitor", "Disk Utility", "Spotlight", "Raycast", "Codex"]
+    ...["Script Editor", "Automator", "Shortcuts", "Warp", "Ghostty", "Alacritty", "WezTerm", "Visual Studio Code", "Cursor", "Xcode", "Zed", "PyCharm", "Activity Monitor", "Disk Utility", "Spotlight", "Raycast", "ChatGPT"]
       .map((n) => [`${n} off-limits by name`, !!offLimits({ name: n }, "on my Mac find a recipe in Safari")]),
     ...[["com.apple.ScriptEditor2", "Script Editor"], ["com.apple.Automator", "Automator"], ["com.apple.shortcuts", "Shortcuts"], ["dev.warp.Warp-Stable", "Warp"], ["com.mitchellh.ghostty", "Ghostty"],
-      ["net.kovidgoyal.kitty", "kitty"], ["com.microsoft.VSCode", "Visual Studio Code"], ["com.todesktop.230313mzl4w4u92", "Cursor"], ["com.apple.dt.Xcode", "Xcode"], ["com.jetbrains.intellij", "a JetBrains IDE"]]
+      ["net.kovidgoyal.kitty", "kitty"], ["com.microsoft.VSCode", "Visual Studio Code"], ["com.todesktop.230313mzl4w4u92", "Cursor"], ["com.apple.dt.Xcode", "Xcode"], ["com.jetbrains.intellij", "a JetBrains IDE"], ["com.openai.chat", "an OpenAI app"]]
       .map(([b, n]) => [`${n} off-limits by bundle ${b}`, offLimits({ bundle: b }, "on my Mac") === n]),
     ["Script Editor allowed when named", offLimits({ name: "Script Editor" }, "on my Mac open Script Editor and make a new script") === null],
     ["VS Code allowed when named", offLimits({ name: "Visual Studio Code" }, "on my Mac open my notes in VS Code") === null],
