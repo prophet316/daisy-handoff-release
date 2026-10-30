@@ -24,7 +24,7 @@ Still in the unzipped release folder:
 node install.mjs --dry-run --home "$HOME"
 ```
 
-Answer the four questions. This writes your install folder `~/Projects/daisy-handoff`, makes your three private keys, and writes the background services to `~/Library/LaunchAgents`. It doesn't start them and deploys nothing. The time zone line shows the zone your schedules will use; to pick another, add `--time-zone America/New_York` (or your zone) to the command.
+Answer the four questions. This writes your install folder `~/Projects/daisy-handoff`, makes your three private keys, and writes the background services to `~/Library/LaunchAgents`. It deploys nothing and doesn't start them now, but macOS loads them at your next login. If you stop partway through this guide, run `node install.mjs --uninstall` in the release folder so they don't start at the next login with an unfinished install; it moves them to `~/.handoff-uninstalled`. The time zone line shows the zone your schedules will use; to pick another, add `--time-zone America/New_York` (or your zone) to the command.
 
 It ends with "DRY RUN COMPLETE" and a "Last step is yours" list. Leave that list for step 9: the URL it mentions is only a placeholder until step 5.
 
@@ -90,7 +90,7 @@ chmod 600 .connector-url
 
 ## 6. Let Claude Code trust the bell folder
 
-The phone bell is a Claude Code session that runs in the `jarvis-bell` folder. Claude Code asks once whether to trust a new folder:
+The phone bell ("Daisy bell") is a Claude Code session that runs in the bell folder. The folder is named `jarvis-bell`, an older internal name that is kept so updates don't leave a second bell behind. Claude Code asks once whether to trust a new folder:
 
 ```bash
 cd ~/Projects/daisy-handoff/jarvis-bell && claude

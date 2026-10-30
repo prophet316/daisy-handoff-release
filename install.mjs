@@ -368,6 +368,7 @@ async function rotateKeys() {
   const ROTATE = has("rotate-keys");
   say(`Daisy Handoff ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`);
   const W = wranglerIn(dir);
+  if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   const db = `${site.slug || path.basename(dir)}-jobs`;
   if (ROTATE) {
     step("New keys", 3);
@@ -536,6 +537,7 @@ function setWorkerBase(dir, url) {
 function deploy(dir, slug, lead) {
   const npx = HOST === "win32" ? "npx.cmd" : "npx";
   const W = (args, o = {}) => run(npx, ["-y", WRANGLER, ...args], { cwd: dir, ...o });
+  say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   const who = W(["whoami"]);
   if (who.status !== 0 || /not authenticated|not logged in/i.test(`${who.stdout}${who.stderr}`)) {
     say("  Your browser will open. Sign in to Cloudflare (a free account works) and click Allow.");

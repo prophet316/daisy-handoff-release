@@ -47,7 +47,7 @@ Everything here is listed before you start, with what it costs.
 | Apple's Command Line Tools | Free | The phone bell uses the Python that comes with them. Many Macs have them already; if not, run `xcode-select --install`. |
 | Your Mac's administrator password | | The Node and Command Line Tools installers ask for it. |
 | A Cloudflare account | Free plan is enough | The free Workers plan allows 100,000 requests a day, and its free D1 database allows 5 million rows read and 100,000 rows written a day ([Cloudflare pricing](https://developers.cloudflare.com/workers/platform/pricing/)). Your computer checks in every 20 seconds, about 4,300 requests a day. |
-| CuaDriver (optional) | Free | Only for jobs that click and type on your desktop. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#desktop-control-doesnt-work). Everything else works without it. |
+| CuaDriver (optional) | Free | Only for jobs that click and type on your desktop. Needs macOS 14 or newer ([CuaDriver install page](https://cua.ai/docs/how-to-guides/driver/install)). See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#desktop-control-doesnt-work). Everything else works without it. |
 | A [Composio](https://composio.dev) account (optional) | See Composio | Only for publishing a job's result to Google Docs or Drive and for sending email. Everything else works without it. |
 
 ---

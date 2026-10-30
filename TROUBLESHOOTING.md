@@ -139,7 +139,7 @@ How it works: the installer starts an always-on Claude Code session on your Mac 
 1. **The Claude app on your phone**, signed in to the same account (and organization) as Claude Code on your Mac. Open it once after installing.
 2. **Notifications allowed** for the Claude app on your phone. On iPhone: Settings > Notifications > Claude. Focus modes can hold them back.
 3. **Push turned on in Claude Code.** In Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`. If `/config` says **No mobile registered**, open the Claude app on your phone and try again.
-4. **Claude Code trusts the bell folder.** The installer does this for you. If the doctor says it doesn't, run `cd ~/Projects/daisy-handoff/jarvis-bell && claude`, choose **Yes, I trust this folder**, and type `/exit` right away. The bell restarts by itself within a few minutes.
+4. **Claude Code trusts the bell folder.** The installer does this for you. If the doctor says it doesn't, run `cd ~/Projects/daisy-handoff/jarvis-bell && claude` (`jarvis-bell` is the Daisy bell's folder; the name is an older internal one), choose **Yes, I trust this folder**, and type `/exit` right away. The bell restarts by itself within a few minutes.
 5. **Team and Enterprise only:** an Owner must turn on **Remote Control** and **Channels** in [Claude Code admin settings](https://claude.ai/admin-settings/claude-code). On Pro and Max there's nothing to turn on.
 6. **A claude.ai sign-in, not an API key.** Remote Control doesn't work with API keys.
 
@@ -155,9 +155,11 @@ You may also see a session named "Daisy bell" (or your assistant's name) in the 
 
 Commands and screenshots work without extra setup. Clicking and typing on your desktop needs one more free app:
 
-1. Install **CuaDriver** from [trycua](https://github.com/trycua/cua) so it's at `/Applications/CuaDriver.app`.
-2. Open **System Settings > Privacy & Security > Accessibility** and turn on CuaDriver (use **+** if it isn't listed).
-3. Do the same under **Screen & System Audio Recording**.
+CuaDriver needs macOS 14 (Sonoma) or newer ([CuaDriver install page](https://cua.ai/docs/how-to-guides/driver/install)). On macOS 13, everything else works; desktop control doesn't.
+
+1. Install **CuaDriver** with the command on its [install page](https://cua.ai/docs/how-to-guides/driver/install): `/bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"`. It should end up at `/Applications/CuaDriver.app`.
+2. Run `cua-driver permissions grant`. macOS asks for Accessibility and for Screen Recording separately, and neither prompt turns anything on by itself.
+3. Open **System Settings > Privacy & Security > Accessibility** and turn on CuaDriver (use **+** if it isn't listed). Do the same under **Screen & System Audio Recording**. `cua-driver permissions status` shows whether both are on.
 
 Screenshots ("what's on my screen") need Screen Recording for Node. The first time, macOS asks; click **Allow**.
 

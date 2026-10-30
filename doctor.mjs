@@ -140,7 +140,7 @@ if (!DIR || !site) {
       `In the install folder run: chmod 600 ${open.join(" ")}`);
   }
   if (cfg) {
-    const deployed = cfg.base && cfg.base !== "set-after-deploy" && !/your-subdomain\.workers\.dev/.test(cfg.base);
+    const deployed = isDeployed(cfg.base);
     check(deployed ? "ok" : "fail", deployed ? "worker knows its connector" : "the connector was never deployed (this is a dry run, or the install stopped before Cloudflare)",
       "Run node install.mjs --uninstall, then node install.mjs --force, and finish the Cloudflare sign-in.", "Cloudflare sign-in or deploy failed");
     say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}`);
@@ -171,8 +171,9 @@ if (!DIR || !site) {
   const alive = path.join(DIR, cfg?.aliveFile || "logs/.worker-alive");
   if (live && fs.existsSync(alive)) {
     const age = Date.now() - fs.statSync(alive).mtimeMs;
-    check(age < 120_000 ? "ok" : "fail", `worker last checked in ${ago(age)} ago`, "The worker is stuck or stopped. Look at the end of logs/worker.log.", "The worker isn't running");
-  } else if (live) check("fail", "the worker has never checked in", "Look at logs/worker.log in your install folder.", "The worker isn't running");
+    // The alive file shows the worker's loop is running, not that it reached the connector (the live check below does that).
+    check(age < 120_000 ? "ok" : "fail", `worker is running (its loop last ran ${ago(age)} ago)`, "The worker is stuck or stopped. Look at the end of logs/worker.log.", "The worker isn't running");
+  } else if (live) check("fail", "the worker has never run", "Look at logs/worker.log in your install folder.", "The worker isn't running");
 
   // phone bell (Remote Control session)
   if (MAC && live) {
@@ -183,17 +184,19 @@ if (!DIR || !site) {
     const claudeJson = readJson(path.join(HOME, ".claude.json"));
     const trusted = claudeJson?.projects?.[path.join(DIR, "jarvis-bell")]?.hasTrustDialogAccepted === true;
     check(trusted ? "ok" : "fail", `Claude Code ${trusted ? "trusts" : "doesn't trust"} the bell folder yet`,
-      `Run: cd "${path.join(DIR, "jarvis-bell")}" && claude   then choose "Yes, I trust this folder" and type /exit right away. The bell restarts by itself within a few minutes.`, "No phone notifications");
+      `The Daisy bell runs in ${path.join(DIR, "jarvis-bell")} (an older internal name). Run: cd "${path.join(DIR, "jarvis-bell")}" && claude   then choose "Yes, I trust this folder" and type /exit right away. The bell restarts by itself within a few minutes.`, "No phone notifications");
     const screen = (read(path.join(DIR, "logs", "bell-screen.log")) || "").slice(-20000).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*\x07/g, " ").replace(/\s+/g, " ").toLowerCase();
     const known = [
       [/do you trust the files|trust this folder|workspace not trusted/, "The bell session is waiting at Claude Code's folder trust question."],
+      [/let's get started|choose the text style|select a theme|dark mode \(colorblind/, "The bell session is stuck on Claude Code's first-run setup screen. In Terminal run claude once, finish the setup, type /login, then /exit. The bell restarts by itself within a few minutes."],
       [/not logged in|please run \/login|invalid api key/, "The bell session isn't signed in to Claude."],
       [/remote control is disabled|disabled by your organization/, "Remote Control is turned off for your account. On Team or Enterprise an Owner turns it on in Claude Code admin settings."],
       [/channels? (?:are |is )?(?:not enabled|blocked|disabled)|ask (?:an|your) admin to enable/, "Channels are turned off for your organization. An Owner turns them on in Claude Code admin settings."],
       [/no mobile registered/, "Your phone isn't registered for pushes yet. Open the Claude app on your phone, signed in to the same account."],
     ].filter(([re]) => re.test(screen)).map(([, why]) => why);
     for (const why of known) check("fail", `bell session: ${why}`, "", "No phone notifications");
-    if (!known.length && screen) check(/remote control (active|connected)|claude\.ai\/code/.test(screen) ? "ok" : "warn", "bell session screen shows no known problem",
+    const rcOn = /remote control (active|connected)|claude\.ai\/code/.test(screen);
+    if (!known.length && screen) check(rcOn ? "ok" : "warn", rcOn ? "bell session shows Remote Control on" : "bell session screen doesn't show Remote Control on yet, and shows none of the known problems",
       "If pushes still don't arrive, check the Claude app's notification settings and /config push settings.", "No phone notifications");
   }
 
@@ -212,9 +215,14 @@ if (!DIR || !site) {
     }
   }
 
-  // the connector, from outside
-  if (!OFFLINE && live && fs.existsSync(path.join(DIR, ".connector-url"))) {
-    const full = read(path.join(DIR, ".connector-url")).trim();
+  // the connector, from outside. The key only ever goes to the connector this install recorded as deployed, never to the
+  // placeholder address a dry run or the manual install's example leaves behind (anyone could claim that address).
+  const full = (read(path.join(DIR, ".connector-url")) || "").trim();
+  const sendable = isDeployed(cfg?.base) && full.startsWith(`${cfg.base}/`) && !/your-subdomain\.workers\.dev/.test(full);
+  if (!OFFLINE && live && full && !sendable) {
+    check("warn", "skipped the live connector check: no deployed connector address is on record, so your key wasn't sent anywhere",
+      "Finish the Cloudflare step (README, Install, or MANUAL-INSTALL step 3 to 5), then run the doctor again.", "Cloudflare sign-in or deploy failed");
+  } else if (!OFFLINE && live && full) {
     try {
       const r = await fetch(full, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "doctor", version: VERSION } } }),
@@ -231,6 +239,11 @@ if (!DIR || !site) {
   }
   const receipt = read(path.join(DIR, "install-receipt.json"));
   if (receipt) { out.push("\n--- install-receipt.json ---"); out.push(receipt.trim()); }
+}
+
+// A connector address the installer really deployed: not the dry run's placeholder, not the manual guide's example.
+function isDeployed(base) {
+  return typeof base === "string" && /^https:\/\/[a-z0-9.-]+\.workers\.dev$/.test(base) && !/your-subdomain\.workers\.dev$/.test(base);
 }
 
 // ---------- summary and report ----------
