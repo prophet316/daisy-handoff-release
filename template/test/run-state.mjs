@@ -42,7 +42,7 @@ const runs = join(tmp, "runs");
 writeFileSync(join(cfgDir, "config.json"), JSON.stringify({ base: "http://127.0.0.1:9", keyFile: relative(ROOT, join(cfgDir, "key")), claudeBin: "/usr/bin/false", runsDir: runs }));
 process.env.DAISY_NO_MAIN = "1";
 process.argv.push("--config", join(cfgDir, "config.json"));
-const { planRun, runDir, holdCard, retirePurchase, finalFiles, resetRunState, requestWords, holdDraft, cuaAllow, purchaseLine } = await import(join(ROOT, "worker", "worker.mjs"));
+const { planRun, runDir, holdCard, retirePurchase, finalFiles, resetRunState, requestWords, holdDraft, cuaAllow, purchaseLine, agentRerunRefusal } = await import(join(ROOT, "worker", "worker.mjs"));
 const { draftHash } = await import(join(ROOT, "worker", "email.mjs"));
 const { makeRedactor } = await import(join(ROOT, "worker", "redact.mjs"));
 const OWNER = JSON.parse(readFileSync(join(ROOT, "site.json"), "utf8")).owner;
@@ -109,6 +109,14 @@ const byLead = cuaAllow({ ...job, followup_from: "lead agent boss" }, oldDir, tr
 check("a lead agent's approval unlocks no send, post, buy or charge", !["send", "post", "buy", "charge"].some((k) => byLead.includes(k)) && byLead.includes("delete"), JSON.stringify(byLead));
 const byOwner = cuaAllow(job, oldDir, true, leadRun).allow;
 check("the owner's approval unlocks what the gate held", ["send", "post", "delete", "charge"].every((k) => byOwner.includes(k)), JSON.stringify(byOwner));
+
+// 2b3b. An agent's reply or retry of a desktop or screen job: the worker refuses it, and the gate keeps nothing allowed.
+check("an agent's retry of a desktop job keeps nothing the owner allowed", cuaAllow({ ...job, allow: JSON.stringify(["send", "post"]), followup_from: "agent x" }, oldDir, false, leadRun).allow.length === 0);
+check("the owner's own reply keeps what the owner allowed", cuaAllow({ ...job, allow: JSON.stringify(["send"]) }, oldDir, false, leadRun).allow.includes("send"));
+check("the worker refuses an agent's rerun of a screen job", !!agentRerunRefusal({ mode: "screen", run_mode: "retry", followup_from: "agent x" }));
+check("the worker refuses an agent's reply on a desktop job", !!agentRerunRefusal({ mode: "computer", run_mode: "reply", followup_from: "agent x" }));
+check("the owner's own rerun and a lead agent's approval of a desktop step aren't refused here",
+  !agentRerunRefusal({ mode: "screen", run_mode: "retry" }) && !agentRerunRefusal({ mode: "computer", run_mode: "approved", followup_from: "lead agent boss" }) && !agentRerunRefusal({ mode: "code", followup_from: "agent x" }));
 
 // 2b4. The recipient check counts only the owner's words: not an agent's job, note or a forged history line.
 const accounts = { "me@example.com": "gmail_me" };
@@ -203,6 +211,11 @@ heldMail.hash = draftHash(heldMail);
 const lead = await runWorker([{ id: "rs-lead", title: "send it", details: "email pat@example.org", mode: "writing", status: "running", run_mode: "approved", followup_from: "lead agent boss", held: JSON.stringify(heldMail) }]);
 const lf0 = lead.finished[0];
 check("a lead agent's approval doesn't send a held email", lf0?.status === "needs_approval" && /only .* can send one/i.test(lf0.result) && lf0.held?.hash === heldMail.hash && !lf0.sent, JSON.stringify(lf0));
+
+// 4d. An agent's retry of a screen job: refused before any screenshot, with nothing run.
+const scr = await runWorker([{ id: "rs-screen", title: "Look at the screen", details: "Describe the screen.", mode: "screen", status: "running", run_mode: "retry", followup_from: "agent helper" }]);
+const sf = scr.finished[0];
+check("the worker refuses an agent's retry of a screen job and takes no screenshot", sf?.status === "failed" && /Only .* can rerun or reply to a screen job/.test(sf.result) && /Nothing was run/.test(sf.result), JSON.stringify(sf));
 
 // 5. A job whose summary and files carry a key: the result, the stored files and the phone push are all redacted.
 const leak = await runWorker([{ id: "rs-leak", title: "debug config", details: "print the config", mode: "writing", status: "running", run_mode: "fresh" }],

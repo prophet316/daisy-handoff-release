@@ -109,6 +109,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
+- **Turned on for this chat.** Anthropic says to turn a connector on for each conversation: tap **+** at the lower left of the chat (or type /), choose **Connectors**, and turn **Nuff Said** on ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)).
 - **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + Add > Add custom connector**, click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Choose **No sign in** under **Authentication**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
 - **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.

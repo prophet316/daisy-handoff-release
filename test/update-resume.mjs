@@ -94,6 +94,7 @@ if (process.platform === "darwin") {
 pid, fd = pty.fork()
 if pid == 0: os.execv(sys.argv[1], sys.argv[1:])
 out, asked = b"", 0
+powers = [p for p in os.environ.get("POWER_ANSWERS", "").split("|") if p]
 while True:
     r, _, _ = select.select([fd], [], [], 60)
     if not r: break
@@ -103,14 +104,17 @@ while True:
     out += d
     while out.count(b"]: ") > asked:
         asked += 1
-        bell = b"turn it on [no" in out[:[i for i in range(len(out)) if out.startswith(b"]: ", i)][asked - 1]][-20:]
-        os.write(fd, (os.environ["BELL_ANSWER"] if bell else "").encode() + b"\\r")
+        before = out[:[i for i in range(len(out)) if out.startswith(b"]: ", i)][asked - 1]][-40:]
+        if b"turn it on [no" in before: a = os.environ["BELL_ANSWER"]
+        elif b"[yes" in before and powers: a = powers.pop(0)
+        else: a = ""
+        os.write(fd, a.encode() + b"\\r")
 sys.stdout.write(out.decode("utf8", "replace"))
 sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
-  const tty = async (bell) => {
+  const tty = async (bell, powers = "") => {
     fs.rmSync(nh, { recursive: true, force: true });
     return spawnSync("python3", ["-c", PTY, process.execPath, path.join(REPO, "install.mjs"), "--dry-run", "--name", "Tester", "--assistant", "Daisy", "--machine", "Mac", "--home", nh],
-      { encoding: "utf8", env: { ...process.env, BELL_ANSWER: bell }, timeout: 120_000 });
+      { encoding: "utf8", env: { ...process.env, BELL_ANSWER: bell, POWER_ANSWERS: powers }, timeout: 120_000 });
   };
   const nrec = () => { try { return JSON.parse(fs.readFileSync(path.join(nh, "Projects", "daisy-handoff", "install-receipt.json"), "utf8")); } catch { return {}; } };
   r = await tty("");
@@ -119,6 +123,21 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
   check(r.status === 0 && nrec().bell === true, "in a terminal, yes turns it on", r.stdout.slice(-300));
   r = await tty("sure");
   check(r.status === 0 && nrec().bell === false && /I didn't understand "sure"/.test(r.stdout) && /Type yes or no \[no\]/.test(r.stdout), "an answer that isn't yes or no is asked again, and Enter then leaves it off", r.stdout.slice(-400));
+  // The command line question: Enter is the documented default (on), only a clear yes is on, and "nope", "no thanks"
+  // and "No." are off. Anything else is asked again, and three unclear answers leave it off.
+  check(/Press Enter or type yes for on \(the default\)/.test(r.stdout) && nrec().powerLanes === true, "in a terminal, Enter at the command line question means on, and the question says so", r.stdout.slice(-300));
+  for (const no of ["nope", "no thanks", "No.", "nah", "No, thank you"]) {
+    r = await tty("", no);
+    check(r.status === 0 && nrec().powerLanes === false && !/I didn't understand/.test(r.stdout), `"${no}" at the command line question turns it off`, r.stdout.slice(-300));
+  }
+  r = await tty("", "yes");
+  check(r.status === 0 && nrec().powerLanes === true, "yes at the command line question turns it on", r.stdout.slice(-300));
+  r = await tty("", "sure|no");
+  check(r.status === 0 && nrec().powerLanes === false && /I didn't understand "sure"/.test(r.stdout) && /Type yes or no \(Enter means yes\)/.test(r.stdout), "an unclear answer at the command line question is asked again, and no then turns it off", r.stdout.slice(-400));
+  r = await tty("", "maybe|later|hmm");
+  check(r.status === 0 && nrec().powerLanes === false && /Still didn't understand that, so the command line and desktop control stay off/.test(r.stdout), "three unclear answers at the command line question leave it off", r.stdout.slice(-400));
+  r = await tty("no thanks");
+  check(r.status === 0 && nrec().bell === false && !/I didn't understand/.test(r.stdout), "\"no thanks\" at the bell question is a no, not asked again", r.stdout.slice(-300));
 }
 
 // A real update that stops at the Cloudflare sign-in says the old settings are still live (fake claude and npx; not on Windows).

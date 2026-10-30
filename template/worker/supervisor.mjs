@@ -32,10 +32,10 @@ const WORKER_TAG = CFG.workerTag || (resolve(cfgPath) === join(ROOT, "worker", "
 const WORKER_LABEL = SUP.workerLabel || "com.daisy.handoff-worker";
 const BELL_LABEL = SUP.bellLabel || "com.daisy.jarvis-bell";
 const POLL_MS = (SUP.pollSeconds || 2) * 1000;
-// Idle (nothing queued or running at the connector, no command in the last minute): a slower poll, to spend fewer of the
-// Cloudflare account's daily requests. Not set: always POLL_MS.
+// Idle (nothing queued or running at the connector, no stop asked for lately, no command in the last minute, and no job
+// processes left on this computer): a slower poll, to spend fewer of the Cloudflare account's daily requests. Not set: always POLL_MS.
 const IDLE_POLL_MS = (SUP.idlePollSeconds || SUP.pollSeconds || 2) * 1000;
-const BUSY_HOLD_MS = 60_000;
+const BUSY_HOLD_MS = (SUP.busyHoldSeconds ?? 60) * 1000;
 const KILL_GRACE_MS = (CFG.killGraceSeconds ?? 30) * 1000;
 const ALIVE_FILE = resolve(ROOT, CFG.aliveFile || "logs/.worker-alive");
 const BELL_HEALTH = SUP.bellHealthUrl || (CFG.bell?.url ? CFG.bell.url.replace(/\/notify$/, "/health") : null);
@@ -229,6 +229,10 @@ async function healWorker() {
   log(`worker self-heal: ${r.text}`);
 }
 
+function localJobs() {
+  try { return Object.keys(jobsRunning(WORKER_TAG, join(ROOT, "jobs"), processTable())).length > 0; } catch { return false; }
+}
+
 async function main() {
   log(`supervisor up (pid ${process.pid}, worker ${WORKER_LABEL}, tag ${WORKER_TAG}) -> ${CFG.base}; watching jobs (silence ${WATCH.silenceMinutes} min, check-in ${WATCH.checkinMinutes} min, ${WATCH.maxRecoveries} recoveries${WATCH.timeScale > 1 ? `, clock x${WATCH.timeScale}` : ""})`);
   const watch = SUP.watchJobs === false ? null : makeWatcher({ jobsRoot: join(ROOT, "jobs"), workerTag: WORKER_TAG, cfg: WATCH, api, log });
@@ -255,7 +259,9 @@ async function main() {
     if (Date.now() - lastBell > 30_000) { lastBell = Date.now(); watchBell().catch((e) => log("bell watch:", e.message)); }
     // Not awaited: a recovery's kill never holds up the command poll.
     if (watch && Date.now() - lastWatch >= sampleMs) { lastWatch = Date.now(); watch().catch((e) => log("watch:", e.message)); healWorker().catch((e) => log("worker heal:", e.message)); }
-    await sleep(inFlight.size || Date.now() < busyUntil ? POLL_MS : IDLE_POLL_MS);
+    // A job the connector already shows as stopped can still have processes here (a stop that didn't take): stay fast, so a
+    // force kill for it lands within seconds. One ps per idle poll, no Cloudflare requests.
+    await sleep(inFlight.size || Date.now() < busyUntil || localJobs() ? POLL_MS : IDLE_POLL_MS);
   }
 }
 

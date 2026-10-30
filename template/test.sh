@@ -20,6 +20,8 @@ if [ "$1" = "gate" ]; then
   "$NODE" test/sender.mjs | grep -v '^PASS' || rc=1
   echo "6 what a job can't change (hold record, lane and hook configs, steering inbox outside the job folder; agent runs don't publish):"
   "$NODE" test/run-state.mjs | grep -v '^PASS' || rc=1
+  echo "6b supervisor poll speed (slow when idle; fast after a stop or force kill, or while a job's processes are still alive):"
+  "$NODE" test/poll.mjs | grep -v '^PASS' || rc=1
   echo "7 schedule math in several time zones:"
   "$NODE" test/time-unit.mjs | grep -v '^PASS' || rc=1
   echo "8 command line lane, redaction, bell and bell startup prompt self-tests:"

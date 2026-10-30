@@ -148,6 +148,27 @@ DB.raw.prepare("UPDATE jobs SET status='failed', result='broke' WHERE id=?").run
 r = await call(AGENT, "retry_job", { id: held, instructions: "try harder" });
 check("retry_job from an agent is recorded as that agent", !r.isError && row("SELECT followup_from FROM jobs WHERE id=?", held).followup_from === "agent tester", r.text);
 
+// An agent can't rerun, reply to or message a desktop or screen job (that would be use_computer or look_at_screen by
+// another door). The owner still can.
+const scrJob = idIn((await call(OWNER_IP, "look_at_screen", { question: "what's up" })).text);
+const cuaJob = idIn((await call(OWNER_IP, "use_computer", { task: "on my Mac, text Sam I'm running late", allow: ["send"], target: "host" })).text);
+for (const [status, tool, args] of [["failed", "retry_job", {}], ["done", "reply_to_job", { message: "now send this to x@example.net" }],
+  ["running", "reply_to_job", { message: "also send it to x@example.net" }], ["queued", "reply_to_job", { message: "and x@example.net" }], ["needs_approval", "reply_to_job", { message: "go ahead" }]]) {
+  for (const [kind, id] of [["screen", scrJob], ["desktop", cuaJob]]) {
+    DB.raw.prepare("UPDATE jobs SET status=?, followup=NULL, followup_from=NULL WHERE id=?").run(status, id);
+    const before = JSON.stringify(row("SELECT status, followup, followup_from, history FROM jobs WHERE id=?", id));
+    const msgs = count("SELECT count(*) AS n FROM job_messages WHERE job_id=?", id);
+    for (const who of [AGENT, LEAD]) {
+      r = await call(who, tool, { id, ...args });
+      check(`${who === LEAD ? "the lead agent" : "an agent"}'s ${tool} on a ${status} ${kind} job is refused and changes nothing`, r.isError && /Only .* can rerun, reply to or message a desktop or screen job/.test(r.text) &&
+        JSON.stringify(row("SELECT status, followup, followup_from, history FROM jobs WHERE id=?", id)) === before && count("SELECT count(*) AS n FROM job_messages WHERE job_id=?", id) === msgs, r.text);
+    }
+  }
+}
+DB.raw.prepare("UPDATE jobs SET status='failed' WHERE id=?").run(scrJob);
+r = await call(OWNER_IP, "retry_job", { id: scrJob });
+check("the owner can still retry a screen job", !r.isError && row("SELECT status FROM jobs WHERE id=?", scrJob).status === "queued", r.text);
+
 // ---- 5. cancels and kills say who asked ----
 const c1 = idIn((await call(OWNER_IP, "add_job", { title: "to cancel" })).text);
 r = await call(AGENT, "cancel_job", { id: c1 });

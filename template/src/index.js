@@ -46,12 +46,14 @@ const ALARM_SILENT_MS = 10 * 60_000;   // no worker heartbeat this long: one ala
 const RESTART_GRACE_MS = 15 * 60_000;  // a planned .restart-worker gets this long before the alarm counts silence
 const ALARM_TO = "{{ALARM_TO}}";
 const ALARM_SET = !/@example\.invalid$/i.test(ALARM_TO);
+const STOP_BUSY_MS = 10 * 60_000;     // after a stop or force kill, the supervisor stays on its fast poll this long
 const STOP_CONFIRM_MS = 45_000;       // a stop the worker hasn't confirmed by then is marked cancelled anyway (and force-killed)
 const STALL_MS = 30 * 60_000;         // a running job with no step this long is flagged stalled (the supervisor recovers stalls itself after ~12 min)
 const STALL_PUSH_MS = 60 * 60_000;    // still no step after this long = self-recovery isn't working: pushed to {{OWNER}} once
 const RECOVERIES_MAX = 10;            // recovery records kept per run
 const CONTROL_WAIT_MS = 25_000;       // how long force_kill_job, restart_worker and worker_status wait for the supervisor
 const SUPERVISOR_SILENT_MS = 60_000;  // the supervisor polls every few seconds; silent this long = not running
+const CHECKIN_WRITE_MS = 10_000;      // the supervisor's check-in is rewritten once it's this old (one D1 write per idle poll)
 const SHELL_FRESH_MS = 30_000;        // run_command doesn't queue a command when the supervisor hasn't polled for this long
 const CONTROL_RESULT_MAX = 60_000;    // characters of a command's result kept (shell output is already capped on the Mac)
 const ALARM_FROM = "{{ASSISTANT}} alarm <{{ALARM_FROM}}>";
@@ -595,6 +597,12 @@ export function agentRefusal(who, name, args = {}) {
     return `Only {{OWNER}} can ask for a result to be published or shared, from {{HIS}} own Claude chat. This came from ${who.label}, so nothing was queued. Leave out publish_to and share_with.`;
   }
   return null;
+}
+// A desktop or screen job runs with what {{OWNER}} allowed for it (a send, say) and a screen job takes a new screenshot each
+// run, so an agent can't rerun, reply to or message one; that would be use_computer or look_at_screen by another door.
+export function rerunRefusal(who, j) {
+  if (who.owner || (j.mode !== "computer" && j.mode !== "screen")) return null;
+  return toolText(`Only {{OWNER}} can rerun, reply to or message a desktop or screen job, from {{HIS}} own Claude chat. This came from ${who.label}, so nothing changed.`, true);
 }
 const byText = (who) => who.owner ? "{{OWNER}}" : `${who.label} (not {{OWNER}})`;
 
@@ -1148,8 +1156,10 @@ async function replyToJob(env, args) {
   const found = await resolveJob(env, args, "reply");
   if (found.reply) return found.reply;
   const j = found.job, id = j.id;
+  const who = whoOf(env), refused = rerunRefusal(who, j);
+  if (refused) return refused;
   const now = new Date().toISOString();
-  const who = whoOf(env), from = notOwner(who), by = who.owner ? "{{OWNER}}" : `${who.label} (not {{OWNER}})`;
+  const from = notOwner(who), by = who.owner ? "{{OWNER}}" : `${who.label} (not {{OWNER}})`;
   if (j.status === "running") {
     // Steering: the worker hands the message to the agent at its next step, once, labeled with who sent it.
     await env.DB.batch([
@@ -1186,6 +1196,8 @@ async function retryJob(env, args) {
   const found = await resolveJob(env, args, "retry");
   if (found.reply) return found.reply;
   const j = found.job, id = j.id;
+  const refused = rerunRefusal(whoOf(env), j);
+  if (refused) return refused;
   if (j.status !== "failed" && j.status !== "cancelled") {
     return toolText(`"${j.title}" (id ${id}) is ${j.status}. Only failed or cancelled jobs can be retried${j.status === "done" || j.status === "needs_approval" ? "; use reply_to_job to ask for changes" : ""}.`, true);
   }
@@ -1971,7 +1983,9 @@ async function workerApi(route, request, env) {
     // The supervisor's poll (every few seconds): its heartbeat, the commands waiting for it, and stalled jobs to push.
     const b = (await body()) || {};
     const nowMs = Date.now(), prev = await getSetting(env, "supervisor");
-    if (!prev || nowMs - Date.parse(prev.at) > 20_000 || typeof b.status === "string") {
+    // Rewritten once it's CHECKIN_WRITE_MS old: with the 15-second idle poll that keeps it well under SHELL_FRESH_MS, so an idle
+    // run_command isn't refused with a false "nothing on the Mac is taking commands".
+    if (!prev || nowMs - Date.parse(prev.at) > CHECKIN_WRITE_MS || typeof b.status === "string") {
       await setSetting(env, "supervisor", { at: now, pid: Number(b.pid) || null, status: typeof b.status === "string" ? b.status.slice(0, 2000) : prev?.status || null });
     }
     await sweepStops(env, nowMs);
@@ -1981,8 +1995,10 @@ async function workerApi(route, request, env) {
     const { results: cmds } = await env.DB.prepare("UPDATE control SET taken_at=?1 WHERE taken_at IS NULL RETURNING id, kind, job_id, arg, created_at").bind(now).all();
     // Pushed to {{OWNER}} only when self-recovery hasn't fixed it within STALL_PUSH_MS.
     const stalled = (await stalledJobs(env, nowMs)).filter((j) => j.mins * 60_000 >= STALL_PUSH_MS && (!j.stall_alerted || j.stall_alerted < j.last_step)).map(({ id, title, mins }) => ({ id, title, mins }));
-    // busy: a job is queued or running, so the supervisor keeps its fast poll for stops and kills (idle, it polls less often).
-    const busy = !!(await env.DB.prepare("SELECT 1 AS b FROM jobs WHERE status IN ('queued','running') LIMIT 1").first());
+    // busy: a job is queued or running, or a stop or force kill was asked for in the last 10 minutes, so the supervisor keeps
+    // its fast poll for stops and kills (idle, it polls less often). A force kill after a stop that didn't take is then fast too.
+    const busy = !!(await env.DB.prepare("SELECT 1 AS b FROM jobs WHERE status IN ('queued','running') OR (cancel_requested=1 AND cancel_at > ?1) " +
+      "UNION ALL SELECT 1 FROM control WHERE kind IN ('stop','kill') AND created_at > ?1 LIMIT 1").bind(new Date(nowMs - STOP_BUSY_MS).toISOString()).first());
     return json({ commands: cmds.sort((a, b) => a.id - b.id).map((c) => ({ ...c, arg: c.arg ? JSON.parse(c.arg) : null })), stalled, busy });
   }
   if (route === "checkin") {

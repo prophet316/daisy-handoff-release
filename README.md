@@ -1,7 +1,5 @@
 # Nuff Said
 
-[![Latest release](https://img.shields.io/github/v/release/prophet316/daisy-handoff-release)](https://github.com/prophet316/daisy-handoff-release/releases/latest)
-[![Installer CI](https://github.com/prophet316/daisy-handoff-release/actions/workflows/installer.yml/badge.svg)](https://github.com/prophet316/daisy-handoff-release/actions/workflows/installer.yml)
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
 
 **Talk to Claude. Your computer does the work.**
@@ -50,6 +48,7 @@ Everything here is listed before you start, with what it costs.
 | Apple's Command Line Tools | Free |
 | Your Mac's administrator password | |
 | A Cloudflare account | Free plan is enough for one install. An idle install makes about 14,400 of the free plan's 100,000 Worker requests a day, which are shared across your Cloudflare account, and running jobs add more ([Cloudflare requests](#cloudflare-requests)). It uses 1 of the 5 cron triggers a free account allows. |
+| Workers AI on the same Cloudflare account | Free allowance is plenty | Finds a job by description: each job's title, details and result go to a Cloudflare text-embedding model on your account. If the free allowance runs out, finding a job falls back to keywords. |
 | CuaDriver (optional) | Free | For desktop control only. Needs macOS 14 (Sonoma) or newer. |
 | A [Composio](https://composio.dev) account (optional) | See Composio |
 
@@ -115,7 +114,7 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 
 | Feature | What it does for you |
 |---|---|
-| Your own connector | The installer puts your connector and its database on your own free Cloudflare account. No shared server: your jobs are stored on your own Cloudflare account, not on a server I run, so I can't see them. Your Claude chats and the bell's Remote Control session are stored by Anthropic like any other Claude conversation. |
+| Your own connector | The installer puts your connector and its database on your own free Cloudflare account. No shared server: your jobs are stored on your own Cloudflare account, not on a server I run, so I can't see them. To make finding a job by description work, job text also goes through Workers AI on your Cloudflare account. Your Claude chats and the bell's Remote Control session are stored by Anthropic like any other Claude conversation. |
 | No open ports | Your computer reaches out; nothing reaches in. That isn't the same as safe: your connector URL is the way in, so treat it like a password. |
 | Keys made on your computer | Three random keys (four with a lead agent), readable only by you, never printed or logged. |
 | Change a leaked key | If your connector URL or a key leaks, `node install.mjs --rotate-keys` changes the keys and lists every schedule, routine, running job and job waiting to run, so you can clear anything you didn't set up. |
@@ -153,7 +152,7 @@ You (voice or chat, Claude app)
    -> your connector (a Cloudflare Worker on YOUR free Cloudflare account)
    -> job queue
    <- worker on your computer checks for new jobs every 20 seconds
-      (a small supervisor checks for stop commands: every 15 seconds idle, every 2 while a job runs)
+      (a small supervisor checks for stop commands: every 15 seconds idle, every 2 while a job runs or for 10 minutes after a stop)
    -> Claude Code does the work, then you get a notification
 ```
 
@@ -203,7 +202,7 @@ Notifications are the only part that needs Remote Control. Starting and checking
 - **Jobs run as you.** A job runs Claude Code with your files and your sign-ins, so it can also read your connector URL and keys in the install folder. A job tricked by a web page or email could use them. Install it on a computer you're comfortable trusting it with.
 - **The command line and desktop control are on by default.** Claude can run shell commands on your computer from the conversation, take screenshots of your screen, and click and type on your desktop. To turn them off, answer no to the installer's question or run it with `--no-power-lanes`. Off, those tools are hidden from Claude and your computer refuses them too. Turning them off is not a sandbox: code and design jobs still run Claude Code with its normal tools, including its own command line, inside the folders you send them to. If you already installed, run `node install.mjs --update --no-power-lanes` from the release folder (or `--update --power-lanes` to turn them back on). Your connector URL stays the same.
 - **Send, post, spend and delete need your yes.** Jobs stop and ask before any of those unless your request asked for it. For desktop control, email and publishing, the built-in tools stop for your yes in code. A code or design job still has its own command line, though, so a job tricked by a web page or email could reach your desktop, Composio or other apps another way. For everything else a job does, the stop is an instruction to Claude, and a well-made trick can get past an instruction.
-- **Agents can't give that yes.** Every job, thread, schedule, routine, message, reply, approval, cancel and stop records who sent it. Your own Claude chat reaches the connector from Anthropic's servers, so it's recognized as you. A script or agent that calls the URL directly, like a job on your computer, is labeled as an agent. The connector refuses its approvals and its answers to a job waiting for your yes, and it can't publish, share, use the run-command tool, look at or use your desktop, or undo stop everything. What it starts is marked as an agent's, and the job is told that isn't your approval. Agents can still start work, including ordinary jobs that run Claude Code with its command line, message each other and keep working. This is a check on where the call comes from, not a login: anything else that reaches your connector through Anthropic, like someone else's Claude or the Claude API with any key, comes from the same addresses and counts as you. So could a job on your computer that starts its own Claude session using the connectors in your Claude account: jobs are started with those connectors switched off, but a job can switch them back on. That's why the URL is a password.
+- **Agents can't give that yes.** Every job, thread, schedule, routine, message, reply, approval, cancel and stop records who sent it. Your own Claude chat reaches the connector from Anthropic's servers, so it's recognized as you. A script or agent that calls the URL directly, like a job on your computer, is labeled as an agent. The connector refuses its approvals and its answers to a job waiting for your yes, and it can't publish, share, use the run-command tool, look at or use your desktop (including by retrying, replying to or messaging one of your desktop or screen jobs), or undo stop everything. What it starts is marked as an agent's, and the job is told that isn't your approval. Agents can still start work, including ordinary jobs that run Claude Code with its command line, message each other and keep working. This is a check on where the call comes from, not a login: anything else that reaches your connector through Anthropic, like someone else's Claude or the Claude API with any key, comes from the same addresses and counts as you. So could a job on your computer that starts its own Claude session using the connectors in your Claude account: jobs are started with those connectors switched off, but a job can switch them back on. That's why the URL is a password.
 - **Letting a lead agent approve for you is off.** `--lead-agent NAME` turns it on for one named agent. It can approve and answer jobs waiting for your yes, with limits: it can't approve sending a held email, and its approval never lets a desktop job send, post, buy or pay; those come back to you. It still can't publish, share, or use the run-command and desktop tools. Its approvals are logged as that agent, never as you, and a run it approved doesn't publish until you say so. The catch: it proves itself with a key file, `.lead-agent-key`, and any job on your computer can read that file, so a job that was tricked by a web page or email could approve for you too. Leave it off unless you need it. To turn it off: `node install.mjs --update --no-lead-agent`. Your connector URL stays the same.
 
 Read [SECURITY.md](SECURITY.md) for the details.
@@ -219,10 +218,10 @@ Read [SECURITY.md](SECURITY.md) for the details.
    node install.mjs
    ```
    It checks Node and Claude Code first and tells you exactly what's missing.
-3. Answer five questions (your name, what you call your assistant, what you call this computer, whether jobs may use the command line and control your desktop, and whether to turn on phone notifications; the command line question is yes unless you type no, and phone notifications stay off unless you type yes). Before the last question it says what the phone bell answers for you; see [Phone notifications and Remote Control](#phone-notifications-and-remote-control).
+3. Answer five questions (your name, what you call your assistant, what you call this computer, whether jobs may use the command line and control your desktop, and whether to turn on phone notifications; the command line question is on if you press Enter or type yes and off if you type no, and phone notifications stay off unless you type yes; any other answer is asked again). Before the last question it says what the phone bell answers for you; see [Phone notifications and Remote Control](#phone-notifications-and-remote-control).
 4. Sign in to Cloudflare when your browser opens.
 5. In Claude, go to **Customize > Connectors**, click **+ Add**, choose **Add custom connector**, name it **Nuff Said**, paste the URL the installer copied for you, and click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Under **Authentication**, choose **No sign in**, leave **Request headers** empty, and click **Add**. Your key is already in the URL. (Anthropic's steps: [Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).) Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
-6. Open the Claude app, start voice, and say: **"Check updates with Daisy."** (or whatever you named your assistant). You're still talking to Claude; the name tells Claude to use your connector.
+6. Open the Claude app. If **Nuff Said** isn't on for the chat yet, tap **+**, choose **Connectors** and turn it on (Anthropic says to turn a connector on for each conversation: [Use connectors](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)). Then start voice and say: **"Check updates with Daisy."** (or whatever you named your assistant). You're still talking to Claude; the name tells Claude to use your connector.
 7. If you turned on phone notifications: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
 
 **Pro and Max only for now.** On Team and Enterprise, an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
@@ -297,11 +296,16 @@ In Terminal, in an unzipped release folder (the newest you have; it finds your i
 node install.mjs --rotate-keys
 ```
 
-It changes the connector key first, on Cloudflare and on your Mac, so the old URL stops working right away. Then it lists every schedule, routine, running job and job waiting to run, with who set each one up, and asks whether to turn them all off and stop the jobs. Anyone who had your URL could have saved some through Claude, and then they show as yours, so check every one. The worker keeps running while you read the list. After that it changes the worker key and the lead agent key if you have one, and right away restarts the worker and supervisor on the new keys: jobs you chose to stop stay stopped, and other running jobs start again from the beginning. It checks that the new URL works and the old one is turned away, which takes a few seconds. `node install.mjs --clear-schedules` turns them all off later.
+It changes the connector key first, on Cloudflare and on your Mac, so the old URL stops working right away. Then it lists every schedule, routine, running job and job waiting to run, with who set each one up, and asks whether to turn them all off and stop the jobs. Anyone who had your URL could have saved some through Claude, and then they show as yours, so check every one. The worker keeps running while you read the list. After that it changes the worker key and the lead agent key if you have one, and right away restarts the worker and supervisor on the new keys: jobs you chose to stop stay stopped, and other running jobs start again from the beginning. It also deploys your connector's code again from the install folder. It checks that the new URL works and the old one is turned away, which takes a few seconds. `node install.mjs --clear-schedules` turns them all off later.
 
 Then in Claude, remove the old connector under **Customize > Connectors** and add it again with the new URL (it's on your clipboard; copy something else afterwards). Your job history stays.
 
-If the URL was out while the command line was on, assume someone could have run commands as you. Read `logs/shell.log` in your install folder for commands you didn't run, and check `crontab -l` and `~/Library/LaunchAgents` for anything you don't recognize. If you find any, treat the Mac as compromised. [SECURITY.md](SECURITY.md) has the same steps by hand.
+Changing keys locks out the old URL. It doesn't undo what someone already did with it. If the URL was out while the command line was on, assume someone ran commands as you and could read anything you can on the Mac: the Cloudflare sign-in the installer saved, your Claude Code sign-in, your GitHub login and other tokens. Then also:
+
+- **Cloudflare:** run `npx -y wrangler@4.151.3 logout` in the install folder; in the Cloudflare dashboard revoke other sessions (**My Profile > Sessions**), roll your API tokens (**My Profile > API Tokens**) and read the **Audit Logs** for changes you didn't make; sign in again with `npx -y wrangler@4.151.3 login` and run `node install.mjs --update` from a fresh download of the release.
+- **Claude:** on claude.ai, **Settings > Account**, log out of all sessions (that logs Claude Code out too), then sign in again.
+- **GitHub:** revoke **GitHub CLI** at github.com/settings/applications (`gh auth logout` alone doesn't revoke anything) and delete tokens you don't need.
+- **Logs:** `logs/shell.log` can be changed by the same commands. The connector keeps its own list on Cloudflare; [SECURITY.md](SECURITY.md#if-the-command-line-was-on) has the command to read it, what else to check, and every step above in full. Finding nothing doesn't prove nothing happened.
 
 ---
 
@@ -333,7 +337,7 @@ Nuff Said removes that switch. The idea stays in the conversation and the work g
 
 ## Run the tests
 
-Everything here runs offline and deploys nothing. The tests need Node 22.13 or newer. If this Mac also has a real install, run `--update --no-bell` and `--uninstall` against a `--home` test folder only with `--dry-run`: launchd acts on the label inside the plist, and the labels are the same, so a real run would stop your real install's background services.
+Everything here runs offline and deploys nothing. The tests need Node 22.13 or newer. If this Mac also has a real install, run `--update --no-bell` and `--uninstall` against a `--home` test folder only with `--dry-run`: launchd acts on the label inside the plist, and the labels are the same, so a real run would stop your real install's background services. For the same reason, if you start a test install's supervisor by hand, first set `supervisor.workerLabel` and `supervisor.bellLabel` in its `worker/config.json` to names of your own; otherwise its self-heal can restart your real worker.
 
 ```bash
 # in the release folder (the zip has the test folder too): a throwaway install, then its checks

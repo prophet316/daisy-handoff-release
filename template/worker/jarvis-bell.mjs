@@ -44,6 +44,10 @@ const child = spawn("/usr/bin/python3", args, { cwd: HOME_DIR, stdio: ["pipe", "
   // Nobody watches this pseudo-terminal, but our startup keystrokes make Claude think {{OWNER}} is "active in this terminal",
   // and PushNotification then skips the phone. This turns that presence check off for this session only.
   CLAUDE_CODE_DISABLE_NOTIFICATION_PRESENCE_CHECK: "1",
+  // Anthropic: "On the v2 runtime, a channel server that negotiates MCP protocol revision 2026-07-28 can't deliver channel
+  // messages ... To keep a stdio channel server on the earlier handshake, set MCP_PROTOCOL_NEGOTIATION to legacy, which keeps
+  // every server on it" (code.claude.com/docs/en/mcp). This session loads only daisy-bell. Claude Code before v2.1.221 ignores it.
+  MCP_PROTOCOL_NEGOTIATION: "legacy",
 } });
 log(`bell session starting in ${HOME_DIR}`);
 

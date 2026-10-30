@@ -210,6 +210,8 @@ export function cuaAllow(job, jobDir, approved, state = jobDir) {
   let allow = [];
   try { allow = JSON.parse(job.allow || "[]"); } catch {}
   allow = allow.filter((k) => LANE_KINDS.includes(k));
+  // An agent's reply or retry (followup_from on a run that isn't an approval) keeps nothing {{OWNER}} allowed the first time.
+  if (job.followup_from && !approved) allow = [];
   let held = [];
   if (approved) {
     held = heldKinds(state).filter((k) => [...LANE_KINDS, "charge", "personal"].includes(k)); // charge and personal come only from an approved hold
@@ -222,6 +224,14 @@ export function cuaAllow(job, jobDir, approved, state = jobDir) {
     if (job.followup_from) held = held.filter((k) => !OWNER_ONLY_KINDS.includes(k));
   }
   return { allow: [...new Set([...allow, ...held])], held: [...new Set(held)] };
+}
+
+// A screen run by an agent's reply or retry would take a new screenshot for it, and a desktop run would act on {{OWNER}}'s
+// desktop: only {{OWNER}} can ask for those. A lead agent's approval of a held desktop step is checked by cuaAllow instead.
+export function agentRerunRefusal(job) {
+  if (!job.followup_from || (job.mode !== "screen" && job.mode !== "computer")) return null;
+  if (job.mode === "computer" && job.run_mode === "approved") return null;
+  return `Only {{OWNER}} can rerun or reply to a ${job.mode === "screen" ? "screen" : "desktop"} job, and ${job.followup_from} asked for this run.`;
 }
 
 // The approve-card line for a purchase held at the charge step, or null. When the gate itself held a charge (its record
@@ -789,6 +799,13 @@ async function handle(job) {
   mkdirSync(dir, { recursive: true });
   if (job.run_mode === "publish") return publishOnly(job, dir);
   if (job.run_mode === "approved" && job.held) return job.followup_from ? holdForOwner(job, dir) : sendApproved(job, dir);
+  // The connector refuses an agent's rerun of a desktop or screen job; this is the worker's own check, in case one gets through.
+  const agentRerun = agentRerunRefusal(job);
+  if (agentRerun) {
+    log(`job ${job.id} refused: ${job.followup_from} asked for a ${job.mode} rerun`);
+    await api("finish", { id: job.id, status: "failed", result: `${agentRerun} Nothing was run.` });
+    return notify(bellEvent(job, "failed", agentRerun));
+  }
   const off = powerRefusal(CFG, { mode: job.mode });
   if (off) {
     log(`job ${job.id} refused: power lanes are off (${job.mode})`);

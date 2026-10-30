@@ -49,17 +49,45 @@ const UPGRADES = [
   "ALTER TABLE routines ADD COLUMN created_by TEXT",
 ];
 const LEAD_WARNING = (name) => [
-  `lead agent "${name}" can approve held actions for you (sends, posts, spending, deletes). Off unless you ask for it.`,
+  `lead agent "${name}" can approve held actions for you, such as deletes, but never a held email, send, post or purchase. Off unless you ask for it.`,
   "Every approval it gives is logged as that agent, never as you. It proves itself with .lead-agent-key, but any job on",
   "this computer can read that file, so a job that was tricked could approve for you too. Turn it on only if you accept that.",
 ];
 const POWER_WARNING = [
-  "Read this first. This ships with the command line and desktop control turned on, the way the author uses it.",
+  "Read this first. This ships with the command line and desktop control turned on.",
   "That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps,",
   "click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or",
   "email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you",
   "asked for them. That lowers the risk but doesn't remove it. To turn it off, answer no here or rerun the installer",
   "with --no-power-lanes. Install it only on a computer you trust it with. Desktop control is Mac only for now.",
+];
+// Says plainly that Enter means on, and what on means for a leaked URL.
+const POWER_QUESTION = "Let jobs use the command line and control this computer's desktop? Anyone with your connector URL could then " +
+  "run commands here. Press Enter or type yes for on (the default), or type no to leave them off";
+// A clear yes is true, a clear no is false, anything else is null (ask again). Trailing dots and commas don't count.
+function yesNo(a) {
+  const w = String(a).toLowerCase().replace(/[.!,]+/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(y|yes)$/.test(w)) return true;
+  if (/^(n|no|nope|nah|no thanks|no thank you|off)$/.test(w)) return false;
+  return null;
+}
+// After --rotate-keys: what a leaked URL with the command line on could reach, and how to take it back. Same substance as
+// SECURITY.md ("If your connector URL or a key leaks") and the README.
+const LEAK_STEPS = (dir, db) => [
+  "  2. If the URL was out while the command line was on, assume someone ran commands as you. They could read anything you",
+  "     can: the Cloudflare sign-in wrangler saved, your Claude Code sign-in, GitHub and other tokens and keys on this computer.",
+  `     In ${dir}:`,
+  `     - Cloudflare: run npx -y ${WRANGLER} logout, then in the Cloudflare dashboard revoke other sessions (My Profile >`,
+  "       Sessions), roll your API tokens (My Profile > API Tokens), and read the Audit Logs for changes you didn't make.",
+  `       Sign in again with npx -y ${WRANGLER} login and run node install.mjs --update from a fresh download of the release.`,
+  "     - Claude: on claude.ai, Settings > Account, log out of all sessions (that logs Claude Code out too), then sign in again.",
+  "     - GitHub: revoke GitHub CLI at github.com/settings/applications and any tokens you don't need at github.com/settings/tokens.",
+  "     - Change any other key or token kept in a file on this computer.",
+  `  3. ${path.join("logs", "shell.log")} lists commands run here, but a command could have changed it. The connector keeps its own`,
+  `     list on Cloudflare: npx -y ${WRANGLER} d1 execute ${db} --remote --command "SELECT created_at, arg FROM control WHERE kind='shell' ORDER BY id"`,
+  "     (someone with your Cloudflare sign-in could change that too). Check crontab -l, ~/Library/LaunchAgents, Login Items,",
+  "     ~/.zshrc and ~/.ssh/authorized_keys. Finding nothing doesn't prove nothing happened; if in doubt, treat this computer as",
+  "     compromised. SECURITY.md has every step.",
 ];
 // Shown at install, Mac only: what the phone bell answers for you. Same substance as README, SECURITY.md and RELEASE_NOTES.md.
 const BELL_NOTE = [
@@ -239,20 +267,27 @@ async function main() {
   const keepPower = prev && !has("no-power-lanes") && !has("power-lanes") ? prevPower : null;
   if (prev && keepPower === null && !has("no-power-lanes") && !has("power-lanes")) die("couldn't tell whether your install had the command line and desktop control on. Run the update again with --no-power-lanes or --power-lanes. Nothing was changed.");
   if (!has("no-power-lanes") && keepPower !== false) for (const l of POWER_WARNING) say(`  ${l}`);
-  const power = keepPower ?? (!has("no-power-lanes") && (has("power-lanes") ||
-    !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes"))));
+  // Enter (or --yes) takes the documented default, on. Only a clear yes turns it on, and a clear no ("no", "nope",
+  // "no thanks") leaves it off. Anything else is asked again, like the bell question, and after three tries it's off.
+  let power = keepPower ?? (has("no-power-lanes") ? false : has("power-lanes") ? true : null);
+  for (let i = 0; power === null; i++) {
+    const a = String(await ask(i ? "Command line and desktop control? Type yes or no (Enter means yes)" : POWER_QUESTION, "yes")).trim();
+    power = yesNo(a);
+    if (power === null && i === 2) { power = false; say("  Still didn't understand that, so the command line and desktop control stay off. Turn them on later with --update --power-lanes."); }
+    else if (power === null) say(`  I didn't understand "${a.slice(0, 20)}". Type yes to turn the command line and desktop control on, or no to leave them off.`);
+  }
   // The phone bell: off unless the person says yes (--bell, or yes to the question), after reading what it answers for them.
   // --yes takes the default, which is off. An update keeps last time's answer; an install from before the question
   // (no answer on record) gets the question once, so an update never turns it on, or keeps it on, without a yes.
   const prevBell = prev && typeof prev.receipt.bell === "boolean" ? prev.receipt.bell : null;
   let bell = MAC && (has("no-bell") ? false : has("bell") ? true : prevBell);
   if (MAC && (bell === null || (has("bell") && prevBell !== true))) for (const l of BELL_NOTE) say(`  ${l}`);
-  // Only yes turns it on and only no (or Enter) leaves it off; anything else is asked again, then taken as no.
+  // Only a clear yes turns it on and a clear no (or Enter) leaves it off; anything else is asked again, then taken as no.
   for (let i = 0; bell === null; i++) {
     const a = String(await ask(i ? "Turn on phone notifications? Type yes or no" : BELL_QUESTION, "no")).trim();
-    if (/^y(es)?$/i.test(a)) bell = true;
-    else if (/^n(o)?$/i.test(a) || i === 2) { bell = false; if (!/^n(o)?$/i.test(a)) say("  Still didn't understand that, so phone notifications stay off. Turn them on later with --update --bell."); }
-    else say(`  I didn't understand "${a.slice(0, 20)}". Type yes to turn phone notifications on, or no to leave them off.`);
+    bell = yesNo(a);
+    if (bell === null && i === 2) { bell = false; say("  Still didn't understand that, so phone notifications stay off. Turn them on later with --update --bell."); }
+    else if (bell === null) say(`  I didn't understand "${a.slice(0, 20)}". Type yes to turn phone notifications on, or no to leave them off.`);
   }
   ask.close();
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
@@ -386,7 +421,7 @@ async function handOff(dir, urlFile, assistant, bell) {
   say(`  1. In Claude (claude.ai or the desktop app): Customize > Connectors > + Add > Add custom connector.`);
   say(`  2. Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue, then Continue again on the screen with the settings Claude detected.`);
   say(`     Under Authentication choose "No sign in", leave Request headers empty, and click Add.`);
-  say(`  3. On your phone, open the Claude app, start voice, and say: "Check updates with ${assistant}."`);
+  say(`  3. On your phone, open the Claude app. If Nuff Said isn't on for the chat, tap + > Connectors and turn it on. Then start voice and say: "Check updates with ${assistant}."`);
   if (MAC && bell) {
     say(`  For a phone notification when a job finishes (once, about a minute):`);
     say(`  4. On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`);
@@ -531,6 +566,13 @@ async function rotateKeys() {
     step("New worker key and restart", STEPS);
     newKeys([["WORKER_KEY", ".worker-key"], ...(fs.existsSync(path.join(dir, ".lead-agent-key")) ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])], false);
     note("the bell key (.bell-key) only works from this computer, so it stays");
+    // Someone who had the URL with the command line on could have used the Cloudflare sign-in saved on this computer to put
+    // their own code on the connector, and a key change alone keeps that code. Deploy the install folder's code again.
+    if (DRY) skip("deploying the connector code again (dry run)");
+    else {
+      const dep = W(["deploy"]);
+      (dep.status === 0 ? ok : note)(dep.status === 0 ? "connector code deployed again from the install folder" : `couldn't deploy the connector code again (${tail(dep)}); run node install.mjs --update`);
+    }
     if (MAC && !DRY && !SIM && !has("no-start")) {
       for (const label of ["com.daisy.handoff-worker", "com.daisy.supervisor"]) {
         const r = run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${label}`]);
@@ -552,9 +594,7 @@ async function rotateKeys() {
     say("\n  Next:");
     say("  1. In Claude, remove the old connector under Customize > Connectors and add it again with the new URL" +
       (DRY || SIM ? " (in .connector-url)." : `${copyUrl(dir) ? " (it's on your clipboard; copy something else afterwards)." : " (in .connector-url)."}`));
-    say("  2. If the URL was out while the command line was on, assume someone could have run commands as you. Read");
-    say(`     ${path.join(dir, "logs", "shell.log")} for commands you didn't run, and check \`crontab -l\` and ~/Library/LaunchAgents`);
-    say("     for anything you don't recognize. If you find any, treat this computer as compromised.");
+    for (const l of LEAK_STEPS(dir, db)) say(l);
   }
   say(`\n${DRY ? "DRY RUN COMPLETE" : "DONE"}  (${dir})`);
 }
