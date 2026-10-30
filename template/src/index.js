@@ -45,6 +45,7 @@ const HOST_WORDS = /\b(on|of|from|at) my (own |real )?(mac|screen|desktop|comput
 const ALARM_SILENT_MS = 10 * 60_000;   // no worker heartbeat this long: one alarm email
 const RESTART_GRACE_MS = 15 * 60_000;  // a planned .restart-worker gets this long before the alarm counts silence
 const ALARM_TO = "{{ALARM_TO}}";
+const ALARM_SET = !/@example\.invalid$/i.test(ALARM_TO);
 const STOP_CONFIRM_MS = 45_000;       // a stop the worker hasn't confirmed by then is marked cancelled anyway (and force-killed)
 const STALL_MS = 30 * 60_000;         // a running job with no step this long is flagged stalled (the supervisor recovers stalls itself after ~12 min)
 const STALL_PUSH_MS = 60 * 60_000;    // still no step after this long = self-recovery isn't working: pushed to {{OWNER}} once
@@ -583,12 +584,12 @@ const OWNER_CALLER = { owner: true, lead: false, name: "{{OWNER}}", label: "{{OW
 const whoOf = (env) => env.WHO || OWNER_CALLER;
 const notOwner = (who) => who.owner ? null : who.label;
 
-// What an agent (not {{OWNER}}, and not the lead agent {{HE}} turned on) can't do at all: run commands, look at or drive the
-// desktop, publish or share, or undo stop_all. Everything else it starts, schedules or changes is recorded as that agent's,
+// What an agent can't do at all: run commands, look at or drive the desktop, publish or share, or undo stop_all. That
+// includes the lead agent: it may approve for {{OWNER}} (approve_job and replies check it), nothing more. Everything else it starts, schedules or changes is recorded as that agent's,
 // never as {{OWNER}}'s, and a job an agent started treats its request as not {{OWNER}}'s approval.
 const OWNER_TOOLS = ["run_command", "command_result", "look_at_screen", "use_computer", "publish_job", "resume_all"];
 export function agentRefusal(who, name, args = {}) {
-  if (who.owner || who.lead) return null;
+  if (who.owner) return null;
   if (OWNER_TOOLS.includes(name)) return `Only {{OWNER}} can use ${name}, from {{HIS}} own Claude chat. This came from ${who.label}, so nothing ran.`;
   if (args.publish_to !== undefined || args.share_with !== undefined) {
     return `Only {{OWNER}} can ask for a result to be published or shared, from {{HIS}} own Claude chat. This came from ${who.label}, so nothing was queued. Leave out publish_to and share_with.`;
@@ -1684,11 +1685,13 @@ export async function healthLines(env) {
   for (const j of await stalledJobs(env)) add(false, `job "${j.title}" (id ${j.id}) ${stalledNote(j)}`, `stalled job ${j.id}`);
   const c = h?.checks || {};
   const one = (k, label) => { if (c[k]) add(c[k].ok, `${label}: ${c[k].text}`, label); else lines.push(`UNKNOWN: ${label} (no report yet)`); };
-  one("bell", "phone bell"); if (VM_LANE) one("vm", "VM lane"); one("host", "host lane"); one("disk", "disk"); one("claude", "Claude sign-in"); one("composio", "Composio sign-ins");
+  one("bell", "phone bell"); if (VM_LANE) one("vm", "VM lane"); if (powerOn(env)) one("host", "host lane"); one("disk", "disk"); one("claude", "Claude sign-in"); one("composio", "Composio sign-ins");
   if (h?.at) lines.push(`(worker checks from ${ago(h.at)})`);
   lines.push(paused ? `PAUSED since ${localTime(paused.at)} (stop_all${paused.by ? ` by ${paused.by}` : ""}); resume_all to undo.` : "Not paused.");
-  lines.push(`Dead-man alarm: ${env.RESEND_KEY ? "armed (email via Resend)" : "NOT armed: no email key set ({{OWNER}}'s step)"}${alarm?.state === "alerted" ? `, alarm sent ${localTime(alarm.at)}` : ""}.`);
-  if (!env.RESEND_KEY) problems.push("alarm unarmed");
+  // The dead-man alarm is optional and the installer doesn't set it up: only a problem when an alarm address was set.
+  if (!ALARM_SET) lines.push("Dead-man alarm: not set up (optional).");
+  else lines.push(`Dead-man alarm: ${env.RESEND_KEY ? "armed (email via Resend)" : "NOT armed: no email key set ({{OWNER}}'s step)"}${alarm?.state === "alerted" ? `, alarm sent ${localTime(alarm.at)}` : ""}.`);
+  if (ALARM_SET && !env.RESEND_KEY) problems.push("alarm unarmed");
   const err = await env.DB.prepare("SELECT id, title, result, finished_at FROM jobs WHERE status='failed' ORDER BY finished_at DESC LIMIT 1").first();
   lines.push(err ? `Last error: ${err.title} (id ${err.id}, ${localTime(err.finished_at)}): ${String(err.result || "").slice(0, 160)}` : "No failed jobs.");
   return { lines, problems, paused: !!paused };

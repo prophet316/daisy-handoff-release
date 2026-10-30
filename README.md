@@ -4,14 +4,14 @@
 [![Installer CI](https://github.com/prophet316/daisy-handoff-release/actions/workflows/installer.yml/badge.svg)](https://github.com/prophet316/daisy-handoff-release/actions/workflows/installer.yml)
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
 
-**Talk to Claude. Your computer does the work. You never leave Claude.**
+**Talk to Claude. Your computer does the work.**
 
-Daisy Handoff works inside the Claude app you already use. It's an independent project, not made or endorsed by Anthropic: one custom connector you add in Claude. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the worker on your computer that picks up each job.
+Daisy Handoff works inside the Claude app you already use. It's one custom connector you add in Claude, and an independent project, not made or endorsed by Anthropic. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the worker on your computer that picks up each job.
 
-Setup takes a Terminal installer and a free Cloudflare account. After that, you stay in Claude. Mac today; Windows is in testing and isn't in this release.
+Setup takes a Terminal installer and a free Cloudflare account. After that, day to day, you stay in Claude. Mac today; Windows is in testing and isn't in this release.
 
 > [!WARNING]
-> **Read this first.** Daisy Handoff ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage: anyone with the URL can use it through Claude or the Claude API, and with the command line on that includes running commands on your computer and reading the result. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. Desktop control, email and publishing are held in code; for everything else a job does, the stop is an instruction to Claude. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run it with `--no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
+> **Read this first.** Daisy Handoff ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage: anyone with the URL can use it through Claude or the Claude API, and with the command line on that includes running commands on your computer and reading the result. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. Daisy's own desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. For everything else a job does, the stop is an instruction to Claude. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run it with `--no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
 
 <!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request, start to finish." -->
 
@@ -27,7 +27,7 @@ Setup takes a Terminal installer and a free Cloudflare account. After that, you 
 - "Every weekday at 7, send me a news brief."
 - "Stop everything."
 
-Everything you'd want from one conversation: jobs, threads, routines, schedules, approvals, a daily digest, a health check and an emergency stop, plus the command line and desktop control (31 tools; 27 with those turned off).
+Everything you'd want from one conversation: jobs, threads, routines, schedules, approvals, a daily digest, a health check and an emergency stop, plus the command line and desktop control if you turn them on.
 
 <!-- TODO(SCREENSHOTS_PLAN S6): readme/06-whats-running.png, the "What's running" answer in the Claude app. -->
 
@@ -40,14 +40,14 @@ Everything here is listed before you start, with what it costs.
 | What | Cost | Notes |
 | ---- | ---- | ----- |
 | A Mac on macOS 13 (Ventura) or newer | |
-| A paid Claude plan: Pro, Max, Team or Enterprise | Pro is $20 a month ($17 a month billed yearly); Max starts at $100 a month ([Claude pricing](https://claude.com/pricing)) |
+| A paid Claude plan: Pro or Max (see the note on Team and Enterprise in [Install](#install-mac)) | Pro is $20 a month ($17 a month billed yearly); Max starts at $100 a month ([Claude pricing](https://claude.com/pricing)) |
 | Claude Code, installed and signed in on the Mac | Included with the plan | Install it with the command on [Anthropic's setup page](https://code.claude.com/docs/en/setup) (`curl -fsSL https://claude.ai/install.sh \| bash`), open a new Terminal window, run `claude`, and type `/login`. Sign in with your Claude plan, not an API key. If `claude` says command not found, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md#claude-command-not-found). |
 | The Claude app on your phone | Free |
-| Node 22 or newer | Free |
+| Node 22.13 or newer | Free |
 | Apple's Command Line Tools | Free |
 | Your Mac's administrator password | |
 | A Cloudflare account | Free plan is enough |
-| CuaDriver (optional) | Free |
+| CuaDriver (optional) | Free | For desktop control only. Needs macOS 14 (Sonoma) or newer. |
 | A [Composio](https://composio.dev) account (optional) | See Composio |
 
 ---
@@ -71,7 +71,7 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 
 | Feature | What it does for you |
 |---|---|
-| What's new | At the start of a chat, Claude tells you what finished or needs you since you last heard. |
+| What's new | Ask "what's new?" and Claude tells you what finished or needs you since you last heard. It's set up to check at the start of a chat, but Claude decides when to call it. |
 | What's running | Ask from any Claude chat and hear every job and its status. |
 | Read what a job made | Claude reads the files a job made, or a live view of one still running. |
 | Phone notification when a job is done | Your phone gets a Claude app notification with the result. See [Phone notifications and Remote Control](#phone-notifications-and-remote-control). |
@@ -82,8 +82,8 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 
 | Feature | What it does for you |
 |---|---|
-| Asks before it acts | Sending, posting, spending, deleting and access changes stop and wait for your yes, unless your request asked for them. Desktop control, email and publishing are held in code; for everything else a job does, the stop is an instruction to Claude. It lowers the risk; it doesn't remove it. |
-| Only you can say yes | Your own Claude chat is recognized as you, by the Anthropic address it calls from. Agents and scripts that call the URL directly are labeled as agents: they can't approve, publish, share, run commands or use your desktop, and the jobs, schedules and routines they start are marked as theirs, not yours. It's a check on where the call comes from, not a login; see [SECURITY.md](SECURITY.md). |
+| Asks before it acts | Sending, posting, spending, deleting and access changes stop and wait for your yes, unless your request asked for them. Daisy's own desktop control, email and publishing tools are held in code; a job's command line is held only by an instruction to Claude. It lowers the risk; it doesn't remove it. |
+| Agents can't approve for you | Your own Claude chat is recognized as you, by the Anthropic address it calls from. Agents and scripts that call the URL directly are labeled as agents: they can't approve, publish, share, or use the run-command and desktop tools. They can still start ordinary jobs, which run Claude Code with its command line; those jobs are marked as theirs and told it isn't your approval. It's a check on where the call comes from, not a login; see [SECURITY.md](SECURITY.md). |
 | Stop everything | Two words halt every running job and pause the queue and schedules. |
 | Force-stop and restart | Stops a stuck job and everything it started, or restarts the worker, even if the worker is frozen. |
 | Off switch for the powerful parts | Answer no at install, or use `--no-power-lanes`, and the command line and desktop control are gone. Not a sandbox: normal Claude Code jobs still run. |
@@ -115,7 +115,7 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 | Your own connector | The installer puts your connector and its database on your own free Cloudflare account. No shared server, so nobody else sees your jobs, including the author. |
 | No open ports | Your computer reaches out; nothing reaches in. |
 | Keys made on your computer | Three random keys, readable only by you, never printed or logged. |
-| Change a leaked key | If your connector URL or a key leaks, `node install.mjs --rotate-keys` changes the keys and lists every schedule, routine and waiting job, so you can clear anything you didn't set up. |
+| Change a leaked key | If your connector URL or a key leaks, `node install.mjs --rotate-keys` changes the keys and lists every schedule, routine, running job and job waiting to run, so you can clear anything you didn't set up. |
 
 ### Setup and upkeep
 
@@ -126,7 +126,7 @@ Everything here runs on the Mac. A Windows worker is in testing and isn't in thi
 | Doctor | `node doctor.mjs` finds common problems, says what to do, and saves a report with your keys removed. |
 | Starts by itself | The worker starts at login and comes back after a crash. |
 | Update in place | `node install.mjs --update` keeps your keys, connector URL, database and job folders, so there's nothing to redo in Claude. |
-| Clean uninstall | Removes everything, on your computer and on Cloudflare. |
+| Uninstall | A short set of steps removes everything, on your computer and on Cloudflare. |
 | Works with your other connectors | Calendar, mail and every other connector you use still work in the same chat. |
 | Publish to Google Docs or Drive, send email | A finished job can publish or share its result, or send an email you approved. Needs a Composio account. |
 
@@ -173,7 +173,6 @@ For that to work:
 - Notifications are allowed for the Claude app on your phone.
 - Claude Code is signed in with your Claude plan, not an API key. Remote Control doesn't work with API keys.
 - Push is on in Claude Code: run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`.
-- On Team and Enterprise, an Owner has turned on Remote Control and channels.
 
 Notifications are the only part that needs Remote Control. Starting and checking jobs works without it.
 
@@ -184,9 +183,9 @@ Notifications are the only part that needs Remote Control. Starting and checking
 - **Treat the connector URL and its key like a password.** Anyone who has the URL can use your connector through their own Claude or the Claude API, and those calls come from Anthropic's servers just like yours, so they count as you. With the command line on (the default), that means running any command on your computer and reading the result, right away, with no approval step. The key is the long part near the end of the URL. It's saved in `.connector-url` and `.connector-key` in your install folder, readable only by you. Keep both out of screenshots, screen recordings, chats, issues and bug reports.
 - **Jobs run as you.** A job runs Claude Code with your files and your sign-ins, so it can also read your connector URL and keys in the install folder. A job tricked by a web page or email could use them. Install it on a computer you're comfortable trusting it with.
 - **The command line and desktop control are on by default.** Claude can run shell commands on your computer from the conversation, take screenshots of your screen, and click and type on your desktop. To turn them off, answer no to the installer's question or run it with `--no-power-lanes`. Off, those tools are hidden from Claude and your computer refuses them too. Turning them off is not a sandbox: code and design jobs still run Claude Code with its normal tools, including its own command line, inside the folders you send them to. If you already installed, run `node install.mjs --update --no-power-lanes` from the release folder (or `--update --power-lanes` to turn them back on). Your connector URL stays the same.
-- **Send, post, spend and delete need your yes.** Jobs stop and ask before any of those unless your request asked for it. For desktop control, email and publishing, the stop is enforced in code: the job can't do those itself. For everything else a job does with its command line, the stop is an instruction to Claude, and a well-made trick can get past an instruction.
-- **Only you can give that yes.** Every job, thread, schedule, routine, message, reply, approval, cancel and stop records who sent it. Your own Claude chat reaches the connector from Anthropic's servers, so it's recognized as you. A script or agent that calls the URL directly, like a job on your computer, is labeled as an agent. The connector refuses its approvals and its answers to a job waiting for your yes, and it can't publish, share, run commands, look at or use your desktop, or undo stop everything. What it starts is marked as an agent's, and the job is told that isn't your approval. Agents can still start work, message each other and keep working. This is a check on where the call comes from, not a login: anything else that reaches your connector through Anthropic, like someone else's Claude or the Claude API with any key, comes from the same addresses and counts as you. That's why the URL is a password.
-- **Letting a lead agent approve for you is off.** `--lead-agent NAME` turns it on for one named agent. Its approvals are logged as that agent, never as you. The catch: it proves itself with a key file, `.lead-agent-key`, and any job on your computer can read that file, so a job that was tricked by a web page or email could approve for you too. Leave it off unless you need it.
+- **Send, post, spend and delete need your yes.** Jobs stop and ask before any of those unless your request asked for it. For desktop control, email and publishing, the tools Daisy gives Claude stop for your yes in code. A code or design job still has its own command line, though, so a job tricked by a web page or email could reach your desktop, Composio or other apps another way. For everything else a job does, the stop is an instruction to Claude, and a well-made trick can get past an instruction.
+- **Agents can't give that yes.** Every job, thread, schedule, routine, message, reply, approval, cancel and stop records who sent it. Your own Claude chat reaches the connector from Anthropic's servers, so it's recognized as you. A script or agent that calls the URL directly, like a job on your computer, is labeled as an agent. The connector refuses its approvals and its answers to a job waiting for your yes, and it can't publish, share, run commands, look at or use your desktop, or undo stop everything. What it starts is marked as an agent's, and the job is told that isn't your approval. Agents can still start work, message each other and keep working. This is a check on where the call comes from, not a login: anything else that reaches your connector through Anthropic, like someone else's Claude or the Claude API with any key, comes from the same addresses and counts as you. So could a job on your computer that starts its own Claude session using the connectors in your Claude account: jobs are started with those connectors switched off, but a job can switch them back on. That's why the URL is a password.
+- **Letting a lead agent approve for you is off.** `--lead-agent NAME` turns it on for one named agent. It can approve and answer jobs waiting for your yes, and nothing more: it still can't publish, share, or use the run-command and desktop tools. Its approvals are logged as that agent, never as you. The catch: it proves itself with a key file, `.lead-agent-key`, and any job on your computer can read that file, so a job that was tricked by a web page or email could approve for you too. Leave it off unless you need it.
 
 Read [SECURITY.md](SECURITY.md) for the details.
 
@@ -203,9 +202,11 @@ Read [SECURITY.md](SECURITY.md) for the details.
    It checks Node and Claude Code first and tells you exactly what's missing.
 3. Answer four questions (your name, what you call your assistant, what you call this computer, and whether jobs may use the command line and control your desktop; the answer is yes unless you type no).
 4. Sign in to Cloudflare when your browser opens.
-5. In Claude, go to **Customize > Connectors**, click **+**, choose **Add custom connector**, and paste the URL the installer copied for you. On Team and Enterprise, an Owner does this under **Organization settings > Connectors**. Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
+5. In Claude, go to **Customize > Connectors**, click **+**, choose **Add custom connector**, and paste the URL the installer copied for you. Then copy something else, so the URL isn't left on your clipboard or in a clipboard history.
 6. Open the Claude app, start voice, and say: **"Daisy, check updates."** (or whatever you named your assistant)
 7. For a notification on your phone when a job finishes: allow notifications for the Claude app on your phone, then on the Mac run `claude`, type `/config`, turn on **Push when Claude decides**, and type `/exit`.
+
+**Pro and Max only for now.** On Team and Enterprise, only an Owner can add a custom connector, and people across the organization can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
 
 <!-- TODO(SCREENSHOTS_PLAN S1): readme/01-installer.png, the installer after the four questions and the "copied" line. No URL visible. -->
 <!-- TODO(SCREENSHOTS_PLAN S2): readme/02-connector.png, the Add custom connector dialog with a dummy URL. -->
@@ -264,19 +265,19 @@ This removes everything: the background worker, its startup entries, your connec
 3. Delete the local files: `rm -rf ~/Projects/daisy-handoff ~/Projects/daisy-handoff.bak-* ~/.daisy ~/.handoff-uninstalled`
 4. In Claude, remove the connector under **Customize > Connectors**.
 
-Use your own names if your assistant isn't called Daisy (for Max: `max-handoff`, `max-handoff-jobs` and `~/.max`). Claude Code, Node and your Cloudflare account stay; remove those separately if you want. Claude Code also keeps a note that it trusted the bell's folder, in `~/.claude.json`. It's harmless once the folder is gone.
+Use your own names if your assistant isn't called Daisy (for Max: `max-handoff`, `max-handoff-jobs` and `~/.max`). Claude Code, Node and your Cloudflare account stay; remove those separately if you want. The installer also marked the bell's folder as trusted in Claude Code's `~/.claude.json`, so Claude Code doesn't stop to ask. It's harmless once the folder is gone.
 
 ---
 
 ## If your URL leaks: change the keys
 
-In Terminal, in the release folder you installed from:
+In Terminal, in an unzipped release folder (the newest you have; it finds your install in `~/Projects`):
 
 ```bash
 node install.mjs --rotate-keys
 ```
 
-It changes the connector key, the worker key and the lead agent key if you have one, on Cloudflare and on your Mac, and restarts the worker and supervisor on the new keys. It checks that the new URL works and the old one is turned away, which takes a few seconds. Then it lists every schedule, routine and job waiting to run, with who set each one up, and asks whether to turn them all off. Anyone who had your URL could have saved some through Claude, and then they show as yours, so check every one. `node install.mjs --clear-schedules` turns them all off later.
+It changes the connector key, the worker key and the lead agent key if you have one, on Cloudflare and on your Mac. Then it lists every schedule, routine, running job and job waiting to run, with who set each one up, and asks whether to turn them all off and stop the jobs. Anyone who had your URL could have saved some through Claude, and then they show as yours, so check every one. After that it restarts the worker and supervisor on the new keys: jobs you chose to stop stay stopped, and other running jobs start again. It checks that the new URL works and the old one is turned away, which takes a few seconds. `node install.mjs --clear-schedules` turns them all off later.
 
 Then in Claude, remove the old connector under **Customize > Connectors** and add it again with the new URL (it's on your clipboard; copy something else afterwards). Your job history stays.
 
@@ -294,7 +295,7 @@ Partly, and that's good. Anthropic keeps adding to this, so check their pages fo
 
 **Claude Code Remote Control** lets you use and start Claude Code sessions on your computer from your phone ([Remote Control](https://code.claude.com/docs/en/remote-control)). Use it. Daisy Handoff uses it too, for the session that sends your phone notifications.
 
-**Daisy Handoff** is for handing work to Claude Code on your own computer while you talk: one voice conversation in the Claude app that starts new jobs, checks on all of them, approves the ones waiting on you, and puts work on a schedule, through a connector and database on your own Cloudflare account. The worker is its own background service, so the Claude desktop app doesn't need to be open.
+**Daisy Handoff** is for handing work to Claude Code on your own computer while you talk: one voice conversation in the Claude app that starts new jobs, checks on all of them, approves the ones waiting on you, and puts work on a schedule, through a connector and database on your own Cloudflare account. The worker is its own background service on your Mac, separate from the Claude desktop app.
 
 When Anthropic ships all of this natively, use theirs.
 
@@ -312,19 +313,20 @@ Daisy Handoff removes that switch. The idea stays in the conversation and the wo
 
 ## Run the tests
 
-Everything here runs offline and deploys nothing:
+Everything here runs offline and deploys nothing. The tests need Node 22.13 or newer.
 
 ```bash
-# in the release folder: a throwaway install, then its checks
+# in the release folder (the zip has the test folder too): a throwaway install, then its checks
 node install.mjs --dry-run --yes --home /tmp/daisy-test
 node test/verify-dry-run.mjs /tmp/daisy-test daisy-handoff darwin
 node test/doctor-no-leak.mjs
+node test/update-resume.mjs
 # in that install (or yours): the desktop gate, the host lane, the command line switch and who-sent-it
 cd /tmp/daisy-test/Projects/daisy-handoff && ./test.sh gate
 node worker/shell-lane.mjs --shell-selftest
 ```
 
-GitHub runs the installer dry run, update and key change on macOS and Windows for every change ([installer.yml](.github/workflows/installer.yml)).
+GitHub runs the installer dry run, update and key change on macOS and Windows for every change, and `./test.sh gate` on macOS ([installer.yml](.github/workflows/installer.yml)).
 
 ---
 

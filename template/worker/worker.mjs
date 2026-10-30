@@ -19,7 +19,7 @@ import { readDraft, checkDraft, draftHash, sendHeldEmail } from "./email.mjs";
 import { makeRedactor, envSecrets, SECRET_NAME } from "./redact.mjs";
 import { staleLaunchd, reloadLaunchd } from "./launchd-reload.mjs";
 import { hardKill } from "./kill.mjs";
-import { powerRefusal } from "./power.mjs";
+import { powerRefusal, powerOn } from "./power.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const argv = process.argv.slice(2);
@@ -51,6 +51,9 @@ const HARD_DENY = [
   "Bash(diskutil erase:*)", "Bash(diskutil eraseDisk:*)", "Bash(diskutil eraseVolume:*)",
   // Publishing and sharing go through the worker, from {{OWNER}}'s job fields only, never the agent's own Composio calls.
   "Bash(composio:*)", "Bash(~/.composio/composio:*)", `Bash(${join(homedir(), ".composio", "composio")}:*)`,
+  // Desktop control goes through the host lane's gate, never the job's own cua-driver calls. These rules only catch the
+  // usual way of calling it; a job with a command line can still reach it another way, so they are a speed bump, not a boundary.
+  "Bash(cua-driver:*)", "Bash(~/.local/bin/cua-driver:*)", `Bash(${join(homedir(), ".local", "bin", "cua-driver")}:*)`,
 ];
 const RESTART_FLAG = join(ROOT, ".restart-worker");
 const HOOK = join(ROOT, "worker", "job-hook.mjs");
@@ -369,7 +372,9 @@ function runClaude(plan, dir, onSpawn, meta = {}) {
   return new Promise((resolve) => {
     // Its own process group (detached), so a stop can take the whole job down without touching the worker.
     const child = spawn(CFG.claudeBin, args, { cwd: plan.cwd || dir, stdio: ["ignore", "pipe", "pipe"], detached: true,
-      env: { ...process.env, DAISY_JOB_DIR: dir, DAISY_WORKER_TAG: WORKER_TAG } });
+      // ENABLE_CLAUDEAI_MCP_SERVERS=false: a Claude session the job starts itself doesn't load the connectors in {{OWNER}}'s Claude
+      // account, so it can't reach this connector through Anthropic and count as {{OWNER}}. A job can unset it: a speed bump, not a boundary.
+      env: { ...process.env, DAISY_JOB_DIR: dir, DAISY_WORKER_TAG: WORKER_TAG, ENABLE_CLAUDEAI_MCP_SERVERS: "false" } });
     // watch: the supervisor watches this run's heartbeat (job_started is the first run of this pickup; recoveries keep it).
     if (child.pid) writeFileSync(join(dir, ".run.json"), JSON.stringify({ pid: child.pid, pgid: child.pid, sid: child.pid, worker_pid: process.pid, worker_tag: WORKER_TAG, at: new Date().toISOString(),
       watch: true, job_id: meta.id, title: meta.title, run_mode: plan.mode, cwd: plan.cwd || dir, job_started: meta.started, run_n: meta.n || 1 }));
@@ -667,8 +672,12 @@ export async function healthChecks() {
     let st = null; try { st = JSON.parse(r.out).status; } catch {}
     ck("vm", ["ready", "suspended", "running", "stopped"].includes(st), st ? `${CFG.cua.sandbox || "claude-mac"} is ${st}${st === "suspended" ? " (normal between jobs)" : ""}` : `cua did not answer: ${(r.err || r.out).slice(0, 80)}`);
   }
-  const hs = await hostStatus();
-  ck("host", hs.ok, hs.ok ? "CuaDriver running with Accessibility and Screen Recording" : hs.missing ? `CuaDriver missing ${hs.missing.join(" and ")} ({{OWNER}}'s step)` : hs.why.slice(0, 120));
+  // Desktop control is optional: no host check when it's turned off, and no problem when CuaDriver was never installed.
+  if (powerOn(CFG) && !CFG.host?.statusCmd && !existsSync(driverBin())) ck("host", true, "CuaDriver not installed (optional, needed only for desktop control)");
+  else if (powerOn(CFG)) {
+    const hs = await hostStatus();
+    ck("host", hs.ok, hs.ok ? "CuaDriver running with Accessibility and Screen Recording" : hs.missing ? `CuaDriver missing ${hs.missing.join(" and ")} ({{OWNER}}'s step)` : hs.why.slice(0, 120));
+  }
   const df = await runOut("/bin/df", ["-k", CFG.health?.disk || "/System/Volumes/Data"]);
   const m = df.out.split("\n")[1]?.split(/\s+/);
   if (m) { const used = parseInt(m[4]); const freeGb = Math.round(Number(m[3]) / 1048576); ck("disk", used < 90 && freeGb > 20, `${used}% used, ${freeGb} GB free`); }

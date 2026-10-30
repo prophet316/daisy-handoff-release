@@ -44,6 +44,19 @@ for (const state of [undefined, "off", "on"]) {
   }
 }
 
+// A stock install: no alarm address (the installer's placeholder) and, with power lanes off, no host check from the worker.
+// Neither optional part may show up as a problem in the health check.
+const { healthLines } = await import("../src/index.js");
+const fakeDb = (settings) => ({ prepare: () => ({ bind: (k) => ({ first: async () => (settings[k] ? { value: JSON.stringify(settings[k]) } : null), all: async () => ({ results: [] }) }), first: async () => null }) });
+const now = new Date().toISOString();
+const checks = { bell: { ok: true, text: "listening" }, disk: { ok: true, text: "fine" }, claude: { ok: true, text: "signed in" } };
+for (const [state, host] of [["off", null], ["on", { ok: true, text: "CuaDriver not installed (optional, needed only for desktop control)" }]]) {
+  const hl = await healthLines({ POWER_LANES: state, DB: fakeDb({ beat: { at: now }, supervisor: { at: now }, health: { at: now, checks: host ? { ...checks, host } : checks } }) });
+  check(`health check, POWER_LANES "${state}", stock install: no problems from the alarm or the host lane`, !hl.problems.length, hl.problems.join(", "));
+  check(`health check, POWER_LANES "${state}": the alarm reads as optional`, hl.lines.includes("Dead-man alarm: not set up (optional)."), hl.lines.join(" | "));
+  check(`health check, POWER_LANES "${state}": ${state === "off" ? "no host lane line" : "host lane line is OK"}`, state === "off" ? !hl.lines.some((l) => /host lane/.test(l)) : hl.lines.some((l) => /^OK: host lane/.test(l)), hl.lines.join(" | "));
+}
+
 check("the turned-off message says how to turn them on", /--power-lanes/.test(POWER_OFF) && /answer yes/.test(POWER_OFF));
 
 // ---- 2. the supervisor's check (run_command reaches the Mac as a "shell" control command) ----

@@ -14,11 +14,11 @@ Each section below starts with what you see, then what to do.
 
 ## Before you start
 
-You need all of these. The installer stops and tells you if one is missing.
+You need all of these. The installer checks Node and Claude Code itself and stops if one is missing; the rest it can't check, so have them ready.
 
 - A Mac on macOS 13 (Ventura) or newer. Check: Apple menu > About This Mac.
 - An administrator password for the Mac, or someone who has it. The Node and Command Line Tools installers ask for it.
-- A paid Claude plan (Pro, Max, Team or Enterprise). On Team and Enterprise, an Owner has to allow custom connectors, Remote Control and channels first (see [No phone notifications](#no-phone-notifications)).
+- A Claude Pro or Max plan. On Team and Enterprise, only an Owner can add a custom connector, and people across the organization can then connect to it. Your connector URL can run commands on your Mac, so don't add it to a shared organization.
 - A free Cloudflare account with a verified email address.
 - The Claude app on your phone, signed in to the same Claude account.
 
@@ -31,7 +31,7 @@ You need all of these. The installer stops and tells you if one is missing.
 1. Go to [nodejs.org](https://nodejs.org) and download the LTS version for macOS.
 2. Open the downloaded file and click through the installer. It asks for your Mac's password.
 3. Close Terminal completely and open a new window. Terminal only sees new programs in a new window.
-4. Check with `node -v`. It must say v22 or higher.
+4. Check with `node -v`. It must say v22.13 or higher.
 
 ---
 
@@ -107,8 +107,8 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
-- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + > Add custom connector** (on Team and Enterprise, an Owner adds it under **Organization settings > Connectors**).
-- **Team or Enterprise plan:** an Owner has to allow custom connectors first.
+- **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + > Add custom connector**.
+- **Team or Enterprise plan:** only an Owner can add a custom connector there, and the whole organization can then connect to it. Don't add yours to a shared organization; use a personal Pro or Max account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.
 - **Your phone:** connectors you add on claude.ai or the desktop app show up in the phone app on the same account. Close and reopen the app.
 - Run `node doctor.mjs`. It tests your connector from your Mac without showing the URL.
@@ -136,12 +136,11 @@ Jobs run, but your phone never buzzes when one finishes.
 
 How it works: the installer starts an always-on Claude Code session on your Mac with **Remote Control** turned on. Remote Control is Claude Code's own way to link a session on your computer to the Claude app. When a job finishes, the worker tells that session, and the session sends your phone a push notification through the Claude app. So notifications need all of this:
 
-1. **The Claude app on your phone**, signed in to the same account (and organization) as Claude Code on your Mac. Open it once after installing.
+1. **The Claude app on your phone**, signed in to the same account as Claude Code on your Mac. Open it once after installing.
 2. **Notifications allowed** for the Claude app on your phone. On iPhone: Settings > Notifications > Claude. Focus modes can hold them back.
 3. **Push turned on in Claude Code.** In Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`. If `/config` says **No mobile registered**, open the Claude app on your phone and try again.
 4. **Claude Code trusts the bell folder.** The installer does this for you. If the doctor says it doesn't, run `cd ~/Projects/daisy-handoff/jarvis-bell && claude` (`jarvis-bell` is the Daisy bell's folder; the name is an older internal one), choose **Yes, I trust this folder**, and type `/exit` right away. The bell restarts by itself within a few minutes.
-5. **Team and Enterprise only:** an Owner must turn on **Remote Control** and **Channels** in [Claude Code admin settings](https://claude.ai/admin-settings/claude-code). On Pro and Max there's nothing to turn on.
-6. **A claude.ai sign-in, not an API key.** Remote Control doesn't work with API keys.
+5. **A claude.ai sign-in, not an API key.** Remote Control doesn't work with API keys.
 
 Test it: in your install folder run `./bell-ping.sh`. Your phone should show a notification within about 30 seconds.
 

@@ -7,10 +7,10 @@
 //   node install.mjs --doctor       check this computer and your install, and save a report with secrets removed
 //   node install.mjs --update       update an install in place: same keys, same connector URL, same Worker and database,
 //                                   same answers as last time (change one with its flag, e.g. --no-power-lanes)
-//   node install.mjs --rotate-keys  if your URL or a key leaked: new connector, worker and lead agent keys, the worker
-//                                   restarted, then a list of schedules, routines and waiting jobs to check
-//   node install.mjs --clear-schedules  turn off every schedule, delete every routine, cancel waiting jobs (alone or
-//                                   with --rotate-keys)
+//   node install.mjs --rotate-keys  if your URL or a key leaked: new connector, worker and lead agent keys, a list of
+//                                   schedules, routines and running and waiting jobs to check, then the worker restarted
+//   node install.mjs --clear-schedules  turn off every schedule, delete every routine, stop running jobs and cancel waiting
+//                                   ones (alone or with --rotate-keys)
 //
 //   Other flags: --name NAME  --assistant NAME  --machine NAME  --yes (take the defaults)
 //                --time-zone ZONE (schedules use this computer's time zone; e.g. --time-zone America/New_York to pick another)
@@ -20,7 +20,7 @@
 //                --no-power-lanes (turn off the command line and desktop control, which are on by default)
 //                --lead-agent NAME (let one named agent approve held actions for you; off by default, see the README)
 //
-// Needs Node 22+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
+// Needs Node 22.13+ and Claude Code signed in. Runs on Cloudflare's free tier (one Worker, one D1 database).
 // It never prints your connector URL or keys. The URL works like a password: it goes to your clipboard
 // and to a private file in the install folder, nowhere else.
 
@@ -110,6 +110,8 @@ function writeSecret(p, s) {
 
 // ---------- uninstall, key change ----------
 if (has("uninstall")) { uninstall(); process.exit(0); }
+// A dry run moves folders and writes key files in its home folder like a real run, so never in your real one.
+if (DRY && path.resolve(HOME) === path.resolve(os.homedir())) die("a dry run can't use your real home folder, so your install is left alone. Leave out --home, or point it at a test folder like /tmp/daisy-test.");
 if (has("rotate-keys") || has("clear-schedules")) { await rotateKeys(); process.exit(0); }
 
 function uninstall() {
@@ -137,8 +139,12 @@ function uninstall() {
   }
   if (!n) say("  no Handoff worker found for this user");
   else if (!DRY) say(`\nStartup entries moved to ${bak} (not deleted).`);
+  // The database name, when there's exactly one install to name it from.
+  const projects = path.join(HOME, "Projects");
+  const installs = fs.existsSync(projects) ? fs.readdirSync(projects).filter((n) => /-handoff$/.test(n) && fs.existsSync(path.join(projects, n, "site.json"))) : [];
+  const db = installs.length === 1 ? `${installs[0]}-jobs` : "NAME-handoff-jobs";
   say("Your install folder and Cloudflare connector are untouched. To remove everything, follow the README's Uninstall");
-  say(`steps: in the install folder run  npx -y ${WRANGLER} delete --force  and  npx -y ${WRANGLER} d1 delete NAME-handoff-jobs -y,`);
+  say(`steps: in the install folder run  npx -y ${WRANGLER} delete --force  and  npx -y ${WRANGLER} d1 delete ${db} -y,`);
   say("delete the install folder, and remove the connector in Claude under Customize > Connectors.");
 }
 
@@ -150,6 +156,9 @@ async function main() {
   const UPDATE = has("update");
   if (UPDATE && has("force")) die("use --update or --force, not both. --update keeps your keys and connector URL; --force makes new ones.");
   say(`Daisy Handoff ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
+  // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
+  if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
+    "  node install.mjs --dry-run --yes --home /tmp/daisy-test\n  node install.mjs --update --dry-run --home /tmp/daisy-test\nA dry run never touches your real install.");
   if (!fs.existsSync(TEMPLATE)) die(`no template folder next to install.mjs (looked for ${TEMPLATE}). Unzip the whole release and run it from that folder.`);
   // An update keeps last time's answers (site.json and install-receipt.json in the install folder) unless a flag changes one.
   const prev = UPDATE ? findInstall() : null;
@@ -159,8 +168,9 @@ async function main() {
 
   // 1. preflight
   step("Checking this computer", TOTAL);
-  const major = Number(process.versions.node.split(".")[0]);
-  if (major < 22) die(`Node ${process.versions.node} is too old. Install Node 22 or newer from nodejs.org, then open a new Terminal window and run this again.`);
+  // 22.13: the first Node 22 that runs node:sqlite (used by the tests) without a flag. Cloudflare's tool needs 22 too.
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major < 22 || (major === 22 && minor < 13)) die(`Node ${process.versions.node} is too old. Install Node 22.13 or newer from nodejs.org, then open a new Terminal window and run this again.`);
   ok(`Node ${process.versions.node}`);
   const claudeBin = findClaude();
   if (!claudeBin) (DRY ? note : die)("Claude Code isn't installed. Install it with the command on code.claude.com/docs/en/setup, sign in, then run this again.");
@@ -184,13 +194,18 @@ async function main() {
   const machine = clean(val("machine") || prev?.site.machine || (await ask("What do you call this computer", MAC ? "Mac" : "PC")));
   // Shell commands and desktop control are on by default, the way the author runs it. --no-power-lanes or a no turns them off.
   // --power-lanes (the old opt-in flag) is still accepted and just means on.
-  const keepPower = prev && !has("no-power-lanes") && !has("power-lanes") ? prev.receipt.powerLanes !== false : null;
+  // An update keeps the old answer: from the receipt, or from the old worker config if an earlier update stopped before
+  // writing one. Never "on" by default: if neither says, it asks again.
+  const prevPower = !prev ? null : typeof prev.receipt.powerLanes === "boolean" ? prev.receipt.powerLanes : typeof prev.config.powerLanes === "boolean" ? prev.config.powerLanes : null;
+  const keepPower = prev && !has("no-power-lanes") && !has("power-lanes") ? prevPower : null;
+  if (prev && keepPower === null && !has("no-power-lanes") && !has("power-lanes")) die("couldn't tell whether your install had the command line and desktop control on. Run the update again with --no-power-lanes or --power-lanes. Nothing was changed.");
   if (!has("no-power-lanes") && keepPower !== false) for (const l of POWER_WARNING) say(`  ${l}`);
   const power = keepPower ?? (!has("no-power-lanes") && (has("power-lanes") ||
     !/^n(o)?$/i.test(await ask("Let jobs use the command line and control this computer's desktop? This is how the author runs it.", "yes"))));
   ask.close();
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
-  const lead = (val("lead-agent") || (has("lead-agent") ? "" : prev?.receipt.leadAgent) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
+  const prevLead = prev ? ("leadAgent" in prev.receipt ? prev.receipt.leadAgent : /^LEAD_AGENT = "([^"]*)"$/m.exec(prev.toml)?.[1]) : null;
+  const lead = (val("lead-agent") || (has("lead-agent") ? "" : prevLead) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
   if (has("lead-agent") && !lead) die("--lead-agent needs a name, e.g. --lead-agent captain");
   const { base, slug } = slugOf(assistant);
   const dotdir = `.${base}`;
@@ -240,6 +255,9 @@ async function main() {
   fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
   fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify({ owner, assistant, machine, home, slug, dotdir, platform: PLATFORM, installer: VERSION, timeZone }, null, 2) + "\n");
   fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
+  // This run's answers, before anything can stop it partway, so a second try keeps them. The full receipt replaces it at the end.
+  fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone,
+    ...(UPDATE ? { updatedFrom: prev.receipt.updatedFrom || prev.receipt.installer || prev.site.installer || null } : {}) }, null, 2) + "\n");
   ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
   if (MAC) {
     const nodeBin = (!SIM && which("node")) || process.execPath;
@@ -259,6 +277,8 @@ async function main() {
     if (old && fs.existsSync(old)) { writeSecret(path.join(dir, f), fs.readFileSync(old, "utf8").trim()); kept++; }
     else writeSecret(path.join(dir, f), randomBytes(32).toString("hex"));
   }
+  // The old URL too, until the deploy writes it again: if this update stops partway, the next try still knows the URL.
+  if (UPDATE && fs.existsSync(path.join(bak, ".connector-url"))) writeSecret(path.join(dir, ".connector-url"), fs.readFileSync(path.join(bak, ".connector-url"), "utf8"));
   ok(UPDATE ? `${kept} keys kept from your install${keyFiles.length > kept ? `, ${keyFiles.length - kept} new` : ""}, readable only by you` : `${keyFiles.length} keys made on this computer, readable only by you`);
 
   // 5. cloudflare
@@ -294,7 +314,7 @@ async function main() {
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({
     installer: VERSION, platform: PLATFORM, simulated: SIM, dryRun: DRY, at: new Date().toISOString(), slug, powerLanes: power, leadAgent: lead || null, timeZone,
-    ...(UPDATE ? { updatedFrom: prev.receipt.installer || prev.site.installer || null } : {}), steps,
+    ...(UPDATE ? { updatedFrom: (prev.receipt.unfinished ? prev.receipt.updatedFrom : prev.receipt.installer) || prev.site.installer || null } : {}), steps,
   }, null, 2) + "\n");
   say(`\n${DRY ? "DRY RUN COMPLETE" : UPDATE ? "UPDATE COMPLETE" : "INSTALL COMPLETE"}  (${dir})`);
 }
@@ -335,7 +355,8 @@ function findInstall() {
   if (found.length > 1) die(`more than one install in ${projects} (${found.map((d) => path.basename(d)).join(", ")}). Pick one with --assistant NAME. Nothing was changed.`);
   const dir = found[0];
   const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")); } catch { return {}; } };
-  return { dir, site: read("site.json"), receipt: read("install-receipt.json") };
+  let toml = ""; try { toml = fs.readFileSync(path.join(dir, "wrangler.toml"), "utf8"); } catch {}
+  return { dir, site: read("site.json"), receipt: read("install-receipt.json"), config: read(path.join("worker", "config.json")), toml };
 }
 
 // An update keeps what the old install made while it ran: job and thread folders, logs, and settings in worker/config.json.
@@ -361,8 +382,9 @@ function carryOver(bak, dir) {
 
 function wranglerIn(dir) { return (args, o = {}) => run(HOST === "win32" ? "npx.cmd" : "npx", ["-y", WRANGLER, ...args], { cwd: dir, ...o }); }
 
-// If the connector URL or a key leaked: new connector, worker and lead agent keys, pushed to Cloudflare, the worker and
-// supervisor restarted on them, then everything saved that could run later, so a planted schedule doesn't outlive the leak.
+// If the connector URL or a key leaked: new connector, worker and lead agent keys, pushed to Cloudflare, then everything saved
+// or running that could keep going, so a planted schedule or job doesn't outlive the leak, then the worker and supervisor
+// restarted on the new keys.
 async function rotateKeys() {
   const { dir, site } = findInstall();
   const ROTATE = has("rotate-keys");
@@ -370,27 +392,81 @@ async function rotateKeys() {
   const W = wranglerIn(dir);
   if (!DRY) say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
   const db = `${site.slug || path.basename(dir)}-jobs`;
+  const STEPS = ROTATE ? 4 : 2;
+  const base = JSON.parse(fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8")).base;
+  if (!fs.existsSync(path.join(dir, ".connector-url")) || !/^https:\/\//.test(base || "")) {
+    die(`${dir} is from an install or update that stopped partway. In the release folder run node install.mjs --update first, then try this again. Nothing was changed.`);
+  }
+  const oldUrl = fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim();
+  if (!DRY) cloudflareSignIn(W, "no keys were changed");
   if (ROTATE) {
-    step("New keys", 3);
+    step("New keys", STEPS);
     const keys = [["CONNECTOR_KEY", ".connector-key"], ["WORKER_KEY", ".worker-key"], ...(fs.existsSync(path.join(dir, ".lead-agent-key")) ? [["LEAD_AGENT_KEY", ".lead-agent-key"]] : [])];
-    const oldUrl = fs.readFileSync(path.join(dir, ".connector-url"), "utf8").trim();
-    for (const [name, file] of keys) {
+    for (const [i, [name, file]] of keys.entries()) {
       const key = randomBytes(32).toString("hex");
       // Cloudflare first, then the file: if a step fails, every key file still matches what Cloudflare has.
-      if (!DRY) { const r = W(["secret", "put", name], { input: key }); if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}. Keys changed before it are saved; run --rotate-keys again.`); }
+      if (!DRY) { const r = W(["secret", "put", name], { input: key }); if (r.status !== 0) die(`couldn't store ${name} on Cloudflare: ${tail(r)}. ${i ? "Keys changed before it are saved" : "No keys were changed"}; run --rotate-keys again.`); }
       writeSecret(path.join(dir, file), key);
       ok(`${name} changed${DRY ? " (dry run: only the file)" : ", on Cloudflare and in " + file}`);
     }
-    const base = JSON.parse(fs.readFileSync(path.join(dir, "worker", "config.json"), "utf8")).base;
     writeSecret(path.join(dir, ".connector-url"), `${base}/${fs.readFileSync(path.join(dir, ".connector-key"), "utf8").trim()}/mcp`);
     ok("new private URL saved in .connector-url");
     note("the bell key (.bell-key) only works from this computer, so it stays");
+  }
+
+  step("What could still run later", STEPS);
+  const q = (sql) => {
+    if (DRY) return [];
+    const r = W(["d1", "execute", db, "--remote", "--json", "--command", sql]);
+    try { return JSON.parse(r.stdout)[0].results || []; } catch { die(`couldn't read the database ${db}: ${tail(r)}`); }
+  };
+  const tag = (x) => x.created_by ? `set up by ${x.created_by}` : "recorded as you";
+  const sch = q("SELECT id, name, repeat, at_time, days, next_run_at, created_by FROM schedules WHERE enabled=1 AND kind<>'digest' ORDER BY next_run_at");
+  const rts = q("SELECT id, name, steps, created_by FROM routines ORDER BY name_key");
+  // Running jobs too: a planted job that's running now would otherwise be put back in the queue by the restart and keep going.
+  const waiting = q("SELECT id, title, status, created_by FROM jobs WHERE status IN ('running','queued','needs_approval') ORDER BY created_at");
+  if (DRY) skip("reading schedules, routines and running and waiting jobs from Cloudflare (dry run)");
+  say(sch.length ? `  Schedules (${sch.length}):` : "  No schedules.");
+  for (const x of sch) say(`    - "${x.name}" (${x.id}): ${x.repeat} at ${x.at_time}${x.days ? ` on ${x.days}` : ""}, next ${x.next_run_at}; ${tag(x)}`);
+  say(rts.length ? `  Routines (${rts.length}):` : "  No routines.");
+  for (const x of rts) { let n = "?"; try { n = JSON.parse(x.steps).length; } catch {} say(`    - "${x.name}" (${x.id}), ${n} step(s); ${tag(x)}`); }
+  say(waiting.length ? `  Running and waiting jobs (${waiting.length}):` : "  No running jobs, queued jobs or jobs waiting for your yes.");
+  for (const x of waiting) say(`    - "${x.title}" (${x.id}), ${x.status}; ${tag(x)}`);
+  say("  Anyone with your old URL could have saved these through Claude, and then they show as \"recorded as you\". Check every one.");
+
+  step("Clear them", STEPS);
+  const total = sch.length + rts.length + waiting.length;
+  let clear = has("clear-schedules");
+  if (!clear && total) {
+    const ask = await asker();
+    clear = /^y(es)?$/i.test(await ask("Turn off every schedule, delete every routine and stop or cancel every job above? You can set your own up again.", "no"));
+    ask.close();
+  }
+  if (DRY) skip("clearing (dry run)");
+  else if (!total) ok("nothing to clear");
+  else if (!clear) say("  Kept them. To clear them later: node install.mjs --clear-schedules. Or cancel the ones you don't know in Claude (cancel_schedule, delete_routine, cancel_job).");
+  else {
+    const now = new Date().toISOString();
+    q(`UPDATE schedules SET enabled=0, next_run_at=NULL, last_note='Turned off by a key change.', updated_at='${now}' WHERE enabled=1 AND kind<>'digest'`);
+    q("DELETE FROM routines");
+    // Running jobs are stopped the way cancel_job stops them: the supervisor kills them, and the worker's restart cancels them
+    // instead of putting them back in the queue.
+    q(`INSERT INTO control (kind, job_id, created_at) SELECT 'stop', id, '${now}' FROM jobs WHERE status='running' AND cancel_requested=0`);
+    q(`UPDATE jobs SET cancel_requested=1, cancel_at=COALESCE(cancel_at, '${now}'), updated_at='${now}' WHERE status='running'`);
+    q(`UPDATE jobs SET status='cancelled', result='Cancelled by a key change. Nothing it was waiting to do was done.', finished_at='${now}', updated_at='${now}', reported_at='${now}' WHERE status IN ('queued','needs_approval')`);
+    const run = waiting.filter((x) => x.status === "running").length;
+    ok(`turned off ${sch.length} schedule(s), deleted ${rts.length} routine(s), stopped ${run} running job(s), cancelled ${waiting.length - run} waiting job(s)`);
+  }
+
+  // The restart comes after clearing, so a running job you chose to stop is cancelled by it, not put back in the queue.
+  if (ROTATE) {
+    step("Restart on the new keys", STEPS);
     if (MAC && !DRY && !SIM && !has("no-start")) {
       for (const label of ["com.daisy.handoff-worker", "com.daisy.supervisor"]) {
         const r = run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${label}`]);
         (r.status === 0 ? ok : note)(r.status === 0 ? `restarted ${label} on the new key` : `couldn't restart ${label} (${tail(r)}); log out and back in to restart it`);
       }
-      note("jobs that were running go back in the queue and start again");
+      note(clear ? "jobs you chose to stop are cancelled, not started again" : "jobs that were running go back in the queue and start again");
     } else if (!MAC && !DRY) note("restart the worker so it uses the new key: sign out of Windows and back in");
     else skip(`restarting the worker and supervisor (${DRY ? "dry run" : "--no-start"})`);
     if (!DRY) {
@@ -400,44 +476,6 @@ async function rotateKeys() {
       for (let i = 0; i < 6 && gone !== 404; i++) { try { gone = (await fetch(oldUrl, { method: "POST", body: "{}" })).status; } catch {} if (gone !== 404) await new Promise((r) => setTimeout(r, 5000)); }
       (gone === 404 ? ok : note)(gone === 404 ? "the old URL is turned away (HTTP 404)" : `the old URL still answered HTTP ${gone}; check again in a minute`);
     }
-  }
-
-  step("What could still run later", 3);
-  const q = (sql) => {
-    if (DRY) return [];
-    const r = W(["d1", "execute", db, "--remote", "--json", "--command", sql]);
-    try { return JSON.parse(r.stdout)[0].results || []; } catch { die(`couldn't read the database ${db}: ${tail(r)}`); }
-  };
-  const tag = (x) => x.created_by ? `set up by ${x.created_by}` : "recorded as you";
-  const sch = q("SELECT id, name, repeat, at_time, days, next_run_at, created_by FROM schedules WHERE enabled=1 AND kind<>'digest' ORDER BY next_run_at");
-  const rts = q("SELECT id, name, steps, created_by FROM routines ORDER BY name_key");
-  const waiting = q("SELECT id, title, status, created_by FROM jobs WHERE status IN ('queued','needs_approval') ORDER BY created_at");
-  if (DRY) skip("reading schedules, routines and waiting jobs from Cloudflare (dry run)");
-  say(sch.length ? `  Schedules (${sch.length}):` : "  No schedules.");
-  for (const x of sch) say(`    - "${x.name}" (${x.id}): ${x.repeat} at ${x.at_time}${x.days ? ` on ${x.days}` : ""}, next ${x.next_run_at}; ${tag(x)}`);
-  say(rts.length ? `  Routines (${rts.length}):` : "  No routines.");
-  for (const x of rts) { let n = "?"; try { n = JSON.parse(x.steps).length; } catch {} say(`    - "${x.name}" (${x.id}), ${n} step(s); ${tag(x)}`); }
-  say(waiting.length ? `  Waiting jobs (${waiting.length}):` : "  No queued jobs or jobs waiting for your yes.");
-  for (const x of waiting) say(`    - "${x.title}" (${x.id}), ${x.status}; ${tag(x)}`);
-  say("  Anyone with your old URL could have saved these through Claude, and then they show as \"recorded as you\". Check every one.");
-
-  step("Clear them", 3);
-  const total = sch.length + rts.length + waiting.length;
-  let clear = has("clear-schedules");
-  if (!clear && total) {
-    const ask = await asker();
-    clear = /^y(es)?$/i.test(await ask("Turn off every schedule, delete every routine and cancel every waiting job above? You can set your own up again.", "no"));
-    ask.close();
-  }
-  if (!total && !DRY) ok("nothing to clear");
-  else if (!clear) say("  Kept them. To clear them later: node install.mjs --clear-schedules. Or cancel the ones you don't know in Claude (cancel_schedule, delete_routine, cancel_job).");
-  else if (DRY) skip("clearing (dry run)");
-  else {
-    const now = new Date().toISOString();
-    q(`UPDATE schedules SET enabled=0, next_run_at=NULL, last_note='Turned off by a key change.', updated_at='${now}' WHERE enabled=1 AND kind<>'digest'`);
-    q("DELETE FROM routines");
-    q(`UPDATE jobs SET status='cancelled', result='Cancelled by a key change. Nothing it was waiting to do was done.', finished_at='${now}', updated_at='${now}', reported_at='${now}' WHERE status IN ('queued','needs_approval')`);
-    ok(`turned off ${sch.length} schedule(s), deleted ${rts.length} routine(s), cancelled ${waiting.length} waiting job(s)`);
   }
 
   if (ROTATE) {
@@ -534,16 +572,21 @@ function setWorkerBase(dir, url) {
   fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
 }
 
+// Signed in to Cloudflare, or the browser sign-in first. Stops with `stopped` (what was left alone) if it doesn't finish.
+function cloudflareSignIn(W, stopped) {
+  const who = W(["whoami"]);
+  if (who.status !== 0 || /not authenticated|not logged in/i.test(`${who.stdout}${who.stderr}`)) {
+    say("  Your browser will open. Sign in to Cloudflare (a free account works) and click Allow.");
+    if (W(["login"], { stdio: "inherit" }).status !== 0) die(`Cloudflare sign-in didn't finish. Run this again when you're ready; ${stopped}.`);
+  }
+  ok("signed in to Cloudflare");
+}
+
 function deploy(dir, slug, lead) {
   const npx = HOST === "win32" ? "npx.cmd" : "npx";
   const W = (args, o = {}) => run(npx, ["-y", WRANGLER, ...args], { cwd: dir, ...o });
   say("  Getting Cloudflare's command line tool (wrangler). The first time, this download takes a few seconds with no output.");
-  const who = W(["whoami"]);
-  if (who.status !== 0 || /not authenticated|not logged in/i.test(`${who.stdout}${who.stderr}`)) {
-    say("  Your browser will open. Sign in to Cloudflare (a free account works) and click Allow.");
-    if (W(["login"], { stdio: "inherit" }).status !== 0) die("Cloudflare sign-in didn't finish. Run this again when you're ready; nothing was deployed.");
-  }
-  ok("signed in to Cloudflare");
+  cloudflareSignIn(W, "nothing was deployed");
   const db = `${slug}-jobs`;
   const find = () => { const r = W(["d1", "list", "--json"]); try { return (JSON.parse(r.stdout).find((d) => d.name === db) || {}).uuid; } catch { return undefined; } };
   let id = find();

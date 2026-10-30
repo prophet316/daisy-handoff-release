@@ -59,6 +59,12 @@ function findInstall() {
 const DIR = findInstall();
 const site = DIR ? readJson(path.join(DIR, "site.json")) : null;
 const cfg = DIR ? readJson(path.join(DIR, "worker", "config.json")) : null;
+const receiptJson = DIR ? readJson(path.join(DIR, "install-receipt.json")) : null;
+// How to finish an install that stopped partway: run the update again (it keeps the keys and connector URL), or carry on
+// with the manual steps. Starting over with --force only for a finished install that lost its files.
+const FINISH = receiptJson?.unfinished ? "Your last install or update stopped partway. In the release folder run node install.mjs --update again; it keeps your keys and connector URL."
+  : !receiptJson ? "If you're installing by hand, carry on with MANUAL-INSTALL.md. Otherwise, in the release folder run node install.mjs --update; it keeps your keys and connector URL."
+  : "Run node install.mjs --uninstall, then node install.mjs --force.";
 
 // ---------- secrets to remove from the report ----------
 const secrets = [];
@@ -86,8 +92,8 @@ if (MAC) {
   const v = run("sw_vers", ["-productVersion"]).stdout?.trim() || "?";
   check(Number(v.split(".")[0]) >= 13 ? "ok" : "fail", `macOS ${v}`, "Daisy Handoff needs macOS 13 (Ventura) or newer.", "Before you start");
 } else check("warn", `${os.type()} ${os.release()}`, "The background worker runs on macOS only in this version.", "Before you start");
-const nodeMajor = Number(process.versions.node.split(".")[0]);
-check(nodeMajor >= 22 ? "ok" : "fail", `Node ${process.versions.node}`, "Install Node 22 or newer from nodejs.org, then open a new Terminal window.", "Node is missing or too old");
+const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+check(nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 13) ? "ok" : "fail", `Node ${process.versions.node}`, "Install Node 22.13 or newer from nodejs.org, then open a new Terminal window.", "Node is missing or too old");
 check(which(process.platform === "win32" ? "npx.cmd" : "npx") ? "ok" : "fail", "npx (comes with Node)", "Reinstall Node from nodejs.org.", "Node is missing or too old");
 if (MAC) {
   const clt = run("xcode-select", ["-p"]);
@@ -110,7 +116,7 @@ else {
   const st = run(claudeBin, ["auth", "status"]);
   let auth = null;
   try { auth = JSON.parse(st.stdout); } catch {}
-  if (auth?.loggedIn !== true) check("fail", "Claude Code is signed out", "Run claude, type /login, and sign in with your Claude account (Pro, Max, Team or Enterprise).", "Claude Code isn't installed or signed out");
+  if (auth?.loggedIn !== true) check("fail", "Claude Code is signed out", "Run claude, type /login, and sign in with your Claude Pro or Max account.", "Claude Code isn't installed or signed out");
   else {
     const method = String(auth.authMethod || auth.auth_method || "");
     const apiKey = /api.?key|console/i.test(method) || process.env.ANTHROPIC_API_KEY;
@@ -132,7 +138,7 @@ if (!DIR || !site) {
   else check("warn", "this install is from before time zones: schedules use US Central Time", "Update to the newest release to use your own time zone.", "Schedules run at the wrong time");
   const missing = [".connector-key", ".worker-key", ".bell-key", ".connector-url"].filter((f) => !fs.existsSync(path.join(DIR, f)));
   check(missing.length ? "fail" : "ok", missing.length ? `missing ${missing.join(", ")}` : "keys and connector URL are in place",
-    "The install is incomplete. Run node install.mjs --uninstall, then node install.mjs --force.", "Install stopped partway");
+    `The install is incomplete. ${FINISH}`, "Install stopped partway");
   if (process.platform !== "win32") {
     // Every key file the installer makes, the lead agent key too when it's turned on. A missing file isn't "open".
     const open = [".connector-key", ".worker-key", ".bell-key", ".connector-url", ".lead-agent-key"].filter((f) => { try { return (fs.statSync(path.join(DIR, f)).mode & 0o077) !== 0; } catch { return false; } });
@@ -142,7 +148,7 @@ if (!DIR || !site) {
   if (cfg) {
     const deployed = isDeployed(cfg.base);
     check(deployed ? "ok" : "fail", deployed ? "worker knows its connector" : "the connector was never deployed (this is a dry run, or the install stopped before Cloudflare)",
-      "Run node install.mjs --uninstall, then node install.mjs --force, and finish the Cloudflare sign-in.", "Cloudflare sign-in or deploy failed");
+      receiptJson?.dryRun ? "A dry run never deploys. Run node install.mjs without --dry-run." : `${FINISH} Finish the Cloudflare sign-in when your browser opens.`, "Cloudflare sign-in or deploy failed");
     say(`  info  command line and desktop control: ${cfg.powerLanes ? "on" : "off"}`);
   }
 
@@ -154,7 +160,7 @@ if (!DIR || !site) {
   if (MAC && live) {
     const agents = path.join(HOME, "Library", "LaunchAgents");
     const plists = fs.existsSync(agents) ? fs.readdirSync(agents).filter((f) => /^com\.daisy\..*\.plist$/.test(f)) : [];
-    if (!plists.length) check("fail", "no background services are set up", "Run node install.mjs --uninstall, then node install.mjs --force.", "The worker isn't running");
+    if (!plists.length) check("fail", "no background services are set up", FINISH, "The worker isn't running");
     for (const f of plists) {
       const label = f.replace(/\.plist$/, "");
       const pr = run("launchctl", ["print", `gui/${process.getuid()}/${label}`]);
@@ -164,7 +170,7 @@ if (!DIR || !site) {
       const mine = plist.includes(DIR);
       check(pr.status === 0 && pid ? (mine ? "ok" : "warn") : "fail",
         `${label}: ${pr.status !== 0 ? "not loaded" : pid ? `running (pid ${pid})` : `loaded but not running${lastExit ? `, last exit ${lastExit}` : ""}`}${mine ? "" : ", and it belongs to a different install folder"}`,
-        pr.status !== 0 || !pid ? "Log out and back in, or run node install.mjs --uninstall, then node install.mjs --force." : "Only one install per Mac account works. Uninstall the other one first.",
+        pr.status !== 0 || !pid ? `Log out and back in. If that doesn't start it: ${FINISH}` : "Only one install per Mac account works. Uninstall the other one first.",
         "The worker isn't running");
     }
   }
@@ -205,7 +211,7 @@ if (!DIR || !site) {
     const drv = cfg.host?.driverBin;
     const has = drv && fs.existsSync(drv);
     check(has ? "ok" : "warn", `desktop control helper (CuaDriver) ${has ? "is installed" : "isn't installed"}`,
-      "Commands and screenshots still work. Using your desktop needs the free CuaDriver app from trycua, plus Accessibility and Screen Recording for it.", "Desktop control doesn't work");
+      "Commands and screenshots still work. Using your desktop needs the free CuaDriver app from trycua (macOS 14 or newer), plus Accessibility and Screen Recording for it. TROUBLESHOOTING.md has the install steps.", "Desktop control doesn't work");
     if (has) {
       const p = run(drv, ["permissions", "status", "--json"]);
       let j = null; try { j = JSON.parse(p.stdout); } catch {}

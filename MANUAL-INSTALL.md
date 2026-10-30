@@ -117,7 +117,7 @@ Everything should say ok, apart from the phone notification lines until you fini
 ## 9. Connect Claude and your phone
 
 1. Copy your URL: `pbcopy < .connector-url`
-2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+**, then **Add custom connector** (on Team and Enterprise, an Owner uses **Organization settings > Connectors**). Name it "Daisy Handoff" and paste.
+2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+**, then **Add custom connector**. This is for personal Pro and Max accounts: on Team and Enterprise only an Owner can add one, and the whole organization can then connect to it, so don't add yours there. Name it "Daisy Handoff" and paste.
 3. On your phone, sign in to the Claude app with the same account and allow notifications.
 4. In Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`.
 5. Open the Claude app, start voice, and say: **"Daisy, check updates."**

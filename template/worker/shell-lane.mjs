@@ -203,7 +203,7 @@ if (process.argv.includes("--shell-selftest")) {
 
   mkdirSync(join(dir, "victim", "sub"), { recursive: true });
   const allowed = [`rm -rf ${join(dir, "victim")}`, "ls ~/Projects >/dev/null", "ps aux | grep -c node", "grep -c sudo /etc/sudoers 2>/dev/null; true",
-    "echo pseudo summary", "git -C ~/Projects/{{SLUG}} log --oneline -1", "launchctl print gui/$(id -u)/com.daisy.handoff-worker >/dev/null; true", "pgrep -fl supervisor; true"];
+    "echo pseudo summary", "git -C ~/Projects/{{SLUG}} log --oneline -1 2>/dev/null; true", "launchctl print gui/$(id -u)/com.daisy.handoff-worker >/dev/null; true", "pgrep -fl supervisor; true"];
   for (const c of allowed) { r = await run(c); check(`allowed: ${c}`, r.ok && !r.refused, JSON.stringify(r)); }
   check("rm -rf on a test folder really removed it", !isDir(join(dir, "victim")));
 

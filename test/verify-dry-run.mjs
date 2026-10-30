@@ -52,6 +52,9 @@ const schemaSql = fs.readFileSync(path.join(dir, "schema.sql"), "utf8");
 check(/^ALTER TABLE schedules ADD COLUMN created_by TEXT;$/m.test(fs.readFileSync(path.join(dir, "migrations", "013_sender_schedules.sql"), "utf8")) &&
   (schemaSql.match(/created_by TEXT/g) || []).length === 3, "schedules and routines record who saved them");
 check(fs.existsSync(path.join(dir, "test", "sender.mjs")), "the who-sent-it test ships with the install");
+const workerSrc = fs.readFileSync(path.join(dir, "worker", "worker.mjs"), "utf8");
+check(/ENABLE_CLAUDEAI_MCP_SERVERS: "false"/.test(workerSrc), "a job's own Claude sessions don't load the connectors in your Claude account");
+check(/"Bash\(cua-driver:\*\)"/.test(workerSrc) && /"Bash\(composio:\*\)"/.test(workerSrc), "jobs are denied the usual cua-driver and composio commands");
 check(cfg.powerLanes === (power === "on"), `worker config has command line and desktop control ${power} (powerLanes: ${cfg.powerLanes})`);
 
 // 5. wrangler.toml

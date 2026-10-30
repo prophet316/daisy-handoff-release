@@ -1,6 +1,6 @@
 // Who sent it: every tool that starts, schedules, approves, replies, retries, cancels or changes jobs records the real sender,
-// and an agent (anything that isn't the owner's own Claude chat, and isn't a lead agent the owner turned on) can't run commands,
-// look at or drive the desktop, publish or share, approve, or undo stop_all. Offline: the connector (src/index.js) runs against a
+// and an agent (anything that isn't the owner's own Claude chat) can't run commands, look at or drive the desktop, publish or
+// share, approve (unless it's the lead agent the owner turned on), or undo stop_all. Offline: the connector (src/index.js) runs against a
 // local SQLite copy of the job table; the worker's prompt is checked with planRun.
 // Usage: node test/sender.mjs   (run by ./test.sh gate)
 import { readFileSync } from "node:fs";
@@ -82,7 +82,7 @@ check("publish_job from an agent is refused", r.isError && /Only .* can use publ
 r = await call(OWNER_IP, "publish_job", { id: doneId, publish_to: "google_doc" });
 check("publish_job from the owner goes through", !r.isError && row("SELECT run_mode FROM jobs WHERE id=?", doneId).run_mode === "publish", r.text);
 
-// ---- 3. command line, screen and desktop only from the owner (or the lead agent the owner turned on) ----
+// ---- 3. command line, screen and desktop only from the owner (not even the lead agent the owner turned on) ----
 for (const [tool, args] of [["run_command", { command: "cat ~/.ssh/id_ed25519" }], ["command_result", { id: 1 }], ["look_at_screen", {}],
   ["use_computer", { task: "on my Mac, open Mail and send it", allow: ["send"], target: "host" }], ["resume_all", {}]]) {
   const n0 = count("SELECT count(*) AS n FROM jobs") + count("SELECT count(*) AS n FROM control");
@@ -95,11 +95,14 @@ for (const [tool, args] of [["run_command", { command: "cat ~/.ssh/id_ed25519" }
 r = await call(OWNER_IP, "run_command", { command: "echo hi" });
 check("run_command from the owner reaches the emergency lane (here: no supervisor, so not run)", /^Not run:/.test(r.text), r.text);
 r = await call(LEAD, "run_command", { command: "echo hi" });
-check("run_command from the lead agent with its key reaches the emergency lane", /^Not run:/.test(r.text), r.text);
+check("run_command from the lead agent is refused too: it may only approve", r.isError && /Only .* can use run_command/.test(r.text), r.text);
 r = await call(OWNER_IP, "look_at_screen", { question: "what's up" });
 check("look_at_screen from the owner queues a screen job recorded as the owner", !r.isError && lastJob().mode === "screen" && lastJob().created_by === null, r.text);
+let n0 = count("SELECT count(*) AS n FROM jobs");
 r = await call(LEAD, "use_computer", { task: "on my Mac, open Safari", target: "host" });
-check("use_computer from the lead agent is recorded as the lead agent, not the owner", !r.isError && lastJob().mode === "computer" && lastJob().created_by === "agent boss", r.text);
+check("use_computer from the lead agent is refused and nothing is queued", r.isError && /Only .* can use use_computer/.test(r.text) && count("SELECT count(*) AS n FROM jobs") === n0, r.text);
+r = await call(LEAD, "add_job", { title: "lead publish", details: "x", publish_to: "doc" });
+check("the lead agent can't ask for publishing either", r.isError && /Only .* can ask for a result to be published/.test(r.text), r.text);
 
 // ---- 4. approvals and replies (sender tagging) ----
 const held = idIn((await call(OWNER_IP, "add_job", { title: "held one" })).text);
