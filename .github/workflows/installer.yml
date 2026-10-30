@@ -1,7 +1,11 @@
 name: installer
+# GitHub's hosted runners were blocked on the account for 0.9.1, so this runs on the maintainer's own Windows PC (a
+# self-hosted runner), only on pushes to main and when started by hand, never on pull requests. Before this repo takes
+# pull requests from anyone else, the self-hosted runner is removed and the matrix goes back to GitHub's macOS and
+# Windows runners.
 on:
   push:
-  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,8 +17,8 @@ jobs:
         os: [beast]
     runs-on: [self-hosted, Windows, X64, beast]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Dry run (real OS, throwaway home)

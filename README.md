@@ -22,7 +22,7 @@ Setup takes a Terminal installer and a free Cloudflare account. After that, day 
 >
 > Install it only on a computer you trust it with. Desktop control is Mac only for now. Details: [SECURITY.md](SECURITY.md).
 
-<!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request, start to finish." -->
+<!-- TODO(SCREENSHOTS_PLAN H1): hero clip readme/hero.mp4, poster readme/hero-poster.png. Caption: "One voice request on my Mac." Claim the whole loop only after the end-to-end run is recorded. -->
 
 ---
 
@@ -192,7 +192,7 @@ If you'd rather not, press Enter at the installer's phone notification question 
 
 Anthropic says channels may change, so a Claude Code update could stop notifications until Nuff Said is updated. Jobs keep running either way.
 
-<!-- TODO(SCREENSHOTS_PLAN S4): readme/04-done-push.png, a Claude app notification on the lock screen with the job's real result. -->
+<!-- TODO(SCREENSHOTS_PLAN S4): readme/04-done-push.png, a Claude app notification on the lock screen with the job's real result. Waiting on the end-to-end run: don't use this shot until that run is recorded. -->
 
 For that to work:
 
@@ -388,7 +388,7 @@ node test/time-unit.mjs
 node worker/shell-lane.mjs --shell-selftest
 ```
 
-The workflow in [installer.yml](https://github.com/prophet316/daisy-handoff-release/blob/main/.github/workflows/installer.yml) runs today only on one Windows PC of the maintainer's, with no Mac leg: the installer dry run, update and key change, the update-resume and doctor tests, the manual install, and the time zone, redaction and bell prompt tests. On Windows it skips the update-resume checks that can't run there (the real `--rotate-keys` runs and the Ctrl-C test) and says why. Its `./test.sh gate` step runs only on a Mac, so it doesn't run there. GitHub's own runners were blocked on the account for 0.9.1. Every test above was run by hand on one Mac (macOS 26.4, Node 22.23) with the command line and desktop control on and off. On Windows only that workflow ran; the Windows worker isn't in this release. The main loop, from a voice request on your phone to a job on your computer to a phone notification when it's done, hasn't been run end to end for this release: a fresh install from the zip on a new Cloudflare account and a new Claude account is still to do. I use that loop every day on my own install. [RELEASE_NOTES.md](RELEASE_NOTES.md) lists exactly what ran.
+The workflow in [installer.yml](https://github.com/prophet316/daisy-handoff-release/blob/main/.github/workflows/installer.yml) runs today only on one Windows PC of the maintainer's, with no Mac leg: the installer dry run, update and key change, the update-resume and doctor tests, the manual install, and the time zone, redaction and bell prompt tests. It runs only on pushes to main and when started by hand, not on pull requests. On Windows it skips the update-resume checks that can't run there (the real `--rotate-keys` runs and the Ctrl-C test) and says why. Its `./test.sh gate` step runs only on a Mac, so it doesn't run there. GitHub's own runners were blocked on the account for 0.9.1. Every test above was run by hand on one Mac (macOS 26.4, Node 22.23) with the command line and desktop control on and off. On Windows only that workflow ran; the Windows worker isn't in this release. The main loop, from a voice request on your phone to a job on your computer to a phone notification when it's done, hasn't been run end to end for this release: a fresh install from the zip on a new Cloudflare account and a new Claude account is still to do. I use that loop every day on my own install. [RELEASE_NOTES.md](RELEASE_NOTES.md) lists exactly what ran.
 
 ---
 
