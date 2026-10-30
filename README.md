@@ -6,9 +6,10 @@
 
 **Talk to Claude. Your computer does the work.**
 
-Nuff Said works with Claude.
+Nuff Said is made for Claude.
+It's an independent project, not made by, affiliated with or endorsed by Anthropic.
 
-Nuff Said works inside the Claude app you already use. It's one custom connector you add in Claude, and an independent project, not made or endorsed by Anthropic. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the worker on your computer that picks up each job.
+Nuff Said works inside the Claude app you already use. It's one custom connector you add in Claude. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the worker on your computer that picks up each job.
 
 Setup takes a Terminal installer and a free Cloudflare account. After that, day to day, you stay in Claude. Mac today; Windows is in testing and isn't in this release.
 

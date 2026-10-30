@@ -156,6 +156,7 @@ async function main() {
   const UPDATE = has("update");
   if (UPDATE && has("force")) die("use --update or --force, not both. --update keeps your keys and connector URL; --force makes new ones.");
   say(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`);
+  if (!UPDATE) say("Nuff Said is made for Claude. It's an independent project, not made by or affiliated with Anthropic.");
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
   if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
     "  node install.mjs --dry-run --yes --home /tmp/daisy-test\n  node install.mjs --update --dry-run --home /tmp/daisy-test\nA dry run never touches your real install.");

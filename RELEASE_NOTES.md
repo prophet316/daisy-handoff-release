@@ -1,6 +1,6 @@
 **Talk to Claude. Your computer does the work.**
 
-Nuff Said is one custom connector you add in the Claude app. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, run threads, check progress, approve, retry, schedule, and stop everything.
+Nuff Said is made for Claude. It's one custom connector you add in the Claude app. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, run threads, check progress, approve, retry, schedule, and stop everything.
 
 ### Read this first
 This release ships with the command line and desktop control turned on, the way the author uses it. That means a job can do anything you can do at your keyboard: run commands, change or delete files, open apps, and click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you asked for them. Daisy's own desktop, email and publishing tools are held in code, but a job with a command line can still reach those apps another way. That lowers the risk but doesn't remove it. To turn it off, answer no to the installer's question or run `node install.mjs --no-power-lanes`. Turning it off is not a sandbox: normal Claude Code jobs still run. Install it only on a computer you trust it with. Desktop control is Mac only for now.
@@ -49,4 +49,4 @@ In the new release folder run `node install.mjs --update`. It keeps your keys, s
 `nuff-said.zip.sha256` is attached, and this zip has a signed build provenance attestation:
 `gh attestation verify nuff-said.zip --repo prophet316/daisy-handoff-release`
 
-Nuff Said is an independent project, not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.
+Nuff Said is an independent project, not made by, affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.
