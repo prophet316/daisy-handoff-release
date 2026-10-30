@@ -365,7 +365,8 @@ async function main() {
   if (sameUrl) {
     step("Nothing to do in Claude", TOTAL);
     say("  Your connector URL didn't change, so the connector you already added in Claude keeps working.");
-    say("  Jobs that were running when the worker restarted go back in the queue and start again.");
+    say(DRY || SIM || has("no-start") ? "  The worker wasn't restarted on this run, so nothing that was running was touched."
+      : "  Jobs that were running when the worker restarted go back in the queue and start again.");
   } else await handOff(dir, urlFile, assistant, bell);
 
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({

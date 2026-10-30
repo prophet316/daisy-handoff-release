@@ -1139,7 +1139,7 @@ async function approveJob(env, args) {
     return toolText(`Approved "${j.title}" (id ${id}) with {{OWNER}}'s note. The held email draft is not sent as is; the agent carries on with {{HIS}} note, and any new email comes back for approval first.`);
   }
   if (held) return toolText(`Approved "${j.title}" (id ${id}). The worker sends exactly the held email once: from ${held.from} to ${held.to.join(", ")}, subject "${held.subject}". Usually within a minute; it reports back.`);
-  return toolText(`Approved "${j.title}" (id ${id}). The worker will carry out the held action${note ? " with {{OWNER}}'s note" : ""}, usually within a minute, and report back.`);
+  return toolText(`Approved "${j.title}" (id ${id}). The worker will carry out the held action${note ? ` with ${who.owner ? "{{OWNER}}'s" : `lead agent ${who.name}'s`} note` : ""}, usually within a minute, and report back.`);
 }
 
 async function replyToJob(env, args) {
