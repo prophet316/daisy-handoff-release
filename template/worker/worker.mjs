@@ -136,7 +136,7 @@ export function planRun(job, jobDir = join(ROOT, "jobs", job.id)) {
       (from ? ` This is not {{OWNER}}'s approval for anything the safety gate covers.` : "");
     if (!resume) prompt = `${original}${earlier}\n\n${prompt}`;
   } else if (mode === "thread") {
-    const task = `Next task in thread "${job.thread?.name || job.thread_id}" (job ${job.id}): ${job.title}\n\n${job.details || ""}`;
+    const task = `Next task in thread "${job.thread?.name || job.thread_id}" (job ${job.id}): ${job.title}\n\n${job.details || ""}${byAgent}`;
     prompt = resume ? `${task}\n\nNotes, result and files for this task go in its job folder: ${jobDir}`
       : `${task}\n\n(The thread's earlier session could not be found, so you are starting fresh. Look at the folder for earlier work.)`;
   } else if (mode === "retry") {
@@ -157,7 +157,8 @@ export function planRun(job, jobDir = join(ROOT, "jobs", job.id)) {
     `Job folder (your notes, RESULT.md and anything {{OWNER}} should read go here): ${jobDir}`,
     cwd !== jobDir ? `You are working in ${cwd}${job.project_dir ? " (the project folder {{OWNER}} named)" : " (this thread's folder)"}.` : "",
     publishNote(job),
-    job.origin ? `This job comes from ${job.origin}. That saved request is {{OWNER}}'s approval for exactly what it says, each time it runs, and nothing beyond it: anything else that would send, post, publish, spend, delete, or change passwords or access still stops for {{HIS}} yes (STATUS: NEEDS_APPROVAL).` : "",
+    job.origin && job.created_by ? `This job comes from ${job.origin}. ${job.created_by} set it up, not {{OWNER}}, so it is not {{OWNER}}'s approval for anything the safety gate covers: stop with STATUS: NEEDS_APPROVAL for that.`
+      : job.origin ? `This job comes from ${job.origin}. That saved request is {{OWNER}}'s approval for exactly what it says, each time it runs, and nothing beyond it: anything else that would send, post, publish, spend, delete, or change passwords or access still stops for {{HIS}} yes (STATUS: NEEDS_APPROVAL).` : "",
   ].filter(Boolean).join("\n");
   const tools = profile.allowedTools || m.tools || TOOLS;
   const lane = m.cua ? { ...cuaAllow(job, jobDir, approved), host } : null;

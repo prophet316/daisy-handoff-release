@@ -35,6 +35,8 @@ const UPGRADES = [
   "ALTER TABLE job_messages ADD COLUMN sender TEXT",
   "ALTER TABLE jobs ADD COLUMN created_by TEXT",
   "ALTER TABLE jobs ADD COLUMN followup_from TEXT",
+  "ALTER TABLE schedules ADD COLUMN created_by TEXT",
+  "ALTER TABLE routines ADD COLUMN created_by TEXT",
 ];
 const LEAD_WARNING = (name) => [
   `lead agent "${name}" can approve held actions for you (sends, posts, spending, deletes). Off unless you ask for it.`,

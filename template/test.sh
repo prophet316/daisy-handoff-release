@@ -2,7 +2,7 @@
 # Smoke test for the {{ASSISTANT}} Handoff connector.
 # Usage: ./test.sh                 (local dev server)
 #        ./test.sh deployed        (reads the private URL from .connector-url, never prints it)
-#        ./test.sh gate            (the computer-use safety gate and the power-lanes switch, offline: no desktop, no connector)
+#        ./test.sh gate            (the computer-use safety gate, the power-lanes switch and who-sent-it, offline: no desktop, no connector)
 cd "$(dirname "$0")"
 if [ "$1" = "gate" ]; then
   NODE="$(command -v node || echo "$HOME/{{DOTDIR}}/node/bin/node")"
@@ -15,6 +15,8 @@ if [ "$1" = "gate" ]; then
   "$NODE" test/gate-drive.mjs | grep -v '^PASS' || rc=1
   echo "4 command line and desktop control switch (connector, worker, supervisor; on and off):"
   "$NODE" test/power-lanes.mjs | grep -v '^PASS' || rc=1
+  echo "5 who sent it (agents can't approve, publish, run commands or pass as you; schedules and routines keep their sender):"
+  "$NODE" test/sender.mjs | grep -v '^PASS' || rc=1
   [ $rc = 0 ] && echo "gate: all passed" || echo "gate: FAILED"
   exit $rc
 fi

@@ -583,6 +583,20 @@ const OWNER_CALLER = { owner: true, lead: false, name: "{{OWNER}}", label: "{{OW
 const whoOf = (env) => env.WHO || OWNER_CALLER;
 const notOwner = (who) => who.owner ? null : who.label;
 
+// What an agent (not {{OWNER}}, and not the lead agent {{HE}} turned on) can't do at all: run commands, look at or drive the
+// desktop, publish or share, or undo stop_all. Everything else it starts, schedules or changes is recorded as that agent's,
+// never as {{OWNER}}'s, and a job an agent started treats its request as not {{OWNER}}'s approval.
+const OWNER_TOOLS = ["run_command", "command_result", "look_at_screen", "use_computer", "publish_job", "resume_all"];
+export function agentRefusal(who, name, args = {}) {
+  if (who.owner || who.lead) return null;
+  if (OWNER_TOOLS.includes(name)) return `Only {{OWNER}} can use ${name}, from {{HIS}} own Claude chat. This came from ${who.label}, so nothing ran.`;
+  if (args.publish_to !== undefined || args.share_with !== undefined) {
+    return `Only {{OWNER}} can ask for a result to be published or shared, from {{HIS}} own Claude chat. This came from ${who.label}, so nothing was queued. Leave out publish_to and share_with.`;
+  }
+  return null;
+}
+const byText = (who) => who.owner ? "{{OWNER}}" : `${who.label} (not {{OWNER}})`;
+
 const noJob = (id) => toolText(`No job with id "${id}". Use list_jobs to see recent ids.`, true);
 const findJob = async (env, id) => (id ? await env.DB.prepare("SELECT * FROM jobs WHERE id = ?1").bind(id).first() : null);
 
@@ -880,19 +894,20 @@ async function cancelJob(env, args) {
   if (found.reply) return found.reply;
   const j = found.job, id = j.id;
   const now = new Date().toISOString();
+  const who = whoOf(env), by = who.owner ? "" : ` by ${who.label} (not {{OWNER}})`;
   // Stopping one step of a routine run also stops the steps after it that haven't started.
   const later = async () => {
     if (!j.run_group) return "";
-    const r = await env.DB.prepare("UPDATE jobs SET status='cancelled', result='Cancelled with an earlier step of its routine.', finished_at=?3, updated_at=?3, reported_at=?3 WHERE run_group=?1 AND status='queued' AND id<>?2")
-      .bind(j.run_group, id, now).run();
+    const r = await env.DB.prepare("UPDATE jobs SET status='cancelled', result=?4, finished_at=?3, updated_at=?3, reported_at=?3 WHERE run_group=?1 AND status='queued' AND id<>?2")
+      .bind(j.run_group, id, now, `Cancelled with an earlier step of its routine${by}.`).run();
     return r.meta.changes ? ` Also cancelled the ${r.meta.changes} later step(s) of this routine run.` : "";
   };
   if (j.status === "queued") {
-    await env.DB.prepare("UPDATE jobs SET status='cancelled', result='Cancelled before it started.', finished_at=?2, updated_at=?2, reported_at=?2 WHERE id=?1 AND status='queued'").bind(id, now).run();
+    await env.DB.prepare("UPDATE jobs SET status='cancelled', result=?3, finished_at=?2, updated_at=?2, reported_at=?2 WHERE id=?1 AND status='queued'").bind(id, now, `Cancelled before it started${by}.`).run();
     return toolText(`Cancelled "${j.title}" (id ${id}) before it started.${await later()}`);
   }
   if (j.status === "running") {
-    await env.DB.prepare("UPDATE jobs SET cancel_requested=1, cancel_at=COALESCE(cancel_at, ?2), updated_at=?2 WHERE id=?1").bind(id, now).run();
+    await env.DB.prepare("UPDATE jobs SET cancel_requested=1, cancel_at=COALESCE(cancel_at, ?2), updated_at=?2, history=?3 WHERE id=?1").bind(id, now, addHistory(j, now, `${byText(who)} asked to stop it.`)).run();
     await addControl(env, "stop", id); // the supervisor stops it too, so a stuck worker can't keep it alive
     return toolText(`Stopping "${j.title}" (id ${id}): it is asked to end and killed after 30 seconds if it doesn't, so it is gone within about 35 seconds. ` +
       `If that can't be confirmed it is marked cancelled within a minute anyway. Files it already made are kept.${await later()}`);
@@ -1011,7 +1026,7 @@ async function startThread(env, args) {
   const tid = crypto.randomUUID().slice(0, 8);
   await env.DB.prepare("INSERT INTO threads (id, name, name_key, mode, project_dir, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)")
     .bind(tid, name, threadKey(name), w.mode, w.project_dir, now).run();
-  const id = await insertJob(env, { title: `${name}: ${task.split(/[.\n]/)[0].slice(0, 120)}`, details: task, now, ...w, ...pb, thread_id: tid });
+  const id = await insertJob(env, { title: `${name}: ${task.split(/[.\n]/)[0].slice(0, 120)}`, details: task, now, ...w, ...pb, thread_id: tid, created_by: notOwner(whoOf(env)) });
   await env.DB.prepare("UPDATE threads SET last_job_id=?2 WHERE id=?1").bind(tid, id).run();
   return toolText(`Started thread "${name}" (thread id ${tid}) with job ${id}.${modeText(w.mode, w.project_dir)}${publishText(pb.publish, pb.share)} Continue it any time with continue_thread "${name}".`);
 }
@@ -1027,7 +1042,7 @@ async function continueThread(env, args) {
   const now = new Date().toISOString();
   const id = await insertJob(env, {
     title: `${t.name}: ${task.split(/[.\n]/)[0].slice(0, 120)}`, details: task, now, run_mode: "thread",
-    mode: t.mode, project_dir: t.project_dir, thread_id: t.id, ...pb,
+    mode: t.mode, project_dir: t.project_dir, thread_id: t.id, ...pb, created_by: notOwner(whoOf(env)),
   });
   await env.DB.prepare("UPDATE threads SET last_job_id=?2, updated_at=?3 WHERE id=?1").bind(t.id, id, now).run();
   const busy = await env.DB.prepare("SELECT count(*) AS n FROM jobs WHERE thread_id=?1 AND status IN ('queued','running') AND id<>?2").bind(t.id, id).first();
@@ -1063,7 +1078,7 @@ async function publishJob(env, args) {
   if (pb.share && !pb.publish && !already?.files?.length) return toolText(`"${j.title}" hasn't published anything yet, so there's nothing to share. Add publish_to.`, true);
   const now = new Date().toISOString();
   const what = [pb.publish ? `publish to ${pb.publish.to}` : "", pb.share ? `share with ${shareText(pb.share)}` : ""].filter(Boolean).join(" and ");
-  const history = addHistory(j, now, lastRun(j), `{{OWNER}} asked to ${what}.`);
+  const history = addHistory(j, now, lastRun(j), `${byText(whoOf(env))} asked to ${what}.`);
   if (!(await requeue(env, j, j.status, "publish", null, history, now, ", publish=?7, share_with=?8", [pb.publish ? JSON.stringify(pb.publish) : null, pb.share ? JSON.stringify(pb.share) : null]))) {
     return toolText(`"${j.title}" changed just now; check it with get_job and try again.`, true);
   }
@@ -1342,7 +1357,9 @@ const whenText = (s) => s.repeat === "once" ? `once, ${localTime(s.next_run_at)}
   : s.repeat === "daily" ? `every day at ${spoken(s.at_time)}`
   : s.repeat === "weekdays" ? `weekdays at ${spoken(s.at_time)}`
   : `every ${s.days.split(",").map((d) => DAY_NAMES[d]).join(" and ")} at ${spoken(s.at_time)}`;
-const schedOrigin = (s) => `{{OWNER}}'s schedule "${s.name}" (schedule ${s.id}, ${whenText(s)}, saved ${localTime(s.created_at)})`;
+const schedOrigin = (s) => `${s.created_by ? `${s.created_by}'s schedule (not {{OWNER}}'s)` : "{{OWNER}}'s schedule"} "${s.name}" (schedule ${s.id}, ${whenText(s)}, saved ${localTime(s.created_at)})`;
+const routineName = (r) => `${r.created_by ? `routine "${r.name}", saved by ${r.created_by} (not {{OWNER}})` : `{{OWNER}}'s routine "${r.name}"`}`;
+const madeBy = (x) => x.created_by ? ` Set up by ${x.created_by}, not {{OWNER}}.` : "";
 
 const findRoutine = async (env, ref) => {
   const r = typeof ref === "string" ? ref.trim() : "";
@@ -1400,8 +1417,8 @@ async function scheduleJob(env, args) {
   const s = { id, name: title, repeat, at_time: atTime, days, next_run_at: new Date(next).toISOString(), created_at: iso };
   const job = routine ? null : JSON.stringify({ title, details, mode: w.mode, project_dir: w.project_dir });
   await env.DB.prepare(
-    "INSERT INTO schedules (id, name, kind, repeat, at_time, days, job, routine_id, next_run_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)"
-  ).bind(id, title, routine ? "routine" : "job", repeat, atTime, days, job, routine?.id || null, s.next_run_at, iso).run();
+    "INSERT INTO schedules (id, name, kind, repeat, at_time, days, job, routine_id, next_run_at, created_at, updated_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)"
+  ).bind(id, title, routine ? "routine" : "job", repeat, atTime, days, job, routine?.id || null, s.next_run_at, iso, notOwner(whoOf(env))).run();
   const what = routine ? ` It runs routine "${routine.name}" (${JSON.parse(routine.steps).length} steps).` : modeText(w.mode, w.project_dir);
   return toolText(`Scheduled "${title}" (schedule id ${id}): ${whenText(s)}. Next run ${localTime(s.next_run_at)}.${what} Cancel it any time with cancel_schedule.`);
 }
@@ -1414,11 +1431,11 @@ async function listSchedules(env) {
   const parts = [];
   parts.push(sch.length ? `Schedules (${sch.length}):\n` + sch.map((s) =>
     `- "${s.name}" (schedule id ${s.id}): ${whenText(s)}, next ${localTime(s.next_run_at)}.` +
-    (s.kind === "routine" ? ` Runs routine "${names[s.routine_id] || "?"}".` : modeText(JSON.parse(s.job).mode, JSON.parse(s.job).project_dir)) +
+    (s.kind === "routine" ? ` Runs routine "${names[s.routine_id] || "?"}".` : modeText(JSON.parse(s.job).mode, JSON.parse(s.job).project_dir)) + madeBy(s) +
     (s.last_run_at ? ` Last: ${localTime(s.last_run_at)}, ${s.last_note || ""}` : "")).join("\n") : "No schedules.");
   parts.push(rts.length ? `Routines (${rts.length}):\n` + rts.map((r) => {
     const steps = JSON.parse(r.steps);
-    return `- "${r.name}" (routine id ${r.id}, ${steps.length} steps): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}${r.last_run_at ? `. Last run ${localTime(r.last_run_at)}` : ""}`;
+    return `- "${r.name}" (routine id ${r.id}, ${steps.length} steps): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}${r.last_run_at ? `. Last run ${localTime(r.last_run_at)}` : ""}.${madeBy(r)}`;
   }).join("\n") : "No routines saved.");
   parts.push(dg?.enabled ? `Daily digest: pushed every day at ${spoken(dg.at_time)}, next ${localTime(dg.next_run_at)}.` : "Daily digest push: off.");
   return toolText(parts.join("\n\n"));
@@ -1435,7 +1452,7 @@ async function cancelSchedule(env, args) {
   const s = results[0];
   const now = new Date().toISOString();
   await env.DB.prepare("UPDATE schedules SET enabled=0, next_run_at=NULL, last_note=?2, updated_at=?3 WHERE id=?1")
-    .bind(s.id, `Cancelled by {{OWNER}} ${localTime(now)}.`, now).run();
+    .bind(s.id, `Cancelled by ${byText(whoOf(env))} ${localTime(now)}.`, now).run();
   return toolText(`Cancelled schedule "${s.name}" (${whenText(s)}). It won't run again. Jobs it already started are not affected.`);
 }
 
@@ -1455,24 +1472,27 @@ async function saveRoutine(env, args) {
   const existing = await findRoutine(env, name);
   const now = new Date().toISOString();
   if (existing && args.replace !== true) return toolText(`There is already a routine called "${existing.name}". Set replace to true to overwrite it.`, true);
-  if (existing) await env.DB.prepare("UPDATE routines SET name=?2, steps=?3, updated_at=?4 WHERE id=?1").bind(existing.id, name, JSON.stringify(steps), now).run();
-  else await env.DB.prepare("INSERT INTO routines (id, name, name_key, steps, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)")
-    .bind(newId(), name, threadKey(name), JSON.stringify(steps), now).run();
+  // Whoever last saved the steps owns them: an agent replacing {{OWNER}}'s routine makes every later run that agent's.
+  const by = notOwner(whoOf(env));
+  if (existing) await env.DB.prepare("UPDATE routines SET name=?2, steps=?3, updated_at=?4, created_by=?5 WHERE id=?1").bind(existing.id, name, JSON.stringify(steps), now, by).run();
+  else await env.DB.prepare("INSERT INTO routines (id, name, name_key, steps, created_at, updated_at, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)")
+    .bind(newId(), name, threadKey(name), JSON.stringify(steps), now, by).run();
   return toolText(`${existing ? "Updated" : "Saved"} routine "${name}" (${steps.length} steps, run one after another): ${steps.map((st, i) => `${i + 1}. ${st.title}`).join("; ")}. Run it with run_routine "${name}", or put it on a schedule with schedule_job.`);
 }
 
-async function startRoutine(env, r, now, origin) {
+// createdBy: the agent behind this run (its routine's, its schedule's, or whoever ran it), or null for {{OWNER}}.
+async function startRoutine(env, r, now, origin, createdBy = null) {
   const steps = JSON.parse(r.steps);
   const ids = steps.map(() => newId());
   const group = newId();
   const stmts = steps.map((st, i) => insertStmt(env, ids[i], {
     title: `${r.name} ${i + 1}/${steps.length}: ${st.title}`.slice(0, 200),
     details: [
-      `Step ${i + 1} of ${steps.length} in {{OWNER}}'s routine "${r.name}".`,
+      `Step ${i + 1} of ${steps.length} in ${routineName(r)}.`,
       i ? `Earlier steps' job folders (read their RESULT.md and files if this step builds on them): ${ids.slice(0, i).map((x) => `~/Projects/{{SLUG}}/jobs/${x}/`).join(", ")}` : "",
       st.details || st.title,
     ].filter(Boolean).join("\n"),
-    now, mode: st.mode, project_dir: st.project_dir, origin, after_job: i ? ids[i - 1] : null, run_group: group,
+    now, mode: st.mode, project_dir: st.project_dir, origin, after_job: i ? ids[i - 1] : null, run_group: group, created_by: createdBy,
   }));
   stmts.push(env.DB.prepare("UPDATE routines SET last_run_at=?2 WHERE id=?1").bind(r.id, now));
   await env.DB.batch(stmts);
@@ -1483,7 +1503,8 @@ async function runRoutine(env, args) {
   const r = await findRoutine(env, args.name);
   if (!r) return toolText(`No routine called "${args.name}". Use list_schedules to see saved routines.`, true);
   const now = new Date().toISOString();
-  const ids = await startRoutine(env, r, now, `{{OWNER}}'s routine "${r.name}" (run by {{OWNER}} ${localTime(now)})`);
+  const who = whoOf(env);
+  const ids = await startRoutine(env, r, now, `${routineName(r)} (run by ${byText(who)} ${localTime(now)})`, notOwner(who) || r.created_by || null);
   return toolText(`Started routine "${r.name}": ${ids.length} step(s) queued, run one after another (job ids ${ids.join(", ")}). Cancelling a step also cancels the steps after it.`);
 }
 
@@ -1493,7 +1514,7 @@ async function deleteRoutine(env, args) {
   const now = new Date().toISOString();
   const [, sch] = await env.DB.batch([
     env.DB.prepare("DELETE FROM routines WHERE id=?1").bind(r.id),
-    env.DB.prepare("UPDATE schedules SET enabled=0, next_run_at=NULL, last_note='Its routine was deleted.', updated_at=?2 WHERE routine_id=?1 AND enabled=1").bind(r.id, now),
+    env.DB.prepare("UPDATE schedules SET enabled=0, next_run_at=NULL, last_note=?3, updated_at=?2 WHERE routine_id=?1 AND enabled=1").bind(r.id, now, `Its routine was deleted by ${byText(whoOf(env))}.`),
   ]);
   return toolText(`Deleted routine "${r.name}".${sch.meta.changes ? ` Also cancelled ${sch.meta.changes} schedule(s) that ran it.` : ""} Jobs it already started are not affected.`);
 }
@@ -1525,9 +1546,9 @@ export async function fireDue(env, nowMs, withDigest) {
     } else if (s.kind === "routine") {
       const rt = await env.DB.prepare("SELECT * FROM routines WHERE id=?1").bind(s.routine_id).first();
       if (!rt) note = "Its routine no longer exists; nothing ran.";
-      else { const ids = await startRoutine(env, rt, nowIso, schedOrigin(s)); jobId = ids[0]; note = `started routine "${rt.name}", ${ids.length} steps (jobs ${ids.join(", ")}).`; }
+      else { const ids = await startRoutine(env, rt, nowIso, schedOrigin(s), s.created_by || rt.created_by || null); jobId = ids[0]; note = `started routine "${rt.name}", ${ids.length} steps (jobs ${ids.join(", ")}).`; }
     } else {
-      jobId = await insertJob(env, { ...JSON.parse(s.job), now: nowIso, origin: schedOrigin(s) });
+      jobId = await insertJob(env, { ...JSON.parse(s.job), now: nowIso, origin: schedOrigin(s), created_by: s.created_by || null });
       note = `queued job ${jobId}.`;
     }
     await env.DB.prepare("UPDATE schedules SET last_job_id=COALESCE(?2, last_job_id), last_note=?3 WHERE id=?1").bind(s.id, jobId, note).run();
@@ -1595,7 +1616,7 @@ async function dailyDigest(env, args) {
 async function lookAtScreen(env, args) {
   const q = typeof args.question === "string" ? args.question.trim().slice(0, 1000) : "";
   const now = new Date().toISOString();
-  const id = await insertJob(env, { title: "Look at the screen", details: q || "Describe what is on the screen.", now, mode: "screen", project_dir: null });
+  const id = await insertJob(env, { title: "Look at the screen", details: q || "Describe what is on the screen.", now, mode: "screen", project_dir: null, created_by: notOwner(whoOf(env)) });
   return toolText(`Taking a screenshot of the {{MACHINE}} (job ${id}). In about a minute, call get_job with id ${id} to hear what's on the screen; {{OWNER}} also gets it as a phone push.`);
 }
 
@@ -1615,7 +1636,7 @@ async function useComputer(env, args) {
   const now = new Date().toISOString();
   const short = task.replace(/\s+/g, " ");
   const title = `${target === "host" ? "My Mac" : "Computer"}: ${short.length > 48 ? short.slice(0, 47) + "…" : short}`; // short, so the phone push has room for the answer
-  const id = await insertJob(env, { title, details: task, now, mode: "computer", project_dir: target === "host" ? HOST_LANE : CUA_LANE, allow: [...new Set(allow)], target });
+  const id = await insertJob(env, { title, details: task, now, mode: "computer", project_dir: target === "host" ? HOST_LANE : CUA_LANE, allow: [...new Set(allow)], target, created_by: notOwner(whoOf(env)) });
   return toolText((target === "host"
     ? `Queued job ${id} on {{OWNER}}'s real Mac (host lane). It shows a notification when it starts and ends, and waits whenever {{HE}} is using the mouse or keyboard.`
     : `Queued computer job ${id} in the CUA lane (Claude's own Mac desktop, not {{OWNER}}'s screen).`) +
@@ -1627,20 +1648,21 @@ async function useComputer(env, args) {
 
 async function stopAll(env) {
   const now = new Date().toISOString();
-  await setSetting(env, "paused", { at: now });
+  const who = whoOf(env);
+  await setSetting(env, "paused", { at: now, by: notOwner(who) });
   const { results: run } = await env.DB.prepare("SELECT id FROM jobs WHERE status='running'").all();
   const r = await env.DB.prepare("UPDATE jobs SET cancel_requested=1, cancel_at=COALESCE(cancel_at, ?1), updated_at=?1 WHERE status='running'").bind(now).run();
   for (const j of run) await addControl(env, "stop", j.id);
   const q = await env.DB.prepare("SELECT count(*) AS n FROM jobs WHERE status='queued'").first();
   return toolText(`Stopping everything: ${r.meta.changes} running job(s) are being stopped (asked to end, killed after 30 seconds if they don't; computer jobs halt at their next action). ` +
-    `Paused: nothing new starts${q.n ? ` (${q.n} queued job(s) wait)` : ""} and schedules due while paused are skipped and noted in the digest. Say resume to undo with resume_all.`);
+    `Paused: nothing new starts${q.n ? ` (${q.n} queued job(s) wait)` : ""} and schedules due while paused are skipped and noted in the digest. Say resume to undo with resume_all${who.owner ? "" : `; only {{OWNER}} can resume. Recorded as ${who.label}'s stop`}.`);
 }
 
 async function resumeAll(env) {
   const p = await getSetting(env, "paused");
   if (!p) return toolText("Nothing was paused; everything is running normally.");
   await setSetting(env, "paused", null);
-  return toolText(`Resumed (paused since ${localTime(p.at)}). Queued jobs and schedules run again; jobs stopped by stop_all stay stopped (retry_job brings one back).`);
+  return toolText(`Resumed (paused since ${localTime(p.at)}${p.by ? ` by ${p.by}` : ""}). Queued jobs and schedules run again; jobs stopped by stop_all stay stopped (retry_job brings one back).`);
 }
 
 const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? "just now" : m < 120 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
@@ -1664,7 +1686,7 @@ export async function healthLines(env) {
   const one = (k, label) => { if (c[k]) add(c[k].ok, `${label}: ${c[k].text}`, label); else lines.push(`UNKNOWN: ${label} (no report yet)`); };
   one("bell", "phone bell"); if (VM_LANE) one("vm", "VM lane"); one("host", "host lane"); one("disk", "disk"); one("claude", "Claude sign-in"); one("composio", "Composio sign-ins");
   if (h?.at) lines.push(`(worker checks from ${ago(h.at)})`);
-  lines.push(paused ? `PAUSED since ${localTime(paused.at)} (stop_all); resume_all to undo.` : "Not paused.");
+  lines.push(paused ? `PAUSED since ${localTime(paused.at)} (stop_all${paused.by ? ` by ${paused.by}` : ""}); resume_all to undo.` : "Not paused.");
   lines.push(`Dead-man alarm: ${env.RESEND_KEY ? "armed (email via Resend)" : "NOT armed: no email key set ({{OWNER}}'s step)"}${alarm?.state === "alerted" ? `, alarm sent ${localTime(alarm.at)}` : ""}.`);
   if (!env.RESEND_KEY) problems.push("alarm unarmed");
   const err = await env.DB.prepare("SELECT id, title, result, finished_at FROM jobs WHERE status='failed' ORDER BY finished_at DESC LIMIT 1").first();
@@ -1780,10 +1802,10 @@ const killText = (k) => k.error ? `the supervisor hit an error: ${k.error}` : !k
 async function forceKillJob(env, args) {
   const found = await resolveJob(env, args, "kill");
   if (found.reply) return found.reply;
-  const j = found.job, now = new Date().toISOString();
+  const j = found.job, now = new Date().toISOString(), who = whoOf(env);
   if (j.status === "running" || j.status === "queued") {
     await env.DB.prepare("UPDATE jobs SET status='cancelled', cancel_requested=1, cancel_at=COALESCE(cancel_at, ?2), result=?3, finished_at=?2, updated_at=?2, progress=NULL WHERE id=?1 AND status IN ('running','queued')")
-      .bind(j.id, now, "Force-killed at your request through the emergency lane. Anything it made is still in its folder.").run();
+      .bind(j.id, now, `Force-killed at ${who.owner ? "your" : `${who.label}'s (not {{OWNER}}'s)`} request through the emergency lane. Anything it made is still in its folder.`).run();
   }
   const rec = j.status === "running" || j.status === "queued" ? `Marked cancelled (it was ${j.status}).` : `Its record already said ${j.status}.`;
   const w = await waitControl(env, await addControl(env, "kill", j.id));
@@ -2258,6 +2280,8 @@ async function handleRpc(msg, env) {
     const args = params.arguments ?? {};
     try {
       if (POWER_TOOLS.includes(params.name) && !powerOn(env)) return rpcResult(msg.id, toolText(POWER_OFF, true));
+      const refused = Object.hasOwn(HANDLERS, params.name) ? agentRefusal(whoOf(env), params.name, args && typeof args === "object" ? args : {}) : null;
+      if (refused) return rpcResult(msg.id, toolText(refused, true));
       const fn = Object.hasOwn(HANDLERS, params.name) ? HANDLERS[params.name] : null;
       await sweepStops(env).catch(() => {}); // an unconfirmed stop never shows as running for long
       if (fn) return rpcResult(msg.id, await fn(env, args));

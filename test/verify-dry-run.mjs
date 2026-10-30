@@ -48,6 +48,10 @@ const leadKey = fs.existsSync(path.join(dir, ".lead-agent-key"));
 check(/^LEAD_AGENT = ""$/m.test(leadToml) && !leadKey, "only the owner can approve held actions (lead agent off, no lead key)");
 check(/^ALTER TABLE jobs ADD COLUMN created_by TEXT;?$/m.test(fs.readFileSync(path.join(dir, "migrations", "012_sender.sql"), "utf8")) &&
   /sender TEXT/.test(fs.readFileSync(path.join(dir, "schema.sql"), "utf8")), "the job table records who sent each message");
+const schemaSql = fs.readFileSync(path.join(dir, "schema.sql"), "utf8");
+check(/^ALTER TABLE schedules ADD COLUMN created_by TEXT;$/m.test(fs.readFileSync(path.join(dir, "migrations", "013_sender_schedules.sql"), "utf8")) &&
+  (schemaSql.match(/created_by TEXT/g) || []).length === 3, "schedules and routines record who saved them");
+check(fs.existsSync(path.join(dir, "test", "sender.mjs")), "the who-sent-it test ships with the install");
 check(cfg.powerLanes === (power === "on"), `worker config has command line and desktop control ${power} (powerLanes: ${cfg.powerLanes})`);
 
 // 5. wrangler.toml

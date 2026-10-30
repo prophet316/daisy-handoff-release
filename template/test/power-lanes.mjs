@@ -22,7 +22,7 @@ const check = (name, ok, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  
 
 // ---- 1. the connector ----
 async function rpc(env, method, params = {}) {
-  const r = await connector.fetch(new Request("https://test.invalid/k/mcp", { method: "POST", headers: { "Content-Type": "application/json" },
+  const r = await connector.fetch(new Request("https://test.invalid/k/mcp", { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "160.79.104.20" }, // the owner's chat
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }), env);
   return (await r.json()).result;
 }

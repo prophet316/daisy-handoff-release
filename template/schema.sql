@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS schedules (
   last_job_id TEXT,
   last_note TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  created_by TEXT -- NULL: the owner; else the agent that saved the schedule
 );
 CREATE INDEX IF NOT EXISTS schedules_due ON schedules (enabled, next_run_at);
 CREATE TABLE IF NOT EXISTS routines (
@@ -89,7 +90,8 @@ CREATE TABLE IF NOT EXISTS routines (
   steps TEXT NOT NULL,
   last_run_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  created_by TEXT -- NULL: the owner; else the agent that last saved its steps
 );
 
 CREATE TABLE IF NOT EXISTS job_messages (
