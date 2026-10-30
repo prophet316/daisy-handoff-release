@@ -20,7 +20,8 @@ const SCREEN = join(ROOT, "logs", "bell-screen.log");
 const CLAUDE = process.env.CLAUDE_BIN || "{{HOME}}/.local/bin/claude";
 const NAME = process.env.DAISY_BELL_NAME || "{{ASSISTANT}} bell";
 
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+// Log lines quote job titles and messages; control characters are dropped so reading the log in Terminal is safe.
+const log = (...a) => console.log(new Date().toISOString(), ...a.map((x) => typeof x === "string" ? x.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "?") : x));
 const ANSI = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]/g;
 
 // Every process of the bell session carries this tag, so a session left behind by a killed supervisor (still holding the

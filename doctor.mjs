@@ -31,7 +31,8 @@ const run = (cmd, args, o = {}) => spawnSync(cmd, args, { encoding: "utf8", time
 const which = (cmd) => { const r = run(process.platform === "win32" ? "where" : "which", [cmd]); return r.status === 0 ? r.stdout.split(/\r?\n/)[0].trim() : null; };
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } };
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } };
-const tailOf = (p, n) => (read(p) || "").split("\n").filter(Boolean).slice(-n);
+// Log lines can quote job titles, so the report never carries terminal control characters from them.
+const tailOf = (p, n) => (read(p) || "").split("\n").filter(Boolean).slice(-n).map((l) => l.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "?"));
 const ago = (ms) => (ms < 90_000 ? `${Math.round(ms / 1000)} seconds` : ms < 5_400_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 3_600_000)} hours`);
 
 const results = [];
@@ -107,8 +108,14 @@ const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 check(nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 13) ? "ok" : "fail", `Node ${process.versions.node}`, "Install Node 22.13 or newer from nodejs.org, then open a new Terminal window.", "Node is missing or too old");
 check(which(process.platform === "win32" ? "npx.cmd" : "npx") ? "ok" : "fail", "npx (comes with Node)", "Reinstall Node from nodejs.org.", "Node is missing or too old");
 if (MAC) {
-  const clt = run("xcode-select", ["-p"]);
-  check(clt.status === 0 ? "ok" : "fail", `Apple's Command Line Tools${clt.status === 0 ? "" : " are missing"} (the phone bell's python3 and the blue glow's Swift come with them)`,
+  // The tools bring /usr/bin/python3 (the phone bell) and Swift (the blue glow). Without them /usr/bin/python3 only opens Apple's
+  // "install the tools" window, so it's run only when xcode-select finds them. Jobs, stop and force kill don't need them.
+  const clt = run("xcode-select", ["-p"]).status === 0;
+  const py = clt && run("/usr/bin/python3", ["-I", "-c", "import pty"]).status === 0;
+  const uses = [cfg?.bell ? "phone notifications" : "", cfg?.powerLanes && cfg?.host?.overlay !== false ? "the blue glow" : ""].filter(Boolean);
+  check(py ? "ok" : uses.length ? "fail" : "warn",
+    py ? "Apple's Command Line Tools and /usr/bin/python3 (phone notifications use python3; the blue glow is built with Swift)"
+      : `Apple's Command Line Tools ${clt ? "are installed, but /usr/bin/python3 doesn't run" : "are missing"}. ${uses.length ? `This install needs them for ${uses.join(" and ")}.` : "Only phone notifications and the blue glow need them; jobs, stop and force kill work without them."}`,
     "In Terminal run: xcode-select --install   and click Install. It's free and takes a few minutes.", "Command Line Tools");
 }
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

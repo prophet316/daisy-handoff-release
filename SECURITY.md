@@ -19,7 +19,7 @@ Nuff Said doesn't check for updates by itself. On this repo's GitHub page, click
 - **Your own connector.** The installer deploys a Cloudflare Worker and D1 database to *your* Cloudflare account. No shared server. The maintainer can't see your jobs. Your Claude chats, including what Claude reads back from your jobs, and the bell's Remote Control session are stored by Anthropic like any other Claude conversation, and your jobs' records are stored on your Cloudflare account.
 - **Keys made on your machine.** Three random 256-bit keys (four with a lead agent), created by the installer, stored in the install folder readable only by you (mode 600 on macOS, owner-only ACL on Windows). They are never printed, logged or put in the install receipt. If a job writes one of them, or your connector URL, into a file, its summary or an email draft, it's replaced with `[redacted]` before it leaves your computer: in live reads, in the files and result stored when the job ends, in the phone notification, and in a held email, which then can't be sent. This catches a key written as is. A job that changes it first, for example by encoding it, isn't caught, so redaction stops accidents, not a tricked job.
 - **No open ports.** The worker makes outbound HTTPS calls to your connector. Nothing on the internet can connect to your computer through it. That doesn't make it safe on its own: your connector URL is the way in, so treat it like a password.
-- **Your Cloudflare account is a key too.** Your Mac runs whatever jobs and commands are in your connector's database, and a row put there directly, not through the connector, shows as yours. Cloudflare says that to deploy a Worker with bindings "you need Editor access to the Worker" and "You do not need separate permissions on the bound resources" ([Workers authorization](https://developers.cloudflare.com/workers/authorization/)). So anyone who can deploy to that Worker or change its database, including other members of the Cloudflare account, can run commands on your Mac as you. Treat access to that Cloudflare account like access to your Mac: install on an account only you control, check that `npx -y wrangler@4.151.3 whoami` shows that account before you run the installer, and turn on two-factor authentication under **My Profile > Authentication** (Cloudflare: "We recommend that all Cloudflare user account holders enable two-factor authentication (2FA)", [Cloudflare 2FA](https://developers.cloudflare.com/fundamentals/user-profiles/2fa/)).
+- **Your Cloudflare account is a key too.** Your Mac runs whatever jobs and commands are in your connector's database, and a row put there directly, not through the connector, shows as yours. Cloudflare says that to deploy a Worker with bindings "you need Editor access to the Worker" and "You do not need separate permissions on the bound resources" ([Workers authorization](https://developers.cloudflare.com/workers/authorization/)). So anyone who can deploy to that Worker or change its database, including other members of the Cloudflare account, can run commands on your Mac as you. Treat access to that Cloudflare account like access to your Mac: install on an account only you control, check that `npx -y wrangler@4.151.3 whoami` shows that account before you run the installer (if it says you're not signed in, that's fine: the installer signs you in and prints the account it used), and turn on two-factor authentication under **My Profile > Authentication** (Cloudflare: "We recommend that all Cloudflare user account holders enable two-factor authentication (2FA)", [Cloudflare 2FA](https://developers.cloudflare.com/fundamentals/user-profiles/2fa/)).
 
 ## What the keys do
 
@@ -98,6 +98,9 @@ In the install folder (`~/Projects/daisy-handoff` unless you named your assistan
 
 ```bash
 npx -y wrangler@4.151.3 deploy
+npx -y wrangler@4.151.3 secret list
+# delete every secret that isn't CONNECTOR_KEY, WORKER_KEY, LEAD_AGENT_KEY or RESEND_KEY, for example:
+npx -y wrangler@4.151.3 secret delete OWNER_CIDRS
 openssl rand -hex 32 | tr -d '\n' > .connector-key
 npx -y wrangler@4.151.3 secret put CONNECTOR_KEY < .connector-key
 printf '%s/%s/mcp' "$(node -p "require('./worker/config.json').base")" "$(cat .connector-key)" > .connector-url
@@ -105,10 +108,9 @@ openssl rand -hex 32 | tr -d '\n' > .worker-key
 npx -y wrangler@4.151.3 secret put WORKER_KEY < .worker-key
 launchctl kickstart -k gui/$(id -u)/com.daisy.handoff-worker
 launchctl kickstart -k gui/$(id -u)/com.daisy.supervisor
-pbcopy < .connector-url
 ```
 
-If you use a lead agent, do the same for `.lead-agent-key` and `LEAD_AGENT_KEY`. Then say "list my schedules" in Claude and cancel any you don't recognize.
+A secret Nuff Said doesn't set was put there by hand or by someone else. An `OWNER_CIDRS` secret, for one, makes every caller count as you, and a deploy keeps secrets. If you use a lead agent, do the same for `.lead-agent-key` and `LEAD_AGENT_KEY`. To deal with schedules, routines and waiting jobs without adding the connector, `node install.mjs --clear-schedules` lists them and clears them all; to look first, use `npx -y wrangler@4.151.3 d1 execute NAME-handoff-jobs --remote --command "SELECT id, name, created_by FROM schedules WHERE enabled=1"`. Add the connector in Claude with the new URL (`pbcopy < .connector-url`, then copy something else) only after the leak steps above.
 
 ## Removing it
 

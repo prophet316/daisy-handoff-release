@@ -47,7 +47,8 @@ const WORKER_HEAL_MS = (SUP.workerHealMinutes ?? 10) * 60_000 / Math.max(1, Numb
 const UID = process.getuid();
 const START = Date.now();
 
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+// Log lines quote job titles and messages; control characters are dropped so reading the log in Terminal is safe.
+const log = (...a) => console.log(new Date().toISOString(), ...a.map((x) => typeof x === "string" ? x.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "?") : x));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function api(route, body = {}) {

@@ -39,7 +39,7 @@ You need all of these. The installer checks Node and Claude Code itself and stop
 
 **You see:** the doctor says Apple's Command Line Tools are missing, or a window pops up asking to install "command line developer tools".
 
-The phone bell uses Python, and the blue glow on your desktop is built with Swift; both come with Apple's free Command Line Tools. In Terminal run `xcode-select --install`, click **Install**, and wait for it to finish (a few minutes). You don't need the full Xcode app.
+Two things need them. Phone notifications run with `/usr/bin/python3`, and the blue glow on your desktop is built with Swift; both come with Apple's free Command Line Tools. Without the tools, `/usr/bin/python3` only opens Apple's install window, so the installer stops if you turn phone notifications on, and the doctor checks that `/usr/bin/python3` runs. Jobs, stop everything and force kill don't need the tools. In Terminal run `xcode-select --install`, click **Install**, and wait for it to finish (a few minutes). You don't need the full Xcode app.
 
 ---
 

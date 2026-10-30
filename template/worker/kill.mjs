@@ -22,15 +22,17 @@ export function processTable() {
   const table = out.split("\n").map((l) => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s(.*)$/.exec(l)).filter(Boolean)
     .map((m) => ({ pid: +m[1], ppid: +m[2], pgid: +m[3], stat: m[4], age: etimeSeconds(m[5]), text: m[6], sid: 0 }))
     .filter((p) => !p.stat.startsWith("Z"));
-  // ps on macOS always shows session 0; getsid(2) knows the real one.
+  // ps on macOS always shows session 0; getsid(2) knows the real one. It's called through osascript, which is part of macOS,
+  // so stopping jobs never needs Apple's Command Line Tools (without them /usr/bin/python3 is only an installer prompt).
   try {
-    const sids = execFileSync("/usr/bin/python3", ["-I", "-c", "import os,sys\nfor p in sys.stdin.read().split():\n try: print(p, os.getsid(int(p)))\n except Exception: pass"],
-      { input: table.map((p) => p.pid).join(" "), maxBuffer: 16 << 20 }).toString();
+    const sids = execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-e", GETSID, ...table.map((p) => String(p.pid))], { maxBuffer: 16 << 20 }).toString();
     const by = new Map(sids.trim().split("\n").map((l) => l.split(" ").map(Number)));
-    for (const p of table) p.sid = by.get(p.pid) || 0;
+    for (const p of table) p.sid = Math.max(by.get(p.pid) || 0, 0);
   } catch {}
   return table;
 }
+
+const GETSID = 'function run(argv) { ObjC.bindFunction("getsid", ["int", ["int"]]); return argv.map((p) => `${p} ${$.getsid(Number(p))}`).join("\\n"); }';
 
 // ps etime: [[dd-]hh:]mm:ss
 const etimeSeconds = (t) => { const [d, rest] = t.includes("-") ? t.split("-") : [0, t]; return rest.split(":").map(Number).reduce((a, n) => a * 60 + n, 0) + Number(d) * 86400; };

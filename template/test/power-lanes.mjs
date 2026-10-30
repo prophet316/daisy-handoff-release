@@ -53,8 +53,8 @@ const checks = { bell: { ok: true, text: "listening" }, disk: { ok: true, text: 
 for (const [state, host] of [["off", null], ["on", { ok: true, text: "CuaDriver not installed (optional, needed only for desktop control)" }]]) {
   const hl = await healthLines({ POWER_LANES: state, DB: fakeDb({ beat: { at: now }, supervisor: { at: now }, health: { at: now, checks: host ? { ...checks, host } : checks } }) });
   check(`health check, POWER_LANES "${state}", stock install: no problems from the alarm or the host lane`, !hl.problems.length, hl.problems.join(", "));
-  check(`health check, POWER_LANES "${state}": the alarm reads as optional`, hl.lines.includes("Dead-man alarm: not set up (optional)."), hl.lines.join(" | "));
-  check(`health check, POWER_LANES "${state}": ${state === "off" ? "no host lane line" : "host lane line is OK"}`, state === "off" ? !hl.lines.some((l) => /host lane/.test(l)) : hl.lines.some((l) => /^OK: host lane/.test(l)), hl.lines.join(" | "));
+  check(`health check, POWER_LANES "${state}": the alarm reads as optional`, hl.lines.includes("Offline email alert: not set up (optional)."), hl.lines.join(" | "));
+  check(`health check, POWER_LANES "${state}": ${state === "off" ? "no desktop control line" : "desktop control line is OK"}`, state === "off" ? !hl.lines.some((l) => /desktop control/.test(l)) : hl.lines.some((l) => /^OK: desktop control/.test(l)), hl.lines.join(" | "));
 }
 
 check("the turned-off message says how to turn them on", /--power-lanes/.test(POWER_OFF) && /answer yes/.test(POWER_OFF));

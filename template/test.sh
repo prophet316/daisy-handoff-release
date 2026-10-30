@@ -22,6 +22,8 @@ if [ "$1" = "gate" ]; then
   "$NODE" test/run-state.mjs | grep -v '^PASS' || rc=1
   echo "6b supervisor poll speed (slow when idle; fast after a stop or force kill, or while a job's processes are still alive):"
   "$NODE" test/poll.mjs | grep -v '^PASS' || rc=1
+  echo "6c stop and force kill find a job's processes by session, without Python:"
+  "$NODE" test/kill-session.mjs | grep -v '^PASS' || rc=1
   echo "7 schedule math in several time zones:"
   "$NODE" test/time-unit.mjs | grep -v '^PASS' || rc=1
   echo "8 command line lane, redaction, bell and bell startup prompt self-tests:"

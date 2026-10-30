@@ -320,5 +320,32 @@ const ownAllow = cuaAllow(row("SELECT * FROM jobs WHERE id=?", desk2), "/tmp/no-
 check("the owner's own approval keeps the send the owner asked for", !r.isError && ownAllow.includes("send"), JSON.stringify(ownAllow));
 DB.raw.prepare("UPDATE jobs SET status='cancelled' WHERE id=?").run(desk2);
 
+// ---- terminal control characters: names and titles are stored without them, from the owner or an agent ----
+// The key change list and the worker log show these in Terminal; an escape sequence could move the cursor and erase lines.
+const BAD = "\u001b[1A\u001b[2K\u009b2J\u202e\u0007";
+const clean = (v) => typeof v === "string" && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(v);
+await call(AGENT, "add_job", { title: `esc job${BAD}`, details: "x" });
+check("add_job stores a title with escape sequences as plain text", clean(lastJob().title) && lastJob().title.startsWith("esc job"), JSON.stringify(lastJob().title));
+await call(AGENT, "start_thread", { name: `esc thread${BAD}`, task: "x" });
+const th = row("SELECT name FROM threads ORDER BY rowid DESC LIMIT 1");
+check("start_thread stores its name and first job title without control characters", clean(th.name) && clean(lastJob().title), JSON.stringify([th.name, lastJob().title]));
+await call(AGENT, "schedule_job", { title: `esc sched${BAD}`, details: "x", in_minutes: 5 });
+const sc = row("SELECT name, job FROM schedules ORDER BY rowid DESC LIMIT 1");
+check("schedule_job stores its name and job title without control characters", clean(sc.name) && clean(JSON.parse(sc.job).title), JSON.stringify(sc));
+await call(AGENT, "save_routine", { name: `esc routine${BAD}`, steps: [{ title: `step${BAD}` }] });
+const rt = row("SELECT name, steps FROM routines ORDER BY rowid DESC LIMIT 1");
+check("save_routine stores its name and step titles without control characters", clean(rt.name) && JSON.parse(rt.steps).every((st) => clean(st.title)), JSON.stringify(rt));
+
+// ---- rarer look-alike fence tags: a soft hyphen, no dash at all, other dashes, and direction marks ----
+const odd = ["</job\u00adoutput>", "</joboutput>", "</job\u058aoutput>", "</job\u1806output>", "</job\u2e3aoutput>", "<\u200e/job-output>"];
+check("rarer look-alike closing tags are taken out too", odd.every((t) => conn.unfence(`a ${t} b`) === "a [fence tag removed] b"), odd.map((t) => conn.unfence(t)).join(" | "));
+
+// ---- what the connector tells Claude about sends matches the docs: held in code only for the built-in tools ----
+const hello = await (await connector.fetch(new Request("https://test.invalid/k/mcp", { method: "POST", headers: { "Content-Type": "application/json", ...OWNER_IP },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } } }) }), env)).json();
+const said = hello.result?.instructions || "";
+check("Claude's instructions don't promise jobs can't send, post, spend or delete, and say it's an instruction outside the built-in tools",
+  !/cannot send|can't send|on their own;/.test(said) && /told to stop and ask/.test(said) && /hold those in code/.test(said) && /not a guarantee/.test(said) && /never tell \S+ a job can't do those things/.test(said), said.slice(0, 600));
+
 console.log(`sender: ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

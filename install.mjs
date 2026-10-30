@@ -59,7 +59,9 @@ const POWER_WARNING = [
   "click and type on your desktop, using your logins. A leaked connector URL or a prompt injection in a web page or",
   "email could cause real damage. Sends, posts, spending, deletes and access changes stop for your yes unless you",
   "asked for them. That lowers the risk but doesn't remove it. To turn it off, answer no here or rerun the installer",
-  "with --no-power-lanes. Install it only on a computer you trust it with. Desktop control is Mac only for now.",
+  "with --no-power-lanes. Off isn't a sandbox: code jobs still run Claude Code with its own command line, so a leaked URL",
+  "can still reach this computer. Anyone who can change your Cloudflare account can run jobs here too. Install it only",
+  "on a computer you trust it with. Desktop control is Mac only for now.",
 ];
 // Says plainly that Enter means on, and what on means for a leaked URL.
 const POWER_QUESTION = "Let jobs use the command line and control this computer's desktop? Anyone with your connector URL could then " +
@@ -91,7 +93,8 @@ const LEAK_STEPS = (dir, db) => [
   "     compromised. SECURITY.md has every step.",
   "  4. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more, from the fresh download, and only then add the",
   "     connector in Claude with that URL. Until then, treat the keys from this key change as seen: a copied Cloudflare or Claude",
-  "     sign-in, or something left running here, could have read them.",
+  "     sign-in, or something left running here, could have read them. If this run was that second one, you're done here:",
+  "     add the connector in Claude (step 1).",
 ];
 // Shown at install, Mac only: what the phone bell answers for you. Same substance as README, SECURITY.md and RELEASE_NOTES.md.
 const BELL_NOTE = [
@@ -144,6 +147,9 @@ const HOME = path.resolve(val("home") || (DRY && !MANUAL ? fs.mkdtempSync(path.j
 // ---------- output ----------
 const steps = [];
 const say = (s = "") => console.log(s);
+// Names and titles from the job database could be written by anyone with the connector URL, so they are shown without
+// control characters: an escape sequence in a name could otherwise move the cursor and erase lines of the list.
+const shown = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "?");
 const ok = (s) => { say(`  ok    ${s}`); steps.push(["ok", s]); };
 const note = (s) => { say(`  note  ${s}`); steps.push(["note", s]); };
 const skip = (s) => { say(`  skip  ${s}`); steps.push(["skip", s]); };
@@ -153,6 +159,7 @@ const step = (t, total) => { stepNo++; say(`\n[${stepNo}/${total}] ${t}`); };
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const run = (cmd, args, o = {}) => spawnSync(cmd, args, { encoding: "utf8", shell: HOST === "win32", ...o });
 const which = (cmd) => { const r = run(HOST === "win32" ? "where" : "which", [cmd]); return r.status === 0 ? r.stdout.split(/\r?\n/)[0].trim() : null; };
+const pythonReady = () => run("xcode-select", ["-p"]).status === 0 && run("/usr/bin/python3", ["-I", "-c", "import pty"]).status === 0;
 const tail = (r) => `${r.stderr || ""}\n${r.stdout || ""}`.trim().split("\n").slice(-3).join(" | ");
 const fwd = (p) => p.replace(/\\/g, "/"); // Node on Windows accepts forward slashes; they also survive inside JS string literals
 const bk = (p) => p.replace(/\//g, "\\");
@@ -198,6 +205,15 @@ function uninstall() {
   const projects = path.join(HOME, "Projects");
   const installs = fs.existsSync(projects) ? fs.readdirSync(projects).filter((n) => /-handoff$/.test(n) && fs.existsSync(path.join(projects, n, "site.json"))) : [];
   const db = installs.length === 1 ? `${installs[0]}-jobs` : "NAME-handoff-jobs";
+  // An install that never reached Cloudflare (a manual install before its deploy step, or one that stopped) has nothing there to delete.
+  let base = null;
+  try { if (installs.length === 1) base = JSON.parse(fs.readFileSync(path.join(projects, installs[0], "worker", "config.json"), "utf8")).base; } catch {}
+  const deployed = installs.length !== 1 || (/^https:\/\/[a-z0-9.-]+\.workers\.dev$/.test(base || "") && !/your-subdomain\.workers\.dev$/.test(base));
+  if (!deployed) {
+    say("Your install folder is untouched. It was never deployed to Cloudflare, so there's nothing to delete there. To remove");
+    say("everything, delete the install folder, and remove the connector in Claude under Customize > Connectors if you added it.");
+    return;
+  }
   say("Your install folder and Cloudflare connector are untouched. To remove everything, follow the README's Uninstall");
   say(`steps: in the install folder run  npx -y ${WRANGLER} delete --force  and  npx -y ${WRANGLER} d1 delete ${db} -y,`);
   say("delete the install folder, and remove the connector in Claude under Customize > Connectors.");
@@ -296,6 +312,14 @@ async function main() {
     else if (bell === null) say(`  I didn't understand "${a.slice(0, 20)}". Type yes to turn phone notifications on, or no to leave them off.`);
   }
   ask.close();
+  // The phone bell runs its Claude Code session in a pseudo-terminal with /usr/bin/python3, which comes with Apple's Command
+  // Line Tools. Without the tools that path only opens Apple's "install the tools" window, so it's run only once xcode-select
+  // finds them. Nothing else in a job needs Python: stop and force kill use tools that are part of macOS.
+  if (MAC && bell && !SIM && !MANUAL && !pythonReady()) {
+    const why = "Phone notifications need /usr/bin/python3, which comes with Apple's free Command Line Tools, and it doesn't run on this Mac.";
+    if (DRY) note(`${why} A real install stops here. Install the tools first (xcode-select --install), or answer no to phone notifications.`);
+    else die(`${why} In Terminal run xcode-select --install, click Install and wait for it to finish, then run node install.mjs again. Or install without phone notifications: add --no-bell. Nothing was changed.`);
+  }
   // Only the owner, from their own Claude chat, can clear an approval stop. --lead-agent NAME lets that one agent do it too.
   const prevLead = prev ? ("leadAgent" in prev.receipt ? prev.receipt.leadAgent : /^LEAD_AGENT = "([^"]*)"$/m.exec(prev.toml)?.[1]) : null;
   const lead = has("no-lead-agent") ? "" : (val("lead-agent") || (has("lead-agent") ? "" : prevLead) || "").replace(/[^\w .:-]/g, "").trim().slice(0, 40);
@@ -351,7 +375,8 @@ async function main() {
   fs.copyFileSync(path.join(HERE, "doctor.mjs"), path.join(dir, "doctor.mjs"));
   // This run's answers, before anything can stop it partway, so a second try keeps them. The full receipt replaces it at the end.
   fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ installer: VERSION, unfinished: true, at: new Date().toISOString(), ...(MANUAL || prev?.receipt.manual ? { manual: true } : {}), slug, powerLanes: power, leadAgent: lead || null, bell, timeZone,
-    ...(UPDATE ? { updatedFrom: prev.receipt.updatedFrom || prev.receipt.installer || prev.site.installer || null } : {}) }, null, 2) + "\n");
+    // An earlier run that never finished isn't an old setting: there's nothing live from it, unless it was itself an update.
+    ...(UPDATE ? { updatedFrom: (prev.receipt.unfinished ? prev.receipt.updatedFrom : prev.receipt.installer || prev.site.installer) || null } : {}) }, null, 2) + "\n");
   ok(`${n} files written, every placeholder filled, plus doctor.mjs`);
   if (UPDATE && !DRY) stillOld = "Nothing changed on Cloudflare or in the running worker: they still use your old settings, including the command line switch, until the update finishes. Run node install.mjs --update again.";
   if (MAC) {
@@ -561,18 +586,18 @@ async function rotateKeys() {
     const r = W(["d1", "execute", db, "--remote", "--json", "--command", sql]);
     try { return JSON.parse(r.stdout)[0].results || []; } catch { die(`couldn't read the database ${db}: ${tail(r)}`); }
   };
-  const tag = (x) => x.created_by ? `set up by ${x.created_by}` : "recorded as you";
+  const tag = (x) => x.created_by ? `set up by ${shown(x.created_by)}` : "recorded as you";
   const sch = q("SELECT id, name, repeat, at_time, days, next_run_at, created_by FROM schedules WHERE enabled=1 AND kind<>'digest' ORDER BY next_run_at");
   const rts = q("SELECT id, name, steps, created_by FROM routines ORDER BY name_key");
   // Running jobs too: a planted job that's running now would otherwise be put back in the queue by the restart and keep going.
   const waiting = q("SELECT id, title, status, created_by FROM jobs WHERE status IN ('running','queued','needs_approval') ORDER BY created_at");
   if (DRY) skip("reading schedules, routines and running and waiting jobs from Cloudflare (dry run)");
   say(sch.length ? `  Schedules (${sch.length}):` : "  No schedules.");
-  for (const x of sch) say(`    - "${x.name}" (${x.id}): ${x.repeat} at ${x.at_time}${x.days ? ` on ${x.days}` : ""}, next ${x.next_run_at}; ${tag(x)}`);
+  for (const x of sch) say(`    - "${shown(x.name)}" (${shown(x.id)}): ${shown(x.repeat)} at ${shown(x.at_time)}${x.days ? ` on ${shown(x.days)}` : ""}, next ${shown(x.next_run_at)}; ${tag(x)}`);
   say(rts.length ? `  Routines (${rts.length}):` : "  No routines.");
-  for (const x of rts) { let n = "?"; try { n = JSON.parse(x.steps).length; } catch {} say(`    - "${x.name}" (${x.id}), ${n} step(s); ${tag(x)}`); }
+  for (const x of rts) { let n = "?"; try { n = JSON.parse(x.steps).length; } catch {} say(`    - "${shown(x.name)}" (${shown(x.id)}), ${n} step(s); ${tag(x)}`); }
   say(waiting.length ? `  Running and waiting jobs (${waiting.length}):` : "  No running jobs, queued jobs or jobs waiting for your yes.");
-  for (const x of waiting) say(`    - "${x.title}" (${x.id}), ${x.status}; ${tag(x)}`);
+  for (const x of waiting) say(`    - "${shown(x.title)}" (${shown(x.id)}), ${shown(x.status)}; ${tag(x)}`);
   say("  Anyone with your old URL could have saved these through Claude, and then they show as \"recorded as you\". Check every one.");
 
   step("Clear them", STEPS);
@@ -752,6 +777,12 @@ function setWorkerBase(dir, url) {
 }
 
 // Signed in to Cloudflare, or the browser sign-in first. Stops with `stopped` (what was left alone) if it doesn't finish.
+// wrangler whoami prints a table of "Account Name | Account ID"; the names, joined.
+function cloudflareAccounts(out) {
+  const names = out.split("\n").map((l) => l.split(/[│|]/).map((c) => c.trim())).filter((c) => c.length >= 4 && c[1] && !/^Account Name$/i.test(c[1])).map((c) => c[1]);
+  return names.length ? names.join(", ") : "";
+}
+
 function cloudflareSignIn(W, stopped) {
   const who = W(["whoami"]);
   if (who.status !== 0 || /not authenticated|not logged in/i.test(`${who.stdout}${who.stderr}`)) {
@@ -760,6 +791,9 @@ function cloudflareSignIn(W, stopped) {
     if (!again || again.status !== 0 || /not authenticated|not logged in/i.test(`${again.stdout}${again.stderr}`)) die(`Cloudflare sign-in didn't finish. Run this again when you're ready; ${stopped}.`);
   }
   ok("signed in to Cloudflare");
+  // Which account: whoever can change it can run jobs on this computer. Printed only, never saved in the install receipt.
+  const acct = cloudflareAccounts(W(["whoami"]).stdout || "");
+  if (acct) say(`        Cloudflare account: ${shown(acct)}. If that isn't an account only you control, see SECURITY.md before you use it.`);
 }
 
 function deploy(dir, slug, lead, dropLead) {

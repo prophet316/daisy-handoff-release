@@ -85,7 +85,8 @@ const SUPERVISOR_LOG = resolve(ROOT, CFG.supervisor?.logFile || "logs/supervisor
 // Touched every loop; the supervisor reads it to tell a frozen worker from a busy one.
 const ALIVE_FILE = resolve(ROOT, CFG.aliveFile || "logs/.worker-alive");
 
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+// Log lines quote job titles and messages; control characters are dropped so reading the log in Terminal is safe.
+const log = (...a) => console.log(new Date().toISOString(), ...a.map((x) => typeof x === "string" ? x.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "?") : x));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Who the agent may draft email from: the sending accounts in the worker config (gmail.accounts).

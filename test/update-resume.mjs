@@ -27,6 +27,8 @@ syncBuiltinESMExports();\n`);
 
 let r = install(["--dry-run", "--yes", "--no-power-lanes", "--lead-agent", "captain", "--name", "Tester", "--assistant", "Daisy"]);
 check(r.status === 0, "practice install with the command line off and a lead agent");
+const un = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--dry-run", "--home", home], { encoding: "utf8" });
+check(un.status === 0 && /never deployed to Cloudflare/.test(un.stdout) && !/wrangler@[\d.]+ delete/.test(un.stdout), "--uninstall of an install that never reached Cloudflare doesn't give the Cloudflare delete steps", un.stdout.slice(-500));
 const url = fs.readFileSync(path.join(dir, ".connector-url"), "utf8");
 
 r = install(["--dry-run", "--update"], { pre: ["--import", pathToFileURL(hook).href] });
@@ -205,7 +207,10 @@ if (process.platform === "darwin") {
 // practice install of its own, so nothing above changes what it sees.
 const rhome = fs.mkdtempSync(path.join(os.tmpdir(), "rotate-keys-")), rdir = path.join(rhome, "Projects", "daisy-handoff");
 const rinstall = (args) => spawnSync(process.execPath, [path.join(REPO, "install.mjs"), ...args, "--home", rhome], { encoding: "utf8" });
-check(rinstall(["--dry-run", "--yes", "--name", "Tester", "--assistant", "Daisy"]).status === 0, "practice install for --rotate-keys");
+r = rinstall(["--dry-run", "--yes", "--name", "Tester", "--assistant", "Daisy"]);
+check(r.status === 0, "practice install for --rotate-keys");
+check(/Off isn't a sandbox: code jobs still run Claude Code with its own command line/.test(r.stdout) && /Anyone who can change your Cloudflare account can run jobs here too/.test(r.stdout),
+  "the installer's warning says off isn't a sandbox and the Cloudflare account is a key too", r.stdout.slice(0, 1500));
 const keyBefore = fs.readFileSync(path.join(rdir, ".connector-key"), "utf8");
 r = rinstall(["--rotate-keys"]);
 check(r.status !== 0 && /no terminal here/.test(r.stderr) && /No keys were changed/.test(r.stderr) && !/Nothing was changed/.test(r.stderr + r.stdout) &&
@@ -213,6 +218,7 @@ check(r.status !== 0 && /no terminal here/.test(r.stderr) && /No keys were chang
 r = rinstall(["--dry-run", "--rotate-keys", "--yes"]);
 check(r.status === 0 && /\[1\/5\] Clean connector code[\s\S]*\[2\/5\] New connector key/.test(r.stdout) && /4\. When steps 2 and 3 are done, run node install.mjs --rotate-keys once more/.test(r.stdout),
   "--rotate-keys deploys the clean code before the new connector key, and ends by saying to change the keys again after the Cloudflare sign-out", `${r.status} ${r.stderr.slice(-300)}`);
+check(/If this run was that second one, you're done here:\s+add the connector in Claude \(step 1\)/.test(r.stdout), "the leak steps say the second key change is the last one", r.stdout.slice(-800));
 check(/don't add the new URL yet/.test(r.stdout) && /whichever way the switch was set/.test(r.stdout) && /Assume someone ran commands as you, whether or not the command line was on/.test(r.stdout) &&
   !/If the command line was off while the URL was out/.test(r.stdout), "the leak steps say to do the cleanup whether or not the command line was on", r.stdout.slice(-1500));
 // The real (not dry) order, against a stand-in for wrangler that logs each call: the clean code is deployed and a secret
@@ -222,12 +228,17 @@ fs.mkdirSync(fakeBin);
 fs.writeFileSync(path.join(fakeBin, "npx"), `#!/bin/sh
 shift 2; echo "$*" >> "${calls}"
 case "$*" in
-  whoami*) echo "You are logged in";;
+  whoami*) printf '%s\\n' "You are logged in" "┌──────────────┬────────────┐" "│ Account Name │ Account ID │" "├──────────────┼────────────┤" "│ Rotate Test's Account │ abc123 │" "└──────────────┴────────────┘";;
   "deploy"*) [ -n "$FAIL_DEPLOY" ] && { echo "deploy broke" >&2; exit 1; }; echo "Deployed";;
   "secret list"*) echo '[{"name":"CONNECTOR_KEY","type":"secret_text"},{"name":"WORKER_KEY","type":"secret_text"},{"name":"OWNER_CIDRS","type":"secret_text"}]';;
   "secret put WORKER_KEY"*) echo "stand-in stops here" >&2; exit 1;;
   "secret "*) cat > /dev/null; echo ok;;
-  d1*) case "$*" in *"FROM schedules"*) echo '[{"results":[{"id":"s1","name":"planted","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":"agent x"}]}]';; *) echo '[{"results":[]}]';; esac;;
+  d1*) [ -n "$PLANT" ] && case "$*" in
+      *"FROM schedules"*) printf "%s\\n" '[{"results":[{"id":"s9","name":"news\\u001b[1A\\u001b[2K\\u001b[1A\\u001b[2K","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":null}]}]'; exit 0;;
+      *"FROM routines"*) printf "%s\\n" '[{"results":[{"id":"r9","name":"tidy\\u009b2J\\u202eevil","steps":"[]","created_by":null}]}]'; exit 0;;
+      *"FROM jobs"*) printf "%s\\n" '[{"results":[{"id":"j9","title":"ok\\u001b]0;pwned\\u0007\\r\\nNo schedules.","status":"queued","created_by":null}]}]'; exit 0;;
+    esac
+    case "$*" in *"FROM schedules"*) echo '[{"results":[{"id":"s1","name":"planted","repeat":"daily","at_time":"07:00","days":null,"next_run_at":"x","created_by":"agent x"}]}]';; *) echo '[{"results":[]}]';; esac;;
   *) echo "unexpected: $*" >&2; exit 1;;
 esac
 `, { mode: 0o755 });
@@ -248,8 +259,16 @@ log = fs.readFileSync(calls, "utf8").trim().split("\n");
 const at = (re) => log.findIndex((l) => re.test(l));
 check(at(/^deploy/) >= 0 && at(/^deploy/) < at(/^secret list/) && at(/^secret list/) < at(/^secret delete OWNER_CIDRS/) && at(/^secret delete OWNER_CIDRS/) < at(/^secret put CONNECTOR_KEY/),
   "--rotate-keys (real order): deploy the clean code, list secrets, remove OWNER_CIDRS, and only then store the new connector key", log.join(" / "));
+check(/Cloudflare account: Rotate Test's Account\. If that isn't an account only you control/.test(r.stdout) && !/abc123/.test(r.stdout), "after the Cloudflare sign-in it names the account it will use", r.stdout.slice(0, 800));
 check(/removed the secret OWNER_CIDRS/.test(r.stdout) && keyNow() !== k0, "it says it removed the stray secret, and the connector key changed", r.stdout.slice(-500));
 check(log.filter((l) => /^deploy/.test(l)).length === 1 && at(/^deploy/) < at(/^secret put/), "the clean code is deployed once, before any secret is stored", log.join(" / "));
+// Names and titles in the job database can be written by anyone with the old URL. One with escape sequences (cursor up,
+// erase line, a window title, a fake "No schedules." line) is listed with its control characters shown as "?", so it can't
+// hide itself or others from the list the owner is told to check.
+r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--clear-schedules", "--home", rhome], { encoding: "utf8", env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, PLANT: "1" } });
+check(r.status === 0 && !/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u202a-\u202e]/.test(r.stdout) && /Schedules \(1\):\n {4}- "news\?\[1A\?\[2K\?\[1A\?\[2K" \(s9\)/.test(r.stdout) &&
+  /- "tidy\?2J\?evil" \(r9\)/.test(r.stdout) && /- "ok\?\]0;pwned\?\?\?No schedules\." \(j9\), queued/.test(r.stdout) && /turned off 1 schedule\(s\), deleted 1 routine\(s\)/.test(r.stdout),
+  "--clear-schedules lists planted names with escape sequences as plain text, with no control characters reaching the terminal", JSON.stringify(r.stdout.slice(-900)) + r.stderr.slice(-300));
 // The "Clear them" question, in a real terminal: "yes please" is asked again, not taken as no, and "yes." then clears.
 if (process.platform === "darwin") {
   const PTY2 = `import os, pty, sys, select
@@ -274,6 +293,43 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
     "the Clear them question asks again on \"yes please\" and clears on \"yes.\"", cr.stdout.slice(-600));
 }
 fs.rmSync(rhome, { recursive: true, force: true });
+
+// Phone notifications need /usr/bin/python3 from Apple's Command Line Tools. With the tools missing (a stand-in xcode-select
+// that fails, so the Python stub is never run), turning the bell on is stopped before anything changes; a real install says so.
+if (process.platform === "darwin") {
+  const noTools = fs.mkdtempSync(path.join(os.tmpdir(), "no-clt-")), chome = fs.mkdtempSync(path.join(os.tmpdir(), "clt-home-"));
+  fs.writeFileSync(path.join(noTools, "xcode-select"), "#!/bin/sh\necho 'xcode-select: error: no developer tools were found' >&2; exit 2\n", { mode: 0o755 });
+  const env = { ...process.env, PATH: `${noTools}:${process.env.PATH}` };
+  r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--bell", "--name", "Tester", "--assistant", "Daisy", "--home", chome], { encoding: "utf8", env });
+  check(r.status === 0 && /Phone notifications need \/usr\/bin\/python3, which comes with Apple's free Command Line Tools/.test(r.stdout) && /A real install stops here/.test(r.stdout),
+    "with no Command Line Tools, a dry run with the bell on explains that phone notifications need /usr/bin/python3", r.stdout.slice(-800));
+  fs.rmSync(chome, { recursive: true, force: true });
+  r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--no-bell", "--name", "Tester", "--assistant", "Daisy", "--home", chome], { encoding: "utf8", env });
+  check(r.status === 0 && !/python3/.test(r.stdout), "with the bell off, missing tools don't stop the install", r.stdout.slice(-400));
+  fs.rmSync(chome, { recursive: true, force: true });
+  r = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--dry-run", "--yes", "--bell", "--name", "Tester", "--assistant", "Daisy", "--home", chome], { encoding: "utf8" });
+  const tools = spawnSync("xcode-select", ["-p"]).status === 0;
+  check(r.status === 0 && (!tools || !/Phone notifications need/.test(r.stdout)), "with the tools installed, the bell on raises no Python note", r.stdout.slice(-400));
+  // The doctor: missing tools fail when this install uses them (the blue glow here), and it says stop and force kill don't need them.
+  const dhome = path.join(chome, "Projects", "daisy-handoff");
+  const doc = (e) => spawnSync(process.execPath, [path.join(dhome, "doctor.mjs"), "--dir", dhome, "--offline"], { encoding: "utf8", env: { ...e, HOME: chome } });
+  let d = doc(env);
+  check(/FAIL.*Apple's Command Line Tools are missing\. This install needs them for phone notifications and the blue glow\./.test(d.stdout), "the doctor says what this install needs the tools for", d.stdout.slice(0, 1500));
+  const cfgFile = path.join(dhome, "worker", "config.json"), c = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
+  fs.writeFileSync(cfgFile, JSON.stringify({ ...c, bell: null, powerLanes: false }));
+  d = doc(env);
+  check(/WARN.*Apple's Command Line Tools are missing\. Only phone notifications and the blue glow need them; jobs, stop and force kill work without them\./.test(d.stdout), "with neither in use, it's a warning that says stop and force kill work without them", d.stdout.slice(0, 1500));
+  if (tools) { d = doc(process.env); check(/ok.*Apple's Command Line Tools and \/usr\/bin\/python3/.test(d.stdout), "with the tools, the doctor checks /usr/bin/python3 runs", d.stdout.slice(0, 1500)); }
+  fs.rmSync(chome, { recursive: true, force: true }); fs.rmSync(noTools, { recursive: true, force: true });
+}
+
+// A first install that stopped before it finished, then an update that stops too: there's no old setting to warn about.
+fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify({ ...json("install-receipt.json"), unfinished: true, updatedFrom: undefined }));
+r = install(["--dry-run", "--update"], { pre: ["--import", pathToFileURL(hook).href] });
+const stopped2 = json("install-receipt.json");
+check(r.status !== 0 && stopped2.unfinished === true && !stopped2.updatedFrom, "an update after a first install that never finished records no earlier version", JSON.stringify(stopped2));
+const doc2 = spawnSync(process.execPath, [path.join(dir, "doctor.mjs"), "--dir", dir, "--offline"], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } });
+check(!/may still use your old setting/.test(doc2.stdout) && /command line and desktop control: off/.test(doc2.stdout), "and the doctor doesn't speak of an old setting", doc2.stdout.slice(0, 1500));
 
 // An install with no receipt and no answer in its worker config: the update asks for a flag instead of turning things on.
 fs.rmSync(path.join(dir, "install-receipt.json"));

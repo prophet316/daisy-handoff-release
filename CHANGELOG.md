@@ -28,6 +28,8 @@ GitHub Actions was blocked on the account while 0.9.1 was made, so the CI lines 
 ### Keys and leaks
 - `node install.mjs --rotate-keys`, in this order: deploys the connector code again from the install folder and removes any secret Nuff Said doesn't set (such as `OWNER_CIDRS`), so planted code never gets a new key; changes the connector key, so a leaked URL is locked out at once; lists every schedule, routine, running job and job waiting to run with who set each up, and asks whether to clear them; then changes the worker and lead agent keys and restarts the worker and supervisor. The worker key comes last so the worker isn't cut off while you read the list. Jobs you chose to stop stay stopped, and a running desktop or screen job waits for your yes. With no terminal it stops before changing anything. With `--no-start` it says to restart the worker and supervisor yourself. `--clear-schedules` clears them at any time.
 - The leak steps in the installer, README and SECURITY.md apply whether or not the command line was on, because a code job has its own command line. They cover your Cloudflare sign-in, Claude sign-in, GitHub and other tokens, say that `logs/shell.log` alone can't be trusted, and end with a second `--rotate-keys` after the Cloudflare and Claude sign-outs, before you add the connector again.
+- Job titles and schedule, routine and thread names are stored without control characters, and `--rotate-keys`, `--clear-schedules`, the worker, supervisor and bell logs and the doctor's report show any that are already stored as `?`. A name with terminal escape sequences can't move the cursor or erase lines, so it can't hide itself from the list you check after a leak.
+- SECURITY.md's key change by hand removes secrets Nuff Said doesn't set, as `--rotate-keys` does, and checks schedules without adding the connector early. The leak steps say when the second key change is the last one.
 - The docs say that your Cloudflare account is a key too: anyone who can deploy to your connector's Worker or change its database can run commands on your Mac.
 - The redactor that cleans live reads also cleans the command line's output, the files and result stored when a job ends, the phone notification and a held email, and hides the connector key, connector URL and lead agent key. A held email that carried a key can't be sent. It catches exact copies only.
 
@@ -39,6 +41,9 @@ GitHub Actions was blocked on the account while 0.9.1 was made, so the CI lines 
 - New `--manual` for step 1 of MANUAL-INSTALL.md.
 - Schedules and the times Claude reads out use your own time zone, taken from your computer at install; `--time-zone NAME` picks another. Before, they were always US Central Time.
 - The installer marks the phone bell's folder as trusted in Claude Code, so the bell can start on a new Mac.
+- Stop everything, cancel and force kill no longer use Python: the worker reads each process's session through `osascript`, which is part of macOS. Apple's Command Line Tools are needed only for phone notifications (`/usr/bin/python3`) and the blue glow (Swift). With phone notifications on and the tools missing, the installer stops before it changes anything and says how to install them; the doctor checks that `/usr/bin/python3` runs and says what this install needs the tools for.
+- After the Cloudflare sign-in, the installer and `--rotate-keys` print the name of the Cloudflare account they'll use. The installer's warning at the command line question says that off isn't a sandbox and that your Cloudflare account is a key too.
+- `--uninstall` of an install that never reached Cloudflare doesn't give the Cloudflare delete steps. An update after a first install that never finished doesn't make the doctor speak of an old setting.
 - The installer needs Node 22.13 or newer and says so before it starts. It refuses a real install on Windows, which isn't in this release (a dry run still works).
 
 ### Supervisor and requests
@@ -51,7 +56,7 @@ GitHub Actions was blocked on the account while 0.9.1 was made, so the CI lines 
 - New TROUBLESHOOTING.md, MANUAL-INSTALL.md and an "Install problem" issue form. The README lists everything you need and what it costs, how to add the connector in Claude, how phone notifications use Remote Control, how to start things again after Stop everything, how to hear about updates and security fixes, and how Nuff Said compares with what's built into Claude.
 
 ### Tests
-- `./test.sh gate` runs the desktop gate, host lane, command line switch, who-sent-it (`test/sender.mjs`), run state (`test/run-state.mjs`), supervisor poll (`test/poll.mjs`), time zone, shell lane, redaction, bell and bell prompt self-tests. `installer.yml` is set up to run the installer dry run, update and key change, and the time zone, redaction and bell prompt tests on macOS and Windows, plus `./test.sh gate` on macOS.
+- `./test.sh gate` runs the desktop gate, host lane, command line switch, who-sent-it (`test/sender.mjs`), run state (`test/run-state.mjs`), supervisor poll (`test/poll.mjs`), stop by session (`test/kill-session.mjs`), time zone, shell lane, redaction, bell and bell prompt self-tests. `installer.yml` is set up to run the installer dry run, update and key change, and the time zone, redaction and bell prompt tests on macOS and Windows, plus `./test.sh gate` on macOS.
 - `test/doctor-no-leak.mjs`, `test/update-resume.mjs` and `test/overlay-build.mjs` run from the release folder.
 
 ## 0.9.0 (2026-10-29)
