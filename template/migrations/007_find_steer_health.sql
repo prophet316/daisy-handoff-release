@@ -1,4 +1,4 @@
--- Jarvis phase 4b: find jobs by meaning, steer running jobs, live status, stop-all, the host lane, dead-man alarm, health,
+-- Find jobs by meaning, steer running jobs, live status, stop-all, the host lane, dead-man alarm, health,
 -- approved Gmail sends. Additive only: new columns and new tables. Nothing is dropped or rebuilt.
 -- progress: JSON {step, at, done, total} from the running job's hooks. target: vm or host for computer jobs.
 -- held: JSON of the exact email held for approval {account, from, to, cc, bcc, subject, body, hash}. sent: JSON record once sent.

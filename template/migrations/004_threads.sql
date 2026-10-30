@@ -1,4 +1,4 @@
--- Jarvis phase 2: threads, modes, project folders, parallel claiming, publish and share.
+-- Threads, modes, project folders, parallel claiming, publish and share.
 -- Additive only: new columns and a new table. Nothing is dropped or rebuilt.
 -- mode: code, research, writing or design (the worker maps each to its own instructions and tool set).
 -- project_dir: absolute folder under {{OWNER}}'s home the job works in; NULL means its own job folder.

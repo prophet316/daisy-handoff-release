@@ -43,6 +43,8 @@ export function requestedBrowser(request = REQUEST) {
 
 // ---- Off-limits apps: never touched unless {{OWNER}}'s request names them ----
 
+const CLAUDE_SAY = /\bclaude (desktop )?app\b|\bclaude desktop\b|\bclaude\.(ai|com)\b/i;
+
 export const OFF_LIMITS = [
   { name: "Terminal", re: /^terminal$/i, ids: [/^com\.apple\.terminal$/i] },
   { name: "iTerm", re: /^iterm2?$/i, ids: [/^com\.googlecode\.iterm2$/i] },
@@ -58,7 +60,13 @@ export const OFF_LIMITS = [
   { name: "NordPass", re: /^nordpass$/i, ids: [/nordpass/i] },
   { name: "Proton Pass", re: /^proton pass$/i, ids: [/proton\.pass/i] },
   { name: "Enpass", re: /^enpass$/i, ids: [/enpass/i] },
+  // The Claude app: a message typed there reaches {{ASSISTANT}}'s connector as {{OWNER}}'s own chat, so a tricked job could approve.
+  // "Claude" alone is how {{OWNER}} talks to it, so only "the Claude app", "Claude desktop" or "claude.ai" in the request count as naming it.
+  { name: "Claude", re: /^claude$/i, ids: [/^com\.anthropic\./i], say: CLAUDE_SAY },
 ];
+
+// claude.ai in a browser is the same chat as the Claude app.
+export const claudeSite = (url = "") => { try { return /(^|\.)claude\.(ai|com)$/i.test(new URL(url).hostname); } catch { return false; } };
 
 // The off-limits entry an app name or bundle id hits, unless {{OWNER}} named that app in this request.
 export function offLimits({ name = "", bundle = "" }, request = REQUEST) {
@@ -490,6 +498,10 @@ async function call(name, a = {}) {
     if (off) { log(`REFUSED launch ${off}: off-limits`); return text(`${off} is off-limits on {{OWNER}}'s Mac unless {{HE}} names it in {{HIS}} request. Don't open it; stop and tell {{HIM}}.`, true); }
   }
   if (name === "open_url" && !/^https?:\/\/[^\s'"`<>]+$/i.test(a.url || "")) return text("Only http and https web pages can be opened.", true);
+  if (name === "open_url" && claudeSite(a.url) && !CLAUDE_SAY.test(REQUEST)) {
+    log(`REFUSED open_url ${a.url}: Claude is off-limits`);
+    return text("Claude (claude.ai or the Claude app) is off-limits on {{OWNER}}'s Mac unless {{HE}} names it in {{HIS}} request. Don't open it; stop and tell {{HIM}}.", true);
+  }
   const wanted = requestedBrowser();
   if (name === "open_url" && a.browser && wanted && a.browser.toLowerCase() !== wanted.toLowerCase()) return text(`{{OWNER}} asked for ${wanted}. Open it there (leave browser out); never switch browsers.`, true);
   const app = a.pid ? appOf(a.pid).name : "";
@@ -664,6 +676,10 @@ function selftest() {
     ["Terminal allowed when named", offLimits({ name: "Terminal" }, "on my Mac, open Terminal and show the date") === null],
     ["System Settings allowed when named", offLimits({ name: "System Settings" }, "on my Mac open System Settings and check the display") === null],
     ["Calculator fine", offLimits({ name: "Calculator", bundle: "com.apple.calculator" }, "on my Mac") === null],
+    ["Claude app off-limits by name", offLimits({ name: "Claude" }, "Claude, on my Mac open Safari") === "Claude"],
+    ["Claude app off-limits by bundle", offLimits({ bundle: "com.anthropic.claudefordesktop" }, "on my Mac reply to the email") === "Claude"],
+    ["Claude app allowed when named", offLimits({ name: "Claude" }, "on my Mac open the Claude app and start a new chat") === null],
+    ["claude.ai is the Claude chat", claudeSite("https://claude.ai/new") && claudeSite("https://www.claude.com/x") && !claudeSite("https://example.com/claude.ai")],
     ["gate still blocks send", gate({ action: "click", intent: "click Send" }, new Set())?.includes("send")],
     ["gate allows plain click", gate({ action: "click", intent: "press the 7 key on the calculator" }, new Set()) === null],
     ["browser from the request: Chrome", requestedBrowser("On my Mac, use Google Chrome specifically (not Safari)") === "Google Chrome"],

@@ -1,4 +1,4 @@
--- Jarvis phase 4c: read a running job's live notes and log. Additive only.
+-- Read a running job's live notes and log. Additive only.
 -- live_req: when {{OWNER}} last asked to see a running job as it is now; live_at: when the worker last sent that snapshot.
 ALTER TABLE jobs ADD COLUMN live_req TEXT;
 ALTER TABLE jobs ADD COLUMN live_at TEXT;

@@ -1,4 +1,4 @@
--- Jarvis phase 1: follow-up runs (approve, reply, retry) and job files {{OWNER}} can read from any chat.
+-- Follow-up runs (approve, reply, retry) and job files {{OWNER}} can read from any chat.
 -- Additive only: new columns and a new table. Nothing is dropped or rebuilt.
 -- run_mode: what the next run of a queued job is: fresh (first run), approved, reply, retry.
 -- followup: {{OWNER}}'s note, answer, or new instructions for that next run. Cleared when the run finishes.

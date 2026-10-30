@@ -57,7 +57,7 @@ if (process.argv.includes("--selftest")) {
     ["JWT", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U", (o) => !o.includes("eyJhbGci")],
     ["long random string in a log", "got q8Zr2LkPw0aVtY7nB3mXc5sD1fGh4jK6lQ9eR0tU", (o) => o === "got [redacted]", { log: true }],
     ["plain text untouched", "job 1a2b3c4d started (fresh, code): Write the PROGRESS notes", (o) => o === "job 1a2b3c4d started (fresh, code): Write the PROGRESS notes", { log: true }],
-    ["paths and log names untouched", "in {{HOME}}/Projects/jarvis4c-testproj logs/jarvis4b-test-final2-20261022-120610.log", (o) => !o.includes(MARK), { log: true }],
+    ["paths and log names untouched", "in {{HOME}}/Projects/demo-testproj logs/demo-test-final2-20261022-120610.log", (o) => !o.includes(MARK), { log: true }],
     ["40 hex digits in a log", "commit 3e172b5c0f9e8d7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c done", (o) => o === "commit [redacted] done", { log: true }],
     ["timestamps untouched", "2026-10-22T17:28:58.280Z job 283942b7 done", (o) => o === "2026-10-22T17:28:58.280Z job 283942b7 done", { log: true }],
     ["file names untouched in notes", "D1 bookmark 00000004-0000002f-0000510c-5619230e51157c31d9a94fc7aa34241b", (o) => o.includes("00000004-0000002f")],

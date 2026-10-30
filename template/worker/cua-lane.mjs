@@ -41,6 +41,9 @@ const CHARGE = /\b((place|placing|submit|submitting|confirm|confirming|complete|
 // A bare Pay / Buy / Purchase button is a charge too (by its label, or an intent that presses it), but "continue to
 // payment", "add to cart" and "checkout" are not.
 const CHARGE_WORD = /^\W*(pay|buy|purchase)\b(?!\s+(online|later|with|using|options?|method))/i;
+// Express checkout buttons charge in one press, or open a pay sheet for the charge: "Buy with 1-Click", "Pay with Link",
+// "Buy with Apple Pay". Choosing a payment method ("pay with card" in a list) is not one of these.
+const CHARGE_EXPRESS = /\b(buy|pay|purchase|check ?out|order)\s+(now\s+)?with\s+(1-?click|apple pay|google pay|g ?pay|shop ?pay|link|paypal|amazon pay|venmo)\b|\b1-?click\s+(button|order|buy|purchase)\b/i;
 const CHARGE_PRESS = /\b(click|clicking|press|pressing|tap|tapping)\s+(on\s+)?(the\s+)?["'“]?(pay|buy|purchase)["'”]?(\s+button)?\b(?!\s+(online|later|with|using|options?|method))/i;
 
 // Searching, pressing Return and opening web pages are never gated ({{OWNER}}'s household decision, 2026-10-23): these
@@ -99,7 +102,7 @@ export function gate({ action, intent = "", text = "", url = "", keys = "", app 
   const hits = [];
   for (const [cat, re] of Object.entries(CATEGORIES)) if (re.test(what)) hits.push(cat);
   const k = keys.toLowerCase().replace(/\s+/g, "");
-  if (CHARGE.test(what) || CHARGE_PRESS.test(said) || CHARGE_WORD.test(label)) hits.push("charge");
+  if (CHARGE.test(what) || CHARGE_PRESS.test(said) || CHARGE_WORD.test(label) || CHARGE_EXPRESS.test(what)) hits.push("charge");
   let personal = false;
   if (action === "type_text") {
     if (CATEGORIES.credentials.test(said) || SECRETISH.test(text)) hits.push("credentials");
@@ -313,6 +316,12 @@ function selftest() {
     ["reading an order page ok", gate({ action: "open_url", intent: "open the order page to read the order number and total" }, none) === null],
     ["place order blocked", gate({ action: "click", intent: "click Place Order" }, none)?.includes("charge")],
     ["buy now blocked", gate({ action: "click", intent: "press Buy now" }, none)?.includes("charge")],
+    ["Buy with 1-Click label is a charge", gate({ action: "click", intent: "click the 1-Click button", label: "Buy with 1-Click" }, none)?.includes("charge")],
+    ["1-Click button by intent alone is a charge", gate({ action: "click", intent: "click the 1-Click button" }, none)?.includes("charge")],
+    ["Pay with Link is a charge", gate({ action: "click", intent: "click the green button", label: "Pay with Link" }, none)?.includes("charge")],
+    ["Buy with Apple Pay is a charge", gate({ action: "click", intent: "use the fast checkout", label: "Buy with Apple Pay" }, none)?.includes("charge")],
+    ["Place your order is a charge", gate({ action: "click", intent: "click the button", label: "Place your order" }, none)?.includes("charge")],
+    ["choosing pay with card is not a charge", !gate({ action: "click", intent: "select pay with card as the payment method", label: "Pay with card" }, none)?.includes("charge")],
     ["forward the email blocked", gate({ action: "click", intent: "forward the email to Sam" }, none)?.includes("send")],
     ["forward it to someone blocked", gate({ action: "click", intent: "forward it to the team" }, none)?.includes("send")],
     ["bring a window forward ok", gate({ action: "click", intent: "click TextEdit in the Dock to bring it forward" }, none) === null],

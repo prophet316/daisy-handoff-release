@@ -1,4 +1,4 @@
--- Jarvis phase 3: scheduled and recurring jobs, saved routines, the daily digest.
+-- Scheduled and recurring jobs, saved routines, the daily digest.
 -- Additive only: new columns and new tables. Nothing is dropped or rebuilt.
 -- origin: what {{OWNER}} saved that made this job (a schedule or a routine run); the saved text is {{HIS}} approval for exactly that.
 -- after_job: a routine step waits until this earlier step has ended. run_group: all steps of one routine run.

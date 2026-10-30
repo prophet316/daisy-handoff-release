@@ -561,7 +561,7 @@ async function keyMatches(given, expected) {
 // {{OWNER}}'s own Claude chat reaches this connector from Anthropic's cloud, whose published outbound range is
 // 160.79.104.0/21 (platform.claude.com/docs/en/api/ip-addresses). Cloudflare sets CF-Connecting-IP itself, so a caller
 // can't fake it. Anything else holding the URL (an agent or job on a computer) is an agent, whatever it claims;
-// X-Daisy-Agent only names it. Only {{OWNER}} clears an approval stop, unless he turned on "let my lead agent approve for me":
+// X-Daisy-Agent only names it. Only {{OWNER}} clears an approval stop, unless the owner turned on "let my lead agent approve for me":
 // LEAD_AGENT names that agent, and it must also send X-Daisy-Lead-Key matching the LEAD_AGENT_KEY secret.
 const OWNER_CIDRS = "160.79.104.0/21";
 function ipIn(ip, cidrs) {
