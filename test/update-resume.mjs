@@ -269,7 +269,7 @@ sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))`;
   check(r.status === 0 && nrec().bell === false && /I didn't understand "sure"/.test(r.stdout) && /Type yes or no \[no\]/.test(r.stdout), "an answer that isn't yes or no is asked again, and Enter then leaves it off", r.stdout.slice(-400));
   // The command line question: Enter is the documented default (on), only a clear yes is on, and "nope", "no thanks"
   // and "No." are off. Anything else is asked again, and three unclear answers leave it off.
-  check(/Press Enter or type yes for on \(the default\)/.test(r.stdout) && nrec().powerLanes === true, "in a terminal, Enter at the command line question means on, and the question says so", r.stdout.slice(-300));
+  check(/so Enter means on\. Press Enter or type yes/.test(r.stdout) && !/Enter turned the command line on|other way round/.test(r.stdout) && nrec().powerLanes === true, "in a terminal, Enter at the command line question means on, and the question says so", r.stdout.slice(-300));
   for (const no of ["nope", "no thanks", "No.", "nah", "No, thank you"]) {
     r = await tty("", no);
     check(r.status === 0 && nrec().powerLanes === false && !/I didn't understand/.test(r.stdout), `"${no}" at the command line question turns it off`, r.stdout.slice(-300));
@@ -343,6 +343,16 @@ if (process.platform === "darwin") {
   check(real.status === 0 && /removed Claude Code's trust entry/.test(real.stdout) && !Object.hasOwn(after.projects, path.join(udir, "jarvis-bell")) &&
     after.projects["/tmp/another-project"]?.allowedTools && after.numStartups === 3 && (fs.statSync(cj).mode & 0o777) === 0o600,
     "--uninstall removes only the bell folder's trust entry, keeps the rest of ~/.claude.json and its permissions", real.stdout.slice(-400));
+  // A ~/.claude.json linked into a dotfiles folder stays a link, and the entry comes out of the file it points to.
+  const dots = path.join(uhome, "dotfiles");
+  fs.mkdirSync(dots);
+  fs.rmSync(cj);
+  fs.writeFileSync(path.join(dots, "claude.json"), JSON.stringify(before), { mode: 0o600 });
+  fs.symlinkSync(path.join(dots, "claude.json"), cj);
+  const linked = spawnSync(process.execPath, [path.join(REPO, "install.mjs"), "--uninstall", "--home", uhome], { encoding: "utf8" });
+  const inDots = JSON.parse(fs.readFileSync(path.join(dots, "claude.json"), "utf8"));
+  check(linked.status === 0 && fs.lstatSync(cj).isSymbolicLink() && !Object.hasOwn(inDots.projects, path.join(udir, "jarvis-bell")) && inDots.projects["/tmp/another-project"] &&
+    fs.readdirSync(dots).length === 1, "--uninstall keeps a linked ~/.claude.json a link and takes the entry out of the file it points to", linked.stdout.slice(-400));
   fs.rmSync(uhome, { recursive: true, force: true });
 }
 

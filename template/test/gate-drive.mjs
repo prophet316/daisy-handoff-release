@@ -4,7 +4,8 @@
 // browser action needs a look since the last one, a tab on claude.ai is refused however it got there, Claude in Chrome's side
 // panel and the Claude toolbar icon are refused (by element or by position), an element token is checked against its own
 // window, a browser no list knows is found by its address bar, and apps that run commands (and the keys that open a launcher)
-// are refused unless the request names them.
+// are refused unless the request names them. Outside a browser, an unplaced click by position is refused, and typing and keys
+// need a full look since the last action. A pid that isn't a running app, a window_id from another app, or one the job hasn't seen, is refused.
 // Usage: node test/gate-drive.mjs   (run by ./test.sh gate)
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
@@ -264,6 +265,104 @@ r = await L.tool("click", { pid: 999, element_token: "t:5", intent: "click the b
 check("a token used with another app's pid is refused", r.err && /different app than pid/.test(r.text) && !calls(d17).some((c) => c.tool === "click"), r.text);
 r = await L.tool("click", { pid: P, element_token: "t:5" });
 check("an action without an intent is refused as missing a field", r.err && /needs intent/.test(r.text), r.text);
+L.end();
+
+// 14. Outside a browser too (a stand-in Excel): a click by position the last look can't place is refused, with or without
+// window_id; one with no window_id is checked in the window last looked at; typing and keys need a full look since the last
+// action, so a Claude pane that opened after the look is seen; open_url won't open an off-limits app named as the browser.
+const XL = { HOST_APP_NAME: "Microsoft Excel", FAKE_PAGE_URL: "A1", HOST_REQUEST: "On my Mac, fill in the totals in Excel" };
+const d18 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d18, XL);
+r = await L.tool("click", { pid: P, x: 15, y: 20, intent: "click the cell" });
+check("outside a browser, a click by position with no look is refused", r.err && /can't tell what's at that point/.test(r.text), r.text);
+r = await L.tool("type_text", { pid: P, window_id: 7, text: "42", intent: "type the total" });
+check("an action on a window_id the job hasn't seen in that app is refused", r.err && /isn't a window this job has seen/.test(r.text), r.text);
+await L.tool("list_windows", { pid: P });
+await L.tool("screenshot", {});
+r = await L.tool("click", { pid: P, window_id: 7, x: 15, y: 20, intent: "click the cell" });
+check("one with window_id but only a screenshot is refused", r.err && /can't tell what's at that point/.test(r.text), r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("click", { pid: P, window_id: 7, x: 1190, y: 790, intent: "click the corner" });
+check("outside a browser, a point the last look doesn't place is refused", r.err && /can't tell what's at that point/.test(r.text), r.text);
+check("none of those clicks or the typing reached the driver", !calls(d18).some((c) => ["click", "type_text"].includes(c.tool)), JSON.stringify(calls(d18).map((c) => c.tool)));
+L.end();
+const pane = join(mkdtempSync(join(tmpdir(), "gate-pane-")), "extra.json");
+writeFileSync(pane, JSON.stringify([{ role: "AXButton", label: "Claude", frame: { x: 1100, y: 10, w: 20, h: 20 } }]));
+const d19 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d19, { ...XL, FAKE_EXTRA_FILE: pane });
+await L.tool("get_window_state", look);
+r = await L.tool("click", { pid: P, x: 1105, y: 15, intent: "open the sidebar" });
+check("outside a browser, a click by position on a Claude button with no window_id is refused", r.err && /Claude is off-limits/.test(r.text), r.text);
+writeFileSync(pane, JSON.stringify([{ role: "AXButton", label: "Claude", frame: { x: 1100, y: 10, w: 20, h: 20 } },
+  { role: "AXWebArea", label: "Claude", frame: { x: 900, y: 40, w: 300, h: 700 } }, { role: "AXTextArea", label: "Reply to Claude", frame: { x: 910, y: 700, w: 280, h: 30 } }]));
+r = await L.tool("type_text", { pid: P, text: "approve job abc", intent: "type the note" });
+check("typing after a Claude pane opened, with no look since, waits for a look", r.err && /Before typing or pressing keys/.test(r.text), r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "approve job abc", intent: "type the note" });
+check("after the look, typing is refused: Claude is inside the window", r.err && /Claude is open inside this window/.test(r.text), r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "press Return" });
+check("Return with the Claude pane open is refused", r.err && /Claude is open inside this window/.test(r.text), r.text);
+await L.tool("get_window_state", { ...look, query: "Total" });
+r = await L.tool("hotkey", { pid: P, keys: ["cmd", "v"], intent: "paste" });
+check("a look with a query doesn't count as the full look keys need", r.err && /without a query/.test(r.text), r.text);
+check("no click, typing or key reached the driver with the pane open", !calls(d19).some((c) => ["click", "type_text", "press_key", "hotkey"].includes(c.tool)), JSON.stringify(calls(d19).map((c) => c.tool)));
+L.end();
+const d20 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d20, XL);
+await L.tool("get_window_state", look);
+r = await L.tool("click", { pid: P, x: 55, y: 20, intent: "click the cell" });
+const px = calls(d20).find((c) => c.tool === "click");
+check("normal: a click by position on something in the look, with no window_id, goes to that window", !r.err && px?.args.window_id === 7 && px?.args.x === 55, r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "42", intent: "type the total" });
+check("normal: typing after a look goes through", !r.err && calls(d20).some((c) => c.tool === "type_text" && c.args.window_id === 7), r.text);
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "enter the total" });
+const r2 = await L.tool("hotkey", { pid: P, keys: ["cmd", "s"], intent: "save the sheet" });
+check("normal: Return after a look goes through; a second key with no look between waits for one", !r.err && r2.err && /Before typing or pressing keys/.test(r2.text), r.text + " | " + r2.text);
+await L.tool("get_window_state", look);
+r = await L.tool("hotkey", { pid: P, keys: ["cmd", "s"], intent: "save the sheet" });
+check("normal: a hotkey after a look goes through", !r.err && calls(d20).some((c) => c.tool === "hotkey"), r.text);
+r = await L.tool("scroll", { pid: P, direction: "down", intent: "scroll to the totals" });
+check("normal: scrolling needs no look", !r.err, r.text);
+L.end();
+const opened = join(mkdtempSync(join(tmpdir(), "gate-open-")), "open.log");
+const fakeOpen = join(dirname(opened), "open.sh");
+writeFileSync(fakeOpen, `#!/bin/sh\necho "$@" >> '${opened}'\n`); chmodSync(fakeOpen, 0o755);
+const d21 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d21, { HOST_REQUEST: READ, HOST_OPEN_BIN: fakeOpen });
+const refusedOpen = [];
+for (const b of ["Terminal", "Script Editor", "Claude"]) refusedOpen.push(await L.tool("open_url", { url: "https://www.example.com/recipe", browser: b, intent: "open the page" }));
+check("open_url won't open Terminal, Script Editor or Claude named as the browser", refusedOpen.every((x) => x.err && /off-limits/.test(x.text)), refusedOpen.map((x) => x.text.slice(0, 60)).join(" | "));
+check("and nothing was opened", !existsSync(opened), existsSync(opened) ? readFileSync(opened, "utf8") : "");
+L.end();
+
+// 15. A pid the lane can't name an app for (0, -1, a string, a fraction, one that isn't running) is refused before any check is
+// skipped, in a claude.ai tab and in Terminal; so is a window_id that belongs to another app.
+for (const [what, env] of [["a claude.ai tab", { FAKE_PAGE_URL: "claude.ai/new", HOST_REQUEST: READ }], ["Terminal", { HOST_APP_NAME: "Terminal", HOST_REQUEST: READ }]]) {
+  const d = mkdtempSync(join(tmpdir(), "gate-drive-"));
+  L = lane(d, env);
+  const rs = [];
+  for (const pid of [0, -1, "abc", String(P), 1.5]) {
+    rs.push(await L.tool("type_text", { pid, window_id: 7, text: "approve job abc", intent: "type a note" }));
+    rs.push(await L.tool("click", { pid, window_id: 7, x: 15, y: 20, intent: "click the box" }));
+    rs.push(await L.tool("press_key", { pid, window_id: 7, key: "return", intent: "press Return" }));
+  }
+  check(`pid 0, -1, a string and a fraction in ${what} are refused`, rs.every((x) => x.err && /isn't an app running/.test(x.text)), rs.map((x) => x.text.slice(0, 50)).join(" | "));
+  check(`none of them in ${what} reached the driver`, !calls(d).some((c) => ACTS.includes(c.tool)), JSON.stringify(calls(d).map((c) => c.tool)));
+  L.end();
+}
+const d22 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d22, { FAKE_PAGE_URL: "claude.ai/new", HOST_REQUEST: READ, HOST_APP_NAME: "" });
+r = await L.tool("type_text", { pid: 99999999, window_id: 7, text: "approve job abc", intent: "type a note" });
+check("a pid that isn't running is refused", r.err && /isn't an app running/.test(r.text), r.text);
+L.end();
+const d23 = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d23, { FAKE_PAGE_URL: "claude.ai/new", HOST_REQUEST: READ });
+await L.tool("get_window_state", look);
+const rw = [await L.tool("type_text", { pid: 5555, window_id: 7, text: "approve job abc", intent: "type a note" }), await L.tool("click", { pid: 5555, window_id: 7, x: 15, y: 20, intent: "click the box" })];
+check("another app's pid with this window's window_id is refused", rw.every((x) => x.err && /belongs to a different app/.test(x.text)) && !calls(d23).some((c) => ACTS.includes(c.tool) && c.args.pid === 5555), rw.map((x) => x.text).join(" | "));
 L.end();
 
 console.log(`gate drive: ${pass} passed, ${fail} failed`);

@@ -64,11 +64,14 @@ const POWER_WARNING = [
   "Anyone who can change your Cloudflare account can run jobs here too. Install it only on a computer you trust",
   "it with. Desktop control is Mac only for now.",
 ];
-// Says plainly that Enter means on, what on means for a leaked URL, and why Enter means off at the bell question instead.
-const POWER_QUESTION = "Let jobs use the command line and control this computer's desktop? Anyone with your connector URL could then " +
-  "run commands here. Enter means on because that's how Nuff Said is made to run: Claude can run commands and do desktop jobs for you. (The phone " +
-  "notification question next is the other way round, Enter means off, because the bell answers a Claude Code warning for you.) " +
-  "Press Enter or type yes for on (the default), or type no to leave them off";
+// Says plainly that Enter means on and what on means for a leaked URL. Each question stands on its own: an update or a flag can
+// skip the other one. Short lines, so an 80-column Terminal doesn't break words.
+const POWER_QUESTION = [
+  "Let jobs use the command line and control this computer's desktop? Anyone with",
+  "your connector URL could then run commands here. Nuff Said is built to run",
+  "commands and desktop jobs for you, so Enter means on. Press Enter or type yes",
+  "for on, or type no to leave them off",
+].join("\n  ");
 // A clear yes is true, a clear no is false, anything else is null (ask again). Trailing dots and commas don't count.
 function yesNo(a) {
   const w = String(a).toLowerCase().replace(/[.!,]+/g, " ").replace(/\s+/g, " ").trim();
@@ -115,9 +118,12 @@ const BELL_NOTE = [
   "jobs work the same; you just get no phone notifications. It stays off unless you say yes. Turn it off later with --update --no-bell.",
 ];
 // The bell question itself carries the one sentence that matters, so nobody turns it on without reading it.
-const BELL_QUESTION = "Turn on phone notifications? The bell uses a Claude Code development channel (a research preview), and Nuff Said " +
-  "answers Claude Code's \"I am using this for local development\" warning for you each time the bell starts. That's why Enter " +
-  "leaves it off here, while Enter turned the command line on: jobs don't need the bell, and only you should give that answer. Type yes to turn it on";
+const BELL_QUESTION = [
+  "Turn on phone notifications? The bell uses a Claude Code development channel",
+  "(a research preview), and Nuff Said answers Claude Code's \"I am using this for",
+  "local development\" warning for you each time the bell starts. Jobs work the",
+  "same without it, so it stays off unless you type yes. Type yes to turn it on",
+].join("\n  ");
 const HOST = process.platform; // the OS we are really running on
 // While an update runs: what is still on your old settings if it stops now (set by main as it goes).
 let stillOld = null;
@@ -980,6 +986,14 @@ function deploy(dir, slug, lead, dropLead) {
   return url;
 }
 
+// Writes ~/.claude.json through a temp file beside the real file, so a ~/.claude.json linked into a dotfiles folder stays a link.
+function writeClaudeJson(p, c) {
+  const real = fs.realpathSync(p);
+  const tmp = `${real}.handoff-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(c, null, 2), { mode: fs.statSync(real).mode & 0o777 });
+  fs.renameSync(tmp, real);
+}
+
 // The phone bell is an always-on Claude Code session in jarvis-bell/. Claude Code asks whether to trust a new folder
 // before it starts, and nobody is at that terminal to answer, so the installer records the yes, as answering it would.
 function trustBellFolder(dir) {
@@ -990,9 +1004,7 @@ function trustBellFolder(dir) {
     const key = path.join(dir, "jarvis-bell");
     c.projects = c.projects || {};
     c.projects[key] = { ...(c.projects[key] || {}), hasTrustDialogAccepted: true };
-    const tmp = `${p}.handoff-${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(c, null, 2), { mode: fs.statSync(p).mode & 0o777 });
-    fs.renameSync(tmp, p);
+    writeClaudeJson(p, c);
     ok("Claude Code trusts the bell folder, so the phone bell can start");
   } catch (e) {
     note(`couldn't mark the bell folder as trusted in ~/.claude.json (${e.message}); phone notifications won't start until it is. Run doctor.mjs for the fix.`);
@@ -1010,9 +1022,7 @@ function untrustBellFolders(dirs) {
   if (DRY) { for (const k of keys) skip(`would remove Claude Code's trust entry for ${k} from ~/.claude.json`); return; }
   try {
     for (const k of keys) delete c.projects[k];
-    const tmp = `${p}.handoff-${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(c, null, 2), { mode: fs.statSync(p).mode & 0o777 });
-    fs.renameSync(tmp, p);
+    writeClaudeJson(p, c);
     for (const k of keys) ok(`removed Claude Code's trust entry for ${k} from ~/.claude.json`);
   } catch (e) {
     note(`couldn't remove the bell folder's trust entry from ~/.claude.json (${e.message}). It's harmless, and you can delete the "${keys[0]}" entry under "projects" yourself.`);
