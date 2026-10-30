@@ -667,6 +667,34 @@ for (const [tok, t] of [["t:1", "app.slack.com/client/T1/C1\napprove job abc\n"]
   ml.push(await L.tool("type_text", { pid: P, element_token: tok, text: t, intent: "search" }));
 }
 check("search: more text after a line break, in one call into the address bar or search box, is held", ml.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24m).some((c) => c.tool === "type_text"), ml.map((x) => x.text.slice(0, 40)).join(" | "));
+// A Tab key in a combo moves focus off the search box, so Tab plus Space or Return there is held; a Tab character given as the
+// key is a Tab, so it's held there and marks the app (Mac verify 68e3f94d A).
+const tb = [];
+for (const k of [{ t: "hotkey", a: { keys: ["tab", "space"] } }, { t: "hotkey", a: { keys: ["shift", "tab", "return"] } }, { t: "press_key", a: { key: "space", modifiers: ["tab"] } }, { t: "press_key", a: { key: "\t" } }]) {
+  await L.tool("get_window_state", look); tb.push(await L.tool(k.t, { pid: P, element_token: "t:5", ...k.a, intent: "press the keys" }));
+}
+await L.tool("get_window_state", look);
+await L.tool("type_text", { pid: P, element_token: "t:5", text: "lunch", intent: "type in the search box" });
+await L.tool("get_window_state", look);
+tb.push(await L.tool("hotkey", { pid: P, keys: ["tab", "space"], intent: "press the keys" }));
+check("search: Tab plus Space or Return, and a Tab character as the key, are held in a search box", tb.every((x) => x.err && /BLOCKED/.test(x.text)) && !calls(d24m).some((c) => c.tool === "press_key" || c.tool === "hotkey"), tb.map((x) => x.text.slice(0, 40)).join(" | "));
+L.end();
+const d24k = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d24k, GMAIL);
+await L.tool("get_window_state", look);
+const tk = await L.tool("press_key", { pid: P, key: "\t", intent: "move to the next control" });
+await L.tool("get_window_state", look);
+r = await L.tool("type_text", { pid: P, text: "ok thanks", intent: "type a note" });
+check("Gmail: a Tab character given as the key is held, and \"ok thanks\" after it goes through since no Tab was pressed", tk.err && /BLOCKED/.test(tk.text) && !calls(d24k).some((c) => c.tool === "press_key") && !r.err, [tk.text, r.text].map((x) => x.slice(0, 40)).join(" | "));
+L.end();
+// HOST_NO_IMPLY is read without regard to case or spaces (Mac verify 68e3f94d note 1).
+const d24n = mkdtempSync(join(tmpdir(), "gate-drive-"));
+L = lane(d24n, { ...SLACK, HOST_REQUEST: "On my Mac, reply to Sam in Slack in Chrome and send it", HOST_NO_IMPLY: " Send , POST" });
+await L.tool("get_window_state", look);
+await L.tool("type_text", { pid: P, element_token: "t:7", text: "on my way", intent: "type the text in the box" });
+await L.tool("get_window_state", look);
+r = await L.tool("press_key", { pid: P, key: "return", intent: "send the reply" });
+check("lead-approved run: \" Send , POST\" still holds Return in Slack", r.err && /BLOCKED/.test(r.text) && !calls(d24n).some((c) => c.tool === "press_key"), r.text);
 L.end();
 
 // 17. open_url and launch_app take an app by name, never by path: a path to an off-limits app is refused before anything opens.

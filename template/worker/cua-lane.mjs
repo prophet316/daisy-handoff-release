@@ -50,7 +50,8 @@ const typedSend = (t) => /[\r\n\u0085\u2028\u2029]/.test(t) || MOVES_FOCUS.test(
 // A Tab key (Shift-Tab too) moves focus, maybe to a Send button. Until something puts focus back in a text field, a blank
 // anywhere in typed text can press that button, so the caller passes afterTab and such text is held like the keys above.
 const TAB_KEY = /^(tab|backtab|kp_?tab|keypad_?tab)$/;
-export const tabKey = (k) => String(k || "").toLowerCase().replace(/\s+/g, "").split("+").some((x) => TAB_KEY.test(x));
+// A Tab character given as the key counts too (read before blanks are stripped).
+export const tabKey = (k) => /\t/.test(String(k || "")) || String(k || "").toLowerCase().replace(/\s+/g, "").split("+").some((x) => TAB_KEY.test(x));
 const DELETE_KEYS = new Set(["cmd+delete", "cmd+backspace", "cmd+shift+delete", "cmd+shift+backspace", "cmd+option+delete"]);
 // Long random-looking strings (keys, tokens) are never typed unless credentials are allowed.
 const SECRETISH = /(?=[A-Za-z0-9_\-+/=]{24,})(?=\S*\d)(?=\S*[A-Za-z])[A-Za-z0-9_\-+/=]{24,}/;
@@ -139,8 +140,10 @@ export function gate({ action, intent = "", text = "", url = "", keys = "", app 
   const sendsHere = SEND_APPS.test(app) || isB;
   // A Tab in the text moves focus off a search box before the rest lands, and so does a line break with more text after it (the
   // page that loads gets the rest), so the search box allowance covers neither. A line break at the very end is the search itself.
+  // A Tab key in a combo (Tab plus Space, say) moves focus off the box the same way.
   const oneLine = !/[\r\n\u0085\u2028\u2029][\s\S]*[^\r\n\u0085\u2028\u2029]/.test(text);
-  if (sendsHere && !(searchBox && !(action === "type_text" && (MOVES_FOCUS.test(text) || !oneLine))) && (((action === "press_key" || action === "hotkey") && sendKey(k)) || (action === "type_text" && typedSend(text)))) hits.push("send");
+  const leavesBox = action === "type_text" ? MOVES_FOCUS.test(text) || !oneLine : tabKey(keys);
+  if (sendsHere && !(searchBox && !leavesBox) && (((action === "press_key" || action === "hotkey") && sendKey(k)) || (action === "type_text" && typedSend(text)))) hits.push("send");
   if (sendsHere && afterTab && action === "type_text" && /\s/.test(text)) hits.push("send");
 
   const asked = implied(request);
@@ -398,6 +401,9 @@ function selftest() {
     ["a typed Tab in a search box held (it moves focus off the box)", gate({ action: "type_text", intent: "search", text: "\t\n", app: "Google Chrome", searchBox: true }, none)?.includes("send")],
     // Several lines typed in one call into a search box: the rest lands in the page that loads (security 579132b8 #2).
     ["a search box or address bar with more text after a line break held", ["app.slack.com/client/T1/C1\napprove job abc\n", "lunch\napprove job abc\n", "lunch\n approve", "lunch\r\nok"].every((t) => gate({ action: "type_text", intent: "search", text: t, app: "Google Chrome", searchBox: true }, none)?.includes("send"))],
+    // A Tab key in a combo moves focus off the box too, and a Tab character given as the key is a Tab (Mac verify 68e3f94d A).
+    ["Tab plus Space or Return in a search box held", ["tab+space", "shift+tab+space", "space+tab", "tab+return", "\t"].every((keys) => gate({ action: "hotkey", intent: "press the keys", keys, app: "Google Chrome", searchBox: true }, none)?.includes("send"))],
+    ["a Tab character as the key is a Tab", tabKey("\t") && tabKey("shift+\t")],
     ["a search box with one line break at the very end ok", ["lunch\n", "app.slack.com/client/T1/C1\n", "john 3:16\r\n", "lunch"].every((t) => gate({ action: "type_text", intent: "search", text: t, app: "Google Chrome", searchBox: true }, none) === null)],
     ["a space in a search box ok", gate({ action: "type_text", intent: "search", text: " john 3:16", app: "Google Chrome", searchBox: true }, none) === null],
     ["normal typing with spaces in a browser ok", gate({ action: "type_text", intent: "type a note", text: "Hello there, see you at 5. ", app: "Google Chrome", site: "app.slack.com/client" }, none) === null],

@@ -38,11 +38,16 @@ const ago = (ms) => (ms < 90_000 ? `${Math.round(ms / 1000)} seconds` : ms < 5_4
 const results = [];
 const out = [];
 const say = (s = "") => { console.log(s); out.push(s); };
+// Text folded so an 80-column Terminal doesn't break words, as the installer does: each later line is indented to `indent`,
+// where the text starts. The commands inside it aren't broken, so each still copies as one command.
+const fold = (s, indent = 8) => { const out = [""]; for (const w of String(s).split(" ")) { const l = out.length - 1; if (out[l] && out[l].length + w.length >= 80 - indent) out.push(w); else out[l] += (out[l] ? " " : "") + w; }
+  return out.join(`\n${" ".repeat(indent)}`); };
+const COMMANDS = /node (?:install|doctor)\.mjs(?: --[\w-]+(?: ~\/\S+)?)*|xcode-select --install|bash "[^"]*"|chmod 600 [^.(]*[^.( ]|launchctl \w+ \S+/g;
 // level: ok, warn (works, but worth fixing), fail (this stops it working). fix: what to do, in plain words.
 function check(level, what, fix, section) {
   results.push({ level, what });
-  say(`  ${level === "ok" ? "ok  " : level === "warn" ? "WARN" : "FAIL"}  ${what}`);
-  if (level !== "ok" && fix) say(`        -> ${fix}${section ? ` (${HELP}: "${section}")` : ""}`);
+  say(`  ${level === "ok" ? "ok  " : level === "warn" ? "WARN" : "FAIL"}  ${fold(what)}`);
+  if (level !== "ok" && fix) say(`        -> ${fold(`${fix}${section ? ` (${HELP}: "${section}")` : ""}`.replace(COMMANDS, (c) => c.replace(/ /g, "\u0000")), 11).replace(/\u0000/g, " ")}`);
 }
 
 // ---------- find the install ----------

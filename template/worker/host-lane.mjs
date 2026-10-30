@@ -28,7 +28,7 @@ const JOB_DIR = process.env.CUA_JOB_DIR || process.cwd();
 const STATE_DIR = process.env.CUA_STATE_DIR || JOB_DIR;
 const REQUEST = process.env.HOST_REQUEST || "";
 // Kinds {{OWNER}}'s request words don't unlock on this run: on a run a lead agent approved, send, post and buy need {{HIS}} own yes.
-const NO_IMPLY = new Set((process.env.HOST_NO_IMPLY || "").split(",").map((s) => s.trim()).filter(Boolean));
+const NO_IMPLY = new Set((process.env.HOST_NO_IMPLY || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
 const IDLE_NEEDED = Number(process.env.HOST_IDLE_SECONDS ?? 10);
 const IDLE_MAX_WAIT = Number(process.env.HOST_IDLE_MAX_WAIT || 600);
 // What the gate lets this run do. A charge {{OWNER}} approved on {{HIS}} card is let through once, then held again.
