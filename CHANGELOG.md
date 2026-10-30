@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.9.1
-GitHub Actions was blocked on the account while 0.9.1 was made, so the CI lines below say what `installer.yml` is set up to run, not that it ran. Every test was run by hand on one Mac; nothing ran on Windows.
+GitHub's own runners were blocked on the account while 0.9.1 was made. `installer.yml` ran on one Windows PC of the maintainer's, with no Mac leg; the CI lines below say what it's set up to run. Every Mac test was run by hand on one Mac. The Windows worker didn't run.
 
 ### Name
 - New name: Nuff Said (was Daisy Handoff). The release zip is `nuff-said.zip`, and the installer suggests naming the connector "Nuff Said". Daisy is the default name of your assistant, the worker on your computer. The install folder (`~/Projects/NAME-handoff`), Cloudflare Worker and D1 database names, launch agent labels (`com.daisy.*`) and Windows startup file names are unchanged, so `--update`, `--rotate-keys` and `--uninstall` keep working on existing installs.
