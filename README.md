@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/daisy-link-dark.svg">
+    <img src="assets/daisy-link-light.svg" alt="Daisy Handoff logo: six chain links forming a daisy" width="120">
+  </picture>
+</p>
+
 # Daisy Handoff
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
