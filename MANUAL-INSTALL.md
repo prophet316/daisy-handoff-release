@@ -4,7 +4,7 @@ Use this only if `node install.mjs` keeps stopping at the Cloudflare step and [T
 
 Every command runs in Terminal. Copy one block at a time and check that it worked before the next.
 
-These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below. The names end in `-handoff` from before the project was called Daisy Handoff, and they stay that way so updates keep finding your install.
+These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below. The names end in `-handoff`, and they stay that way so updates keep finding your install.
 
 ## 0. Check your Mac
 

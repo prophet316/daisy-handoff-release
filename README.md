@@ -33,9 +33,9 @@ Setup takes a Terminal installer and a free Cloudflare account. After that, day 
 There's no Daisy Handoff server. Each person who installs it runs their own copy, on their own free Cloudflare account, paired to their own computer.
 
 - **Your jobs never touch my servers.** I don't run one, so I can't see your jobs, your files or your connector URL.
-- **Every install is its own lane.** Your connector, its database and your keys belong to you. Nobody else's install can reach yours, and yours can't reach theirs.
+- **Every install is separate.** Your connector, its database and your keys belong to you. Another person's install can't reach yours, and yours can't reach theirs. Only someone with your connector URL or your Cloudflare sign-in can reach it, so treat both like passwords.
 - **No subscription and no hosting bill.** Cloudflare's free plan covers a normal day of use, and your Claude plan covers the work.
-- **What others can still see:** Cloudflare hosts your connector and its database, and they're tied to your Cloudflare account. Job text also passes through Workers AI on that account so you can find jobs by description. Your Claude chats are stored by Anthropic like any other conversation. Your files stay on your computer unless a job sends them somewhere.
+- **What others can still see:** Cloudflare hosts your connector and its database, and they're tied to your Cloudflare account. Job text also passes through Workers AI on that account so you can find jobs by description. Your Claude chats are stored by Anthropic like any other conversation. If you turn on publishing and email, those results go through your Composio account. Your files stay on your computer unless a job sends them somewhere.
 
 ---
 
@@ -284,7 +284,7 @@ Something not working? Run `node doctor.mjs` in the same folder. It finds the co
 
 To see everything it would do first, run `node install.mjs --dry-run`. It builds the install in a throwaway folder and deploys nothing.
 
-Your install lives in `~/Projects/daisy-handoff` (the name follows what you call your assistant, so an assistant called Max lives in `~/Projects/max-handoff`). Your connector on Cloudflare has the same name, and its database adds `-jobs` to it. These names still end in `-handoff`, from before the project was called Daisy Handoff, so updates keep finding your install.
+Your install lives in `~/Projects/daisy-handoff` (the name follows what you call your assistant, so an assistant called Max lives in `~/Projects/max-handoff`). Your connector on Cloudflare has the same name, and its database adds `-jobs` to it. These names end in `-handoff`, and they stay that way so updates keep finding your install.
 
 **Good to know:**
 - Schedules and times use your Mac's time zone, which the installer shows. To use another one, add `--time-zone America/New_York` (or your zone's name).
@@ -417,7 +417,7 @@ node test/time-unit.mjs
 node worker/shell-lane.mjs --shell-selftest
 ```
 
-The workflow in [installer.yml](https://github.com/prophet316/daisy-handoff-release/blob/main/.github/workflows/installer.yml) is set up for GitHub's macOS and Windows runners. For 0.9.1 those runners were blocked on the account, so it ran only on one Windows PC of the maintainer's, with no Mac leg: the installer dry run, update and key change, the update-resume and doctor tests, the manual install, and the time zone, redaction and bell prompt tests. It runs only on pushes to main and when started by hand, not on pull requests. On Windows it skips the update-resume checks that test Mac-only parts (the phone bell, launchd, a real terminal), real runs (the installer only does dry runs there) and the Ctrl-C test, and prints a skip line for each group it skips. Its `./test.sh gate` step runs only on a Mac, so it doesn't run there. GitHub's own runners were blocked on the account for 0.9.1. Every test above was run by hand on one Mac (macOS 26.4, Node 22.23) with the command line and desktop control on and off. On Windows only that workflow ran; the Windows worker isn't in this release. The main loop, from a voice request on your phone to a job on your computer to a phone notification when it's done, hasn't been run end to end for this release: a fresh install from the zip on a new Cloudflare account and a new Claude account is still to do. I use that loop every day on my own install. [RELEASE_NOTES.md](RELEASE_NOTES.md) lists exactly what ran.
+The workflow in [installer.yml](https://github.com/prophet316/daisy-handoff-release/blob/main/.github/workflows/installer.yml) is set up for GitHub's macOS and Windows runners. For 0.9.1 those runners were blocked on the account, so it ran only on one Windows PC of the maintainer's, with no Mac leg: the installer dry run, update and key change, the update-resume and doctor tests, the manual install, and the time zone, redaction and bell prompt tests. It runs only on pushes to main and when started by hand, not on pull requests. On Windows it skips the update-resume checks that test Mac-only parts (the phone bell, launchd, a real terminal), real runs (the installer only does dry runs there) and the Ctrl-C test, and prints a skip line for each group it skips. Its `./test.sh gate` step runs only on a Mac, so it doesn't run there. Every test above was run by hand on one Mac (macOS 26.4, Node 22.23) with the command line and desktop control on and off. On Windows only that workflow ran; the Windows worker isn't in this release. The main loop, from a voice request on your phone to a job on your computer to a phone notification when it's done, hasn't been run end to end for this release: a fresh install from the zip on a new Cloudflare account and a new Claude account is still to do. I use that loop every day on my own install. [RELEASE_NOTES.md](RELEASE_NOTES.md) lists exactly what ran.
 
 ---
 

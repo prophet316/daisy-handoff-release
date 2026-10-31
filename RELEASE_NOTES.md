@@ -8,11 +8,11 @@ It's one custom connector you add in the Claude app. After that, a conversation 
 ### At a glance
 | | |
 |---|---|
-| **macOS** | Ready. One installer, then two sign-ins (Cloudflare and the Claude connector). |
+| **macOS** | Ready. One installer. It asks you to sign in to Claude Code and Cloudflare, then gives you a link to add in Claude. |
 | **Windows** | Coming soon. The installer refuses a real Windows install in this release. |
 | **You need** | macOS 13 or newer, Claude Pro, Max or Ultra with Claude Code signed in, Node 22.13 or newer, a free Cloudflare account. |
 | **Private by design** | Your connector and its database run on your own free Cloudflare account, paired to your own computer. There's no shared server, so the author never sees your jobs. |
-| **Cost** | Nothing beyond your Claude plan. Cloudflare's free plan covers a normal day of use. |
+| **Cost** | Nothing beyond your Claude plan. Cloudflare's free plan covers a normal day of use. Publishing and email need an optional Composio account. |
 | **License** | FSL-1.1-MIT |
 
 ### Read this first
