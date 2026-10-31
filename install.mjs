@@ -541,7 +541,8 @@ async function handOff(dir, urlFile, assistant, bell) {
     say(`  4. ${fold(`On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`, 5)}`);
     say(`  5. ${fold(`In Terminal run claude, type /config, turn on "Push when Claude decides", then type /exit.`, 5)}`);
   }
-  say(`  ${fold(`If something doesn't work: node "${path.join(dir, "doctor.mjs")}" (TROUBLESHOOTING.md in the release folder explains each problem)`, 2)}`);
+  // The doctor command is folded as one word, so it copies whole (the doctor folds its commands the same way).
+  say(`  ${fold(`If something doesn't work: ${`node "${path.join(dir, "doctor.mjs")}"`.replace(/ /g, "\u0000")} (TROUBLESHOOTING.md in the release folder explains each problem)`, 2).replace(/\u0000/g, " ")}`);
   say(`  ${fold(`That URL works like a password. Anyone who has it can hand your computer work. Don't post it or share it.`, 2)}`);
   if (copied) say(`  ${fold(`After you paste it into Claude, copy something else, so the URL isn't left on your clipboard (or in a clipboard history).`, 2)}`);
 }
