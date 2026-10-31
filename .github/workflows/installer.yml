@@ -28,7 +28,8 @@ jobs:
       - name: Gate, host lane, power switch, who-sent-it, time zone, redaction and bell tests
         if: runner.os == 'macOS'
         shell: bash
-        run: cd "$RUNNER_TEMP/home/Projects/daisy-handoff" && ./test.sh gate
+        # the self-tests expect the install's own home (with ~/Projects), as on a real Mac
+        run: export HOME="$RUNNER_TEMP/home" && cd "$HOME/Projects/daisy-handoff" && ./test.sh gate
       - name: Schedule math in several time zones, redaction and bell startup prompts (every OS)
         shell: bash
         run: |
