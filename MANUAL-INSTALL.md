@@ -4,7 +4,7 @@ Use this only if `node install.mjs` keeps stopping at the Cloudflare step and [T
 
 Every command runs in Terminal. Copy one block at a time and check that it worked before the next.
 
-These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below. The names end in `-handoff` from before the project was called Nuff Said, and they stay that way so updates keep finding your install.
+These steps assume your assistant is called **Daisy**, so everything is named `daisy-handoff`. If you pick another name (say Max), use `max-handoff` everywhere below. The names end in `-handoff` from before the project was called Daisy Handoff, and they stay that way so updates keep finding your install.
 
 ## 0. Check your Mac
 
@@ -127,9 +127,9 @@ Everything should say ok, apart from the phone notification lines until you fini
 ## 9. Connect Claude and your phone
 
 1. Copy your URL: `pbcopy < .connector-url`
-2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+ Add**, then **Add custom connector**. This is for personal Pro, Max and Ultra accounts: on Team and Enterprise an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds one for the organization, and people across it can then connect to it, so don't add yours there. Name it "Nuff Said", paste, and click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Under **Authentication** choose **No sign in**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
+2. In Claude (claude.ai or the desktop app): **Customize > Connectors**, click **+ Add**, then **Add custom connector**. This is for personal Pro, Max and Ultra accounts: on Team and Enterprise an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds one for the organization, and people across it can then connect to it, so don't add yours there. Name it "Daisy Handoff", paste, and click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Under **Authentication** choose **No sign in**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
 3. If you turned on phone notifications: on your phone, sign in to the Claude app with the same account and allow notifications.
 4. If you turned them on: in Terminal run `claude`, type `/config`, turn on **Push when Claude decides**, then `/exit`.
-5. Open the Claude app. If **Nuff Said** isn't on for the chat yet, tap **+**, choose **Connectors** and turn it on (Anthropic says to turn a connector on for each conversation: [Use connectors](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)). Then start voice and say: **"Check updates with Daisy."** You're still talking to Claude; the name tells Claude to use your connector.
+5. Open the Claude app. If **Daisy Handoff** isn't on for the chat yet, tap **+**, choose **Connectors** and turn it on (Anthropic says to turn a connector on for each conversation: [Use connectors](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)). Then start voice and say: **"Check updates with Daisy."** You're still talking to Claude; the name tells Claude to use your connector.
 
 To remove a manual install, follow the README's **Uninstall** steps. They're the same.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Nuff Said installer for macOS. (The Windows code paths are here for testing and aren't in this release.)
+// Daisy Handoff installer for macOS. (The Windows code paths are here for testing and aren't in this release.)
 //
 //   node install.mjs                install for real (5 questions, one Cloudflare sign-in in your browser)
 //   node install.mjs --dry-run      build a full install in a throwaway folder; deploys nothing, starts nothing
@@ -73,7 +73,7 @@ const POWER_WARNING = [
 // skip the other one. Short lines, so an 80-column Terminal doesn't break words.
 const POWER_QUESTION = [
   "Let jobs use the command line and control this computer's desktop? Anyone with",
-  "your connector URL could then run commands here. Nuff Said is built to run",
+  "your connector URL could then run commands here. Daisy Handoff is built to run",
   "commands and desktop jobs for you, so Enter means on. Press Enter or type yes",
   "for on, or type no to leave them off",
 ].join("\n  ");
@@ -104,7 +104,7 @@ const LEAK_STEPS = (dir, db) => [
   `     CLAUDE.md or CLAUDE.local.md in ${dir}`,
   "     (find -L that folder \\( -name .claude -o -name CLAUDE.md -o -name CLAUDE.local.md \\) -not -path '*/jarvis-bell/*'),",
   "     other than the phone bell's own, which --update writes again, and any link in its jobs or threads folder",
-  "     (find jobs threads -maxdepth 1 -type l 2>/dev/null; a folder that isn't there yet is fine). Nuff Said makes no others;",
+  "     (find jobs threads -maxdepth 1 -type l 2>/dev/null; a folder that isn't there yet is fine). Daisy Handoff makes no others;",
   "     a CLAUDE.md or CLAUDE.local.md inside a job folder can be that job's own work. --update moves the rest in job and",
   "     thread folders aside. Finding nothing doesn't prove nothing happened; if in doubt, treat this computer as compromised.",
   "     SECURITY.md has every step.",
@@ -129,9 +129,9 @@ const BELL_NOTE = [
 // The bell question itself carries the one sentence that matters, so nobody turns it on without reading it.
 const BELL_QUESTION = [
   "Turn on phone notifications? The bell uses a Claude Code development channel",
-  "(a research preview), and Nuff Said answers Claude Code's \"I am using this for",
-  "local development\" warning for you each time the bell starts. Jobs work the",
-  "same without it, so it stays off unless you type yes.",
+  "(a research preview), and Daisy Handoff answers Claude Code's \"I am using this",
+  "for local development\" warning for you each time the bell starts. Jobs work",
+  "the same without it, so it stays off unless you type yes.",
   "Type yes to turn it on",
 ].join("\n  ");
 const HOST = process.platform; // the OS we are really running on
@@ -224,11 +224,11 @@ function writeSecret(p, s) {
 // ---------- uninstall, key change ----------
 if (has("uninstall")) { uninstall(); process.exit(0); }
 // A dry run moves folders and writes key files in its home folder like a real run, so never in your real one.
-if (DRY && !MANUAL && path.resolve(HOME) === path.resolve(os.homedir())) die("a dry run can't use your real home folder, so your install is left alone. Leave out --home, or point it at a test folder like /tmp/nuff-test. (For MANUAL-INSTALL.md step 1, use --manual.)");
+if (DRY && !MANUAL && path.resolve(HOME) === path.resolve(os.homedir())) die("a dry run can't use your real home folder, so your install is left alone. Leave out --home, or point it at a test folder like /tmp/daisy-handoff-test. (For MANUAL-INSTALL.md step 1, use --manual.)");
 if (has("rotate-keys") || has("clear-schedules")) { await rotateKeys(); process.exit(0); }
 
 function uninstall() {
-  say(`Nuff Said uninstall ${VERSION} | ${MAC ? "macOS" : "Windows"}${DRY ? " | DRY RUN" : ""}`);
+  say(`Daisy Handoff uninstall ${VERSION} | ${MAC ? "macOS" : "Windows"}${DRY ? " | DRY RUN" : ""}`);
   const bak = path.join(HOME, ".handoff-uninstalled", stamp());
   let n = 0;
   if (MAC) {
@@ -253,7 +253,7 @@ function uninstall() {
   // With nothing to move, a note goes there instead, so the doctor knows this install was uninstalled and doesn't say to
   // finish it with --update.
   if (!n && !DRY) { fs.mkdirSync(bak, { recursive: true }); fs.writeFileSync(path.join(bak, "UNINSTALLED.txt"), "node install.mjs --uninstall ran here and found no startup entries to move.\n"); }
-  if (!n) say(DRY && !val("home") ? "  no Nuff Said worker in this dry run's practice folder (a dry run doesn't look at your real install; add --home to point it at one)" : "  no Nuff Said worker found for this user");
+  if (!n) say(DRY && !val("home") ? "  no Daisy Handoff worker in this dry run's practice folder (a dry run doesn't look at your real install; add --home to point it at one)" : "  no Daisy Handoff worker found for this user");
   else if (!DRY) say(`\nStartup entries moved to ${bak} (not deleted).`);
   // The database name, when there's exactly one install to name it from.
   const projects = path.join(HOME, "Projects");
@@ -305,11 +305,11 @@ async function main() {
   if (has("bell") && has("no-bell")) die("use --bell or --no-bell, not both.");
   if (has("lead-agent") && has("no-lead-agent")) die("use --lead-agent NAME or --no-lead-agent, not both.");
   if (has("power-lanes") && has("no-power-lanes")) die("use --power-lanes or --no-power-lanes, not both.");
-  say(fold(`Nuff Said ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`, 0));
+  say(fold(`Daisy Handoff ${UPDATE ? "update" : "installer"} ${VERSION} | ${MAC ? "macOS" : "Windows"}${SIM ? " (simulated)" : ""}${DRY ? " | DRY RUN: nothing deployed, nothing started" : ""}`, 0));
   if (!UPDATE) say("It works with Claude Code and your own Claude account. It's an independent\nproject, not made by, affiliated with or endorsed by Anthropic.");
   // A dry run works in a throwaway folder, so a dry-run update needs a practice install there to update. It never touches yours.
   if (UPDATE && DRY && !val("home")) die("a dry-run update needs a practice install to update. Make one, then update it:\n" +
-    "  node install.mjs --dry-run --yes --home /tmp/nuff-test\n  node install.mjs --update --dry-run --home /tmp/nuff-test\nA dry run never touches your real install.");
+    "  node install.mjs --dry-run --yes --home /tmp/daisy-handoff-test\n  node install.mjs --update --dry-run --home /tmp/daisy-handoff-test\nA dry run never touches your real install.");
   if (!fs.existsSync(TEMPLATE)) die(`no template folder next to install.mjs (looked for ${TEMPLATE}). Unzip the whole release and run it from that folder.`);
   // An update keeps last time's answers (site.json and install-receipt.json in the install folder) unless a flag changes one.
   const prev = UPDATE ? findInstall() : null;
@@ -346,7 +346,7 @@ async function main() {
     // After --uninstall the folder stays but its startup entries are gone, so the guide's later steps can't carry on.
     if (manualDir && MAC && !takenEarly) die(`you ran step 1 of MANUAL-INSTALL.md (${manualDir}) and then --uninstall, so the guide can't carry on from there. Nothing was changed. To start over, move that folder aside (for example mv "${manualDir}" "${manualDir}.old"), then run --manual again.`);
     if (manualDir) die(`you already ran step 1 of MANUAL-INSTALL.md (${manualDir}). Nothing was changed. Carry on with the guide, steps 2 to 7; to start over, run --uninstall and move that folder aside first.`);
-    if (takenEarly || (named && fs.existsSync(named))) die(`${takenEarly ? "a Nuff Said worker is already installed for this user" : `${named} already exists`}. Nothing was changed. ` +
+    if (takenEarly || (named && fs.existsSync(named))) die(`${takenEarly ? "a Daisy Handoff worker is already installed for this user" : `${named} already exists`}. Nothing was changed. ` +
       "Run with --uninstall first, or --force to replace it (the old folder is kept as a backup).");
   }
 
@@ -415,12 +415,12 @@ async function main() {
   const agents = path.join(HOME, "Library", "LaunchAgents");
   const taken = MAC && fs.existsSync(path.join(agents, "com.daisy.handoff-worker.plist"));
   if ((fs.existsSync(dir) || taken) && !has("force") && !UPDATE) {
-    die(`${taken ? "a Nuff Said worker is already installed for this user" : `${dir} already exists`}. Nothing was changed. ` +
+    die(`${taken ? "a Daisy Handoff worker is already installed for this user" : `${dir} already exists`}. Nothing was changed. ` +
       "Run with --uninstall first, or --force to replace it (the old folder is kept as a backup).");
   }
   if (MAC && !DRY && !SIM && !has("no-start") && !UPDATE) {
     const live = ["com.daisy.handoff-worker", "com.daisy.supervisor"].filter((l) => run("launchctl", ["print", `gui/${process.getuid()}/${l}`]).status === 0);
-    if (live.length) die(`a Nuff Said worker (${live.join(", ")}) is already running for this user. Starting another would replace it, so nothing was changed. Use --uninstall first, or --no-start to deploy without starting.`);
+    if (live.length) die(`a Daisy Handoff worker (${live.join(", ")}) is already running for this user. Starting another would replace it, so nothing was changed. Use --uninstall first, or --no-start to deploy without starting.`);
   }
   let bak = null;
   if (fs.existsSync(dir)) {
@@ -533,9 +533,9 @@ async function handOff(dir, urlFile, assistant, bell) {
     copied = c.status === 0;
   }
   say(`  1. ${fold(`In Claude (claude.ai or the desktop app): Customize > Connectors > + Add > Add custom connector.`, 5)}`);
-  say(`  2. ${fold(`Name it "Nuff Said", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue, then Continue again on the screen with the settings Claude detected.`, 5)}`);
+  say(`  2. ${fold(`Name it "Daisy Handoff", paste the URL ${copied ? "(it's on your clipboard now; " : "("}also in ${urlFile}) and click Continue, then Continue again on the screen with the settings Claude detected.`, 5)}`);
   say(`     ${fold(`Under Authentication choose "No sign in", leave Request headers empty, and click Add.`, 5)}`);
-  say(`  3. ${fold(`On your phone, open the Claude app. If Nuff Said isn't on for the chat, tap + > Connectors and turn it on. Then start voice and say: "Check updates with ${assistant}."`, 5)}`);
+  say(`  3. ${fold(`On your phone, open the Claude app. If Daisy Handoff isn't on for the chat, tap + > Connectors and turn it on. Then start voice and say: "Check updates with ${assistant}."`, 5)}`);
   if (MAC && bell) {
     say(`  For a phone notification when a job finishes (once, about a minute):`);
     say(`  4. ${fold(`On your phone, sign in to the Claude app with the same account as Claude Code, and allow notifications.`, 5)}`);
@@ -565,7 +565,7 @@ function findInstall() {
   const dirs = val("assistant") ? [path.join(projects, slugOf(clean(val("assistant"))).slug)]
     : (fs.existsSync(projects) ? fs.readdirSync(projects) : []).filter((n) => /-handoff$/.test(n)).map((n) => path.join(projects, n));
   const found = dirs.filter((d) => fs.existsSync(path.join(d, "site.json")));
-  if (!found.length) die(`no Nuff Said install found in ${projects}${val("assistant") ? ` for assistant ${val("assistant")}` : ""}. Nothing was changed.`);
+  if (!found.length) die(`no Daisy Handoff install found in ${projects}${val("assistant") ? ` for assistant ${val("assistant")}` : ""}. Nothing was changed.`);
   if (found.length > 1) die(`more than one install in ${projects} (${found.map((d) => path.basename(d)).join(", ")}). Pick one with --assistant NAME. Nothing was changed.`);
   const dir = found[0];
   const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")); } catch { return {}; } };
@@ -583,7 +583,7 @@ function carryOver(bak, dir, bell) {
     fs.renameSync(from, path.join(dir, d));
     moved++;
   }
-  // A thread or job runs Claude Code in its folder, which loads that folder's .claude settings, hooks included. Nuff Said
+  // A thread or job runs Claude Code in its folder, which loads that folder's .claude settings, hooks included. Daisy Handoff
   // never makes one there, so one that was carried over could only have been planted: move it into the old folder, not on.
   const planted = [];
   for (const d of ["jobs", "threads"]) {
@@ -593,7 +593,7 @@ function carryOver(bak, dir, bell) {
     for (const at of [top, ...names.map((n) => path.join(top, n))]) {
       let lst = null;
       try { lst = fs.lstatSync(at); } catch { continue; }
-      if (lst.isSymbolicLink()) { // Nuff Said never makes a link here either, so it was planted: move the link, never its target
+      if (lst.isSymbolicLink()) { // Daisy Handoff never makes a link here either, so it was planted: move the link, never its target
         const to = path.join(bak, "claude-folders", path.relative(dir, path.dirname(at)));
         fs.mkdirSync(to, { recursive: true });
         let target = "?"; try { target = fs.readlinkSync(at); } catch {}
@@ -617,7 +617,7 @@ function carryOver(bak, dir, bell) {
       }
     }
   }
-  if (planted.length) wrapped("note", `moved ${planted.length} Claude Code settings folder(s), CLAUDE.md file(s) or link(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Nuff Said never makes these. The hooks in a .claude folder, or in one a link leads to, would run in every later job there, and Claude Code reads a CLAUDE.md in jobs or threads as instructions for every job under it. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
+  if (planted.length) wrapped("note", `moved ${planted.length} Claude Code settings folder(s), CLAUDE.md file(s) or link(s) out of your job and thread folders: ${planted.map(shown).join(", ")}. Daisy Handoff never makes these. The hooks in a .claude folder, or in one a link leads to, would run in every later job there, and Claude Code reads a CLAUDE.md in jobs or threads as instructions for every job under it. Check them before you use anything from them: they are in ${path.join(bak, "claude-folders")}.`);
   const cfgPath = path.join(dir, "worker", "config.json"), oldPath = path.join(bak, "worker", "config.json");
   if (fs.existsSync(oldPath)) {
     const fresh = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
@@ -696,7 +696,7 @@ async function rotateKeys() {
   if (ROTATE && !DRY && !process.stdin.isTTY && !has("yes") && !has("clear-schedules")) {
     die("--rotate-keys asks a question, and there's no terminal here. Run it in Terminal, or add --yes (keeps schedules) or --clear-schedules. No keys were changed.");
   }
-  say(fold(`Nuff Said ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`, 0));
+  say(fold(`Daisy Handoff ${ROTATE ? "key change" : "clear schedules"} ${VERSION} | ${dir}${DRY ? " | DRY RUN: nothing sent to Cloudflare, nothing restarted" : ""}`, 0));
   const W = wranglerIn(dir);
   const db = `${site.slug || path.basename(dir)}-jobs`;
   const STEPS = ROTATE ? 5 : 2;
@@ -726,10 +726,10 @@ async function rotateKeys() {
       const stray = names.filter((n) => !["CONNECTOR_KEY", "WORKER_KEY", "LEAD_AGENT_KEY", "RESEND_KEY"].includes(n));
       for (const n of stray) {
         const r = W(["secret", "delete", n], { input: "y\n" });
-        if (r.status !== 0) die(`couldn't remove the secret ${n} from the connector: ${tail(r)}. Nuff Said never sets it. No keys were changed; remove it in the Cloudflare dashboard and run --rotate-keys again.`);
-        ok(`removed the secret ${n}; Nuff Said never sets it`);
+        if (r.status !== 0) die(`couldn't remove the secret ${n} from the connector: ${tail(r)}. Daisy Handoff never sets it. No keys were changed; remove it in the Cloudflare dashboard and run --rotate-keys again.`);
+        ok(`removed the secret ${n}; Daisy Handoff never sets it`);
       }
-      if (!stray.length) ok("no secrets on the connector other than Nuff Said's own");
+      if (!stray.length) ok("no secrets on the connector other than Daisy Handoff's own");
     }
   }
   // The connector key first, so a leaked URL is locked out at once. The worker key last, right before the restart, so the

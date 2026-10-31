@@ -1,5 +1,5 @@
 name: release
-# Push a tag like v0.9.0. This builds nuff-said.zip, checks it, signs its provenance,
+# Push a tag like v0.9.0. This builds daisy-handoff.zip, checks it, signs its provenance,
 # and opens a DRAFT release with the files attached. Nothing is public until you click Publish.
 on:
   push:
@@ -22,20 +22,20 @@ jobs:
           [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "install.mjs says $v but the tag is $GITHUB_REF_NAME"; exit 1; }
       - name: Build the zip (same file name every release, so the latest-download link never breaks)
         run: |
-          mkdir -p dist/nuff-said
-          cp -R install.mjs doctor.mjs template test README.md TROUBLESHOOTING.md MANUAL-INSTALL.md LICENSE SECURITY.md CHANGELOG.md RELEASE_NOTES.md CONTRIBUTING.md dist/nuff-said/
-          (cd dist && zip -qr nuff-said.zip nuff-said && sha256sum nuff-said.zip > nuff-said.zip.sha256)
+          mkdir -p dist/daisy-handoff
+          cp -R install.mjs doctor.mjs template test README.md TROUBLESHOOTING.md MANUAL-INSTALL.md LICENSE SECURITY.md CHANGELOG.md RELEASE_NOTES.md CONTRIBUTING.md dist/daisy-handoff/
+          (cd dist && zip -qr daisy-handoff.zip daisy-handoff && sha256sum daisy-handoff.zip > daisy-handoff.zip.sha256)
       - name: Test the zip exactly as a stranger gets it
         run: |
-          cd "$RUNNER_TEMP" && unzip -q "$GITHUB_WORKSPACE/dist/nuff-said.zip"
-          node nuff-said/install.mjs --dry-run --yes --home "$RUNNER_TEMP/h" --platform darwin
+          cd "$RUNNER_TEMP" && unzip -q "$GITHUB_WORKSPACE/dist/daisy-handoff.zip"
+          node daisy-handoff/install.mjs --dry-run --yes --home "$RUNNER_TEMP/h" --platform darwin
           node "$GITHUB_WORKSPACE/test/verify-dry-run.mjs" "$RUNNER_TEMP/h" daisy-handoff darwin
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/nuff-said.zip
+          subject-path: dist/daisy-handoff.zip
       - name: Open the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/nuff-said.zip dist/nuff-said.zip.sha256 \
-            --draft --title "Nuff Said $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
+          gh release create "$GITHUB_REF_NAME" dist/daisy-handoff.zip dist/daisy-handoff.zip.sha256 \
+            --draft --title "Daisy Handoff $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md

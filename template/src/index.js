@@ -1,4 +1,4 @@
-// Nuff Said ({{ASSISTANT}}): a private MCP connector that is the front door to {{OWNER}}'s background jobs.
+// Daisy Handoff ({{ASSISTANT}}): a private MCP connector that is the front door to {{OWNER}}'s background jobs.
 // Any Claude chat (voice or text) can hand off work, hear what finished, check one job, stop one,
 // approve held work, answer a job, retry one, and read the files a job made.
 // Transport: MCP Streamable HTTP, stateless JSON responses (no SSE stream).
@@ -1880,7 +1880,7 @@ export async function stalledJobs(env, nowMs = Date.now()) {
   ).bind(new Date(nowMs - STALL_MS).toISOString()).all();
   return results.map((j) => ({ ...j, mins: Math.round((nowMs - Date.parse(j.last_step)) / 60000) }));
 }
-const stalledNote = (j) => `STALLED: no step reported in ${j.mins} min${j.mins * 60_000 < STALL_PUSH_MS ? "; Nuff Said recovers stalls by itself" : " and self-recovery hasn't fixed it"}; {{OWNER}} can say "cancel it" or "force stop it".`;
+const stalledNote = (j) => `STALLED: no step reported in ${j.mins} min${j.mins * 60_000 < STALL_PUSH_MS ? "; Daisy Handoff recovers stalls by itself" : " and self-recovery hasn't fixed it"}; {{OWNER}} can say "cancel it" or "force stop it".`;
 
 const killText = (k) => k.error ? `the stop switch hit an error: ${k.error}` : !k.found ? "no processes of it were running on the {{MACHINE}}."
   : `${k.found} process(es) ended${k.killed ? `, ${k.killed} by SIGKILL` : ""} in ${((k.termed_ms || 0) / 1000).toFixed(1)} s${k.left ? `; ${k.left} would not die` : ""}.`;

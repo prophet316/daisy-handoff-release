@@ -54,7 +54,7 @@ The Claude Code installer puts `claude` in a folder Terminal doesn't look in yet
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
-The Nuff Said installer finds Claude Code either way; this only matters when you type `claude` yourself.
+The Daisy Handoff installer finds Claude Code either way; this only matters when you type `claude` yourself.
 
 ---
 
@@ -77,7 +77,7 @@ The Nuff Said installer finds Claude Code either way; this only matters when you
 - **New account:** open the email from Cloudflare and verify your address, then run the installer again.
 - **workers.dev subdomain:** open [dash.cloudflare.com](https://dash.cloudflare.com), go to **Workers & Pages**, and pick a subdomain when it asks. Then run the installer again.
 - **Signed in to the wrong Cloudflare account:** run `npx -y wrangler@4.151.3 logout`, then run the installer again and sign in with the right one.
-- **Deploy fails mentioning cron triggers:** a free Cloudflare account allows 5 cron triggers in all ([Workers limits](https://developers.cloudflare.com/workers/platform/limits/)), and Nuff Said needs one (it checks schedules every minute). Remove one from another Worker in the Cloudflare dashboard, or use a separate free Cloudflare account, then run `node install.mjs --update`. It keeps your keys and answers, also when the first install stopped here.
+- **Deploy fails mentioning cron triggers:** a free Cloudflare account allows 5 cron triggers in all ([Workers limits](https://developers.cloudflare.com/workers/platform/limits/)), and Daisy Handoff needs one (it checks schedules every minute). Remove one from another Worker in the Cloudflare dashboard, or use a separate free Cloudflare account, then run `node install.mjs --update`. It keeps your keys and answers, also when the first install stopped here.
 - **Requests fail with Error 1027:** the account used up the free plan's 100,000 Worker requests for the day, shared by all its Workers. They come back at midnight UTC. The README's Cloudflare requests section says what one install uses.
 - **Something else:** the last lines of the error come from Cloudflare's own tool. Run `node doctor.mjs` and open an issue with its report.
 
@@ -100,7 +100,7 @@ Give the same answers as before (the same assistant name), so it reuses your Clo
 
 ## Already installed
 
-**You see:** `already exists. Nothing was changed` or `a Nuff Said worker is already running for this user`.
+**You see:** `already exists. Nothing was changed` or `a Daisy Handoff worker is already running for this user`.
 
 One install per Mac user account works. To replace it, follow the README's **Update** steps. To remove it, follow **Uninstall**.
 
@@ -110,7 +110,7 @@ One install per Mac user account works. To replace it, follow the README's **Upd
 
 **You see:** in Claude, the connector shows an error, or saying "check updates" does nothing.
 
-- **Turned on for this chat.** Anthropic says to turn a connector on for each conversation: tap **+** at the lower left of the chat (or type /), choose **Connectors**, and turn **Nuff Said** on ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)).
+- **Turned on for this chat.** Anthropic says to turn a connector on for each conversation: tap **+** at the lower left of the chat (or type /), choose **Connectors**, and turn **Daisy Handoff** on ([Use connectors to extend Claude's capabilities](https://support.claude.com/en/articles/11176164-use-connectors-to-extend-claude-s-capabilities)).
 - **Paste the whole URL.** It's long. The installer copied it to your clipboard. If you've copied something since, get it again with `pbcopy < ~/Projects/daisy-handoff/.connector-url` and paste it into **Customize > Connectors > + Add > Add custom connector**, click **Continue**. Claude shows the authentication settings it detected; click **Continue** again. Choose **No sign in** under **Authentication**, leave **Request headers** empty, and click **Add** ([Get started with custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
 - **Team or Enterprise plan:** there an admin (an Owner, or on Enterprise someone whose role can manage connectors) adds a custom connector for the organization, and people across it can then connect to it. Don't add yours to a shared organization; use a personal Pro, Max or Ultra account.
 - **You rotated the key or updated:** the URL changed. Remove the old connector in Claude and add the new URL.

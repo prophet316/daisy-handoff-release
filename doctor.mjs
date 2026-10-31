@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Nuff Said doctor: checks this computer and your install for the common problems, says what to do about each,
+// Daisy Handoff doctor: checks this computer and your install for the common problems, says what to do about each,
 // and saves a report you can attach to a bug report. Secrets are removed from the report; read it before you share it.
 //
 //   node doctor.mjs                  check this computer and the install it finds in ~/Projects
@@ -107,12 +107,12 @@ function redact(text) {
 
 // ---------- 1. this computer ----------
 const VERSION = (read(path.join(HERE, "install.mjs")) || "").match(/const VERSION = "([^"]+)"/)?.[1] || site?.installer || "?";
-say(`Nuff Said doctor (release ${VERSION})`);
+say(`Daisy Handoff doctor (release ${VERSION})`);
 say(new Date().toString());
 say(`\n1. This computer`);
 if (MAC) {
   const v = run("sw_vers", ["-productVersion"]).stdout?.trim() || "?";
-  check(Number(v.split(".")[0]) >= 13 ? "ok" : "fail", `macOS ${v}`, "Nuff Said needs macOS 13 (Ventura) or newer.", "Before you start");
+  check(Number(v.split(".")[0]) >= 13 ? "ok" : "fail", `macOS ${v}`, "Daisy Handoff needs macOS 13 (Ventura) or newer.", "Before you start");
 } else check("warn", `${os.type()} ${os.release()}`, "The background worker runs on macOS only in this version.", "Before you start");
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 check(nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 13) ? "ok" : "fail", `Node ${process.versions.node}`, "Install Node 22.13 or newer from nodejs.org, then open a new Terminal window.", "Node is missing or too old");

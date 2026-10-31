@@ -1,5 +1,5 @@
 #!/bin/bash
-# Smoke test for the Nuff Said connector ({{ASSISTANT}}).
+# Smoke test for the Daisy Handoff connector ({{ASSISTANT}}).
 # Usage: ./test.sh                 (a local dev server at 127.0.0.1:8799 with the key "localtestkey"; the release doesn't set one up)
 #        ./test.sh deployed        (your real connector: reads the private URL from .connector-url, never prints it. It queues a
 #                                   real job, "Smoke test job", that your worker picks up and runs with Claude Code on this

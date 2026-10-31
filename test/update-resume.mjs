@@ -160,7 +160,7 @@ syncBuiltinESMExports();\n`);
   fs.readdirSync(projects).filter((n) => n.startsWith(`${path.basename(dir)}.failed-`)).forEach((n) => fs.rmSync(path.join(projects, n), { recursive: true, force: true }));
 }
 
-// Claude Code loads the .claude settings (hooks included) of the folder a thread or job runs in. Nuff Said never makes one,
+// Claude Code loads the .claude settings (hooks included) of the folder a thread or job runs in. Daisy Handoff never makes one,
 // so the update moves any it carries over into the old install's folder and says so.
 {
   const hook = { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "/tmp/planted-hook" }] }] } };
@@ -180,7 +180,7 @@ syncBuiltinESMExports();\n`);
 }
 
 // A thread or job folder, or the whole jobs folder, swapped for a link would have Claude Code load the .claude settings where the
-// link leads, and the sweep above never looks through a link. Nuff Said never makes links there, so the update moves each link
+// link leads, and the sweep above never looks through a link. Daisy Handoff never makes links there, so the update moves each link
 // itself (never what it leads to) into the old install's folder and says so.
 {
   const outside = fs.mkdtempSync(path.join(home, "outside-"));
@@ -216,12 +216,12 @@ if (process.platform === "darwin") {
   check(r.status === 0 && json("install-receipt.json").bell === false && !fs.existsSync(plist), "an update keeps it off");
   r = install(["--dry-run", "--update", "--bell"]);
   check(r.status === 0 && json("install-receipt.json").bell === true && json(path.join("worker", "config.json")).bell?.url && fs.existsSync(plist), "--update --bell turns it on");
-  check(/I am using this for local development/.test(unfold(r.stdout)) && /--no-bell/.test(unfold(r.stdout)), "the installer says what the bell answers for you, and how to turn it off");
+  check(/I\s+am\s+using\s+this\s+for\s+local\s+development/.test(unfold(r.stdout)) && /--no-bell/.test(unfold(r.stdout)), "the installer says what the bell answers for you, and how to turn it off");
   r = install(["--dry-run", "--update"]);
   check(r.status === 0 && json("install-receipt.json").bell === true && fs.existsSync(plist), "the next update keeps it on, as you chose");
   r = install(["--dry-run", "--update", "--no-bell"]);
   check(r.status === 0 && json("install-receipt.json").bell === false && json(path.join("worker", "config.json")).bell === null && !fs.existsSync(plist), "--update --no-bell turns the bell off and moves its launch agent aside", r.stderr.slice(-200));
-  check(!/local development/.test(unfold(r.stdout)), "with the bell off, the installer has no development-channel note to show");
+  check(!/local\s+development/.test(unfold(r.stdout)), "with the bell off, the installer has no development-channel note to show");
   // An install from before the question (no answer on record, bell running): the update asks instead of keeping it on.
   r = install(["--dry-run", "--update", "--bell"]);
   const rec = json("install-receipt.json"); delete rec.bell; fs.writeFileSync(path.join(dir, "install-receipt.json"), JSON.stringify(rec));
@@ -230,7 +230,7 @@ if (process.platform === "darwin") {
   check(/an update keeps your earlier answers/.test(unfold(r.stderr)) && !/command line and desktop control on/.test(unfold(r.stderr)), "the update's no-terminal stop names an update's defaults, not a new install's", r.stderr.slice(-300));
   r = install(["--dry-run", "--update", "--yes"]);
   check(r.status === 0 && json("install-receipt.json").bell === false && !fs.existsSync(plist), "with --yes it takes the default, off, and stops the old bell");
-  check(/research preview/.test(unfold(r.stdout)) && /I am using this for local development/.test(unfold(r.stdout)) && /\[no\]: no \(--yes\)/.test(unfold(r.stdout)), "the question says what the bell answers for you, and shows the answer --yes took");
+  check(/research\s+preview/.test(unfold(r.stdout)) && /I\s+am\s+using\s+this\s+for\s+local\s+development/.test(unfold(r.stdout)) && /\[no\]: no \(--yes\)/.test(unfold(r.stdout)), "the question says what the bell answers for you, and shows the answer --yes took");
   // A new install: no terminal and no --yes stops at the first question; in a terminal a bare Enter means no, yes means yes.
   const nh = path.join(home, "new-bell");
   const fresh = (args, o = {}) => spawnSync(o.cmd || process.execPath, [...(o.pre || []), path.join(REPO, "install.mjs"), "--dry-run", "--name", "Tester", "--assistant", "Daisy", "--home", nh, ...args], { encoding: "utf8", input: o.input });
@@ -438,7 +438,7 @@ check(/If this run was that second one, you're done here:\s+add the connector in
 check(/don't add the new URL yet/.test(unfold(r.stdout)) && /whichever way the switch was set/.test(unfold(r.stdout)) && /Assume someone ran commands as you, whether or not the command line was on/.test(unfold(r.stdout)) &&
   !/If the command line was off while the URL was out/.test(unfold(r.stdout)), "the leak steps say to do the cleanup whether or not the command line was on", r.stdout.slice(-1500));
 // The real (not dry) order, against a stand-in for wrangler that logs each call: the clean code is deployed and a secret
-// Nuff Said never sets is removed before any key is stored. The stand-in fails at the worker key, so nothing goes further.
+// Daisy Handoff never sets is removed before any key is stored. The stand-in fails at the worker key, so nothing goes further.
 const fakeBin = path.join(rhome, "fakebin"), calls = path.join(rhome, "wrangler-calls.txt");
 if (realRuns) {
   fs.mkdirSync(fakeBin);

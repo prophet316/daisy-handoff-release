@@ -1,4 +1,4 @@
-// Nuff Said worker for {{ASSISTANT}}: runs on the {{MACHINE}}, picks up queued jobs, runs each with
+// Daisy Handoff worker for {{ASSISTANT}}: runs on the {{MACHINE}}, picks up queued jobs, runs each with
 // Claude Code in its own folder, and reports a short result back to the connector.
 // It only makes outbound requests to Cloudflare, plus one local request to the {{ASSISTANT}} bell
 // (127.0.0.1) so {{OWNER}} gets a phone notification. Nothing reaches in.
@@ -425,7 +425,7 @@ export function workDir(job, jobDir = join(ROOT, "jobs", job.id)) {
   return jobDir;
 }
 
-// Nuff Said only ever makes real folders in its own install folder. A job or thread folder there that leads somewhere else
+// Daisy Handoff only ever makes real folders in its own install folder. A job or thread folder there that leads somewhere else
 // went through a link someone planted, and Claude Code would load the .claude settings, hooks included, from where it leads.
 export function linkedInRoot(p, root = ROOT) {
   const rel = relative(root, p);
@@ -438,7 +438,7 @@ export function linkAt(p, root = ROOT) {
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) return false;
   try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
 }
-export const LINKED = "This job's folder or its thread's folder was replaced with a link, which Nuff Said never makes, so a planted Claude Code hook could run there. Nothing was run. Move the link out of the install folder before you retry.";
+export const LINKED = "This job's folder or its thread's folder was replaced with a link, which Daisy Handoff never makes, so a planted Claude Code hook could run there. Nothing was run. Move the link out of the install folder before you retry.";
 
 // A project folder must be inside {{OWNER}}'s home after resolving links; a new name under ~/Projects is created.
 export function checkProject(dir) {

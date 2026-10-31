@@ -59,7 +59,7 @@ export const SECRET_NAME = /^\.env(\..*)?$|\.(pem|key|p12|pfx|keychain(-db)?)$|^
 
 if (process.argv.includes("--selftest")) {
   const tmp = mkdtempSync(join(tmpdir(), "redact-"));
-  const ck = "c0ffee".repeat(10) + "abcd", url = `https://nuff-test.example.invalid/${ck}/mcp`, lk = "1eadbeef".repeat(8);
+  const ck = "c0ffee".repeat(10) + "abcd", url = `https://daisy-handoff-test.example.invalid/${ck}/mcp`, lk = "1eadbeef".repeat(8);
   writeFileSync(join(tmp, ".connector-key"), ck); writeFileSync(join(tmp, ".connector-url"), url); writeFileSync(join(tmp, ".lead-agent-key"), lk);
   const r = makeRedactor(["local-worker-key-1234567890", ...installSecrets(tmp)]);
   rmSync(tmp, { recursive: true, force: true });
