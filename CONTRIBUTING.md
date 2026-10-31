@@ -10,3 +10,5 @@ Not accepting code contributions yet. Thank you for wanting to help.
 Pick the matching form when you open an issue. For a security problem, please report it privately instead (see [SECURITY.md](SECURITY.md)).
 
 **Not yet:** pull requests. I can't take code until there are contributor terms, so a pull request would sit unanswered. If you've found a fix, describe it in an issue and I'll take it from there.
+
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).

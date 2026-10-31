@@ -1,6 +1,10 @@
 # Daisy Handoff
 
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/prophet316/daisy-handoff-release?label=release)](https://github.com/prophet316/daisy-handoff-release/releases/latest)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS%2013%2B-1B2333)](#platform-support)
+[![Windows: coming soon](https://img.shields.io/badge/Windows-coming%20soon-lightgrey)](#platform-support)
+[![Private by design](https://img.shields.io/badge/private-by%20design-F2B705)](#private-by-design)
 
 **Talk to Claude. Your computer does the work.**
 
