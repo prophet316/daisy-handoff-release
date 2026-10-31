@@ -421,7 +421,7 @@ The workflow in [installer.yml](https://github.com/prophet316/daisy-handoff-rele
 
 First run `node doctor.mjs` and look at [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Most install problems are there.
 
-Open an issue at [github.com/prophet316/daisy-handoff-release/issues](https://github.com/prophet316/daisy-handoff-release/issues) and pick **Install problem**, **Something broke** or **Idea**. For a security problem, use **Security > Report a vulnerability** instead, so it stays private.
+Open an issue at [github.com/prophet316/daisy-handoff-release/issues](https://github.com/prophet316/daisy-handoff-release/issues) and pick **Install problem**, **Something broke** or **Idea**. Questions, setup help and "is this normal?" go in [Discussions](https://github.com/prophet316/daisy-handoff-release/discussions) under **Q&A**. For a security problem, use **Security > Report a vulnerability** instead, so it stays private.
 
 A good bug report has:
 

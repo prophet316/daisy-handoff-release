@@ -209,5 +209,6 @@ Use your zone's name from [this list](https://en.wikipedia.org/wiki/List_of_tz_d
 1. Run `node doctor.mjs`. It prints where it saved its report.
 2. Open the report and read it. Keys, your connector URL, emails and your user name are already removed, but cut anything else you'd rather keep private.
 3. Open an issue at [github.com/prophet316/daisy-handoff-release/issues](https://github.com/prophet316/daisy-handoff-release/issues), pick **Install problem** or **Something broke**, and paste the report.
+4. Just have a question, or not sure it's a bug? Ask in [Discussions](https://github.com/prophet316/daisy-handoff-release/discussions) under **Q&A**. Someone will help you get unstuck, and the answer helps the next person too.
 
 Never paste your connector URL or the files `.connector-url`, `.connector-key`, `.worker-key`, `.bell-key` or `.lead-agent-key`. If one slips out, run `node install.mjs --rotate-keys` (README, "If your URL leaks").
