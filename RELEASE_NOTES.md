@@ -1,4 +1,4 @@
-**Talk to Claude. Your computer does the work.**
+**Connecting conversation to collaboration.** Talk to Claude. Your computer does the work.
 
 It works with Claude Code and your own Claude account.
 It's an independent project, not made by, affiliated with or endorsed by Anthropic.

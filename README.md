@@ -6,12 +6,14 @@
 [![Windows: coming soon](https://img.shields.io/badge/Windows-coming%20soon-lightgrey)](#platform-support)
 [![Private by design](https://img.shields.io/badge/private-by%20design-F2B705)](#private-by-design)
 
+### Connecting conversation to collaboration.
+
 **Talk to Claude. Your computer does the work.**
 
 It works with Claude Code and your own Claude account.
 It's an independent project, not made by, affiliated with or endorsed by Anthropic.
 
-Daisy Handoff works inside the Claude app you already use. It's one custom connector you add in Claude. After that, a conversation with Claude, including a live voice conversation on your phone, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the default name for your assistant, the worker on your computer that picks up each job; you can pick another name at install.
+Talk to Claude out loud on your phone, in the Claude app's voice mode, and Claude Code does the work on your own Mac. Daisy Handoff works inside the Claude app you already use. It's one custom connector you add in Claude. After that, any Claude conversation, typed or spoken, can hand real work to Claude Code on your own computer: start jobs, check on them, approve, schedule, and stop everything. Claude's voice, your chats and your other connectors stay exactly as they are. Daisy is the default name for your assistant, the worker on your computer that picks up each job; you can pick another name at install.
 
 Setup takes a Terminal installer and a free Cloudflare account. After that, day to day, you stay in Claude. Needs Claude Pro, Max or Ultra. Mac today. Windows support is coming soon.
 
