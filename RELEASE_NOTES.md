@@ -13,7 +13,7 @@ It's one custom connector you add in the Claude app. After that, a conversation 
 | **You need** | macOS 13 or newer, Claude Pro, Max or Ultra with Claude Code signed in, Node 22.13 or newer, a free Cloudflare account. |
 | **Private by design** | Your connector and its database run on your own free Cloudflare account, paired to your own computer. There's no shared server, so the author never sees your jobs. |
 | **Cost** | Nothing beyond your Claude plan. Cloudflare's free plan covers a normal day of use. Publishing and email need an optional Composio account. |
-| **License** | FSL-1.1-MIT |
+| **License** | MIT, open source |
 
 ### Read this first
 This release ships with the command line and desktop control **on**, the way I use it.

@@ -1,6 +1,6 @@
 # Daisy Handoff
 
-[![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/prophet316/daisy-handoff-release?label=release)](https://github.com/prophet316/daisy-handoff-release/releases/latest)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS%2013%2B-1B2333)](#platform-support)
 [![Windows: coming soon](https://img.shields.io/badge/Windows-coming%20soon-lightgrey)](#platform-support)
@@ -454,4 +454,4 @@ Daisy Handoff is an independent project. It is not affiliated with, made by or e
 
 ## License
 
-[FSL-1.1-MIT](LICENSE). Free to use, change and share for anything except offering it, or something built on it, in a commercial product or service that competes with it. Each version becomes plain MIT two years after its release. The [LICENSE](LICENSE) is the real terms.
+[MIT](LICENSE). Free to use, change and share, including commercially. Keep the copyright notice. It comes with no warranty.
