@@ -1,8 +1,6 @@
 name: installer
-# GitHub's hosted runners were blocked on the account for 0.9.1, so this runs on the maintainer's own Windows PC (a
-# self-hosted runner), only on pushes to main and when started by hand, never on pull requests. Before this repo takes
-# pull requests from anyone else, the self-hosted runner is removed and the matrix goes back to GitHub's macOS and
-# Windows runners.
+# Runs on GitHub's hosted macOS and Windows runners, only on pushes to main and when started by hand, never on pull
+# requests. (For 0.9.1 the hosted runners were blocked on the account, so it ran on the maintainer's own Windows PC.)
 on:
   push:
     branches: [main]
@@ -14,8 +12,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [beast]
-    runs-on: [self-hosted, Windows, X64, beast]
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
